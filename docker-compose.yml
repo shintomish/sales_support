@@ -20,12 +20,13 @@ services:
     environment:
       MYSQL_DATABASE: sales_support
       MYSQL_ROOT_PASSWORD: root
-      MYSQL_PASSWORD: password
       MYSQL_USER: laravel
+      MYSQL_PASSWORD: password
     ports:
-      - "3306:3306"
+      - "3307:3306"
     volumes:
       - dbdata:/var/lib/mysql
+      - ./mysql/conf.d:/etc/mysql/conf.d  # この行を追加
     networks:
       - sales_support_network
 
