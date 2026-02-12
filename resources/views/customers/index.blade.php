@@ -1,42 +1,52 @@
 @extends('layouts.app')
 
-@section('title', '顧客一覧')
+@section('title', '顧客管理')
 
 @section('content')
-<div class="d-flex justify-content-between align-items-center mb-4">
-    <h4 class="mb-0"><i class="bi bi-building me-2"></i>顧客一覧</h4>
+<div class="page-header">
+    <div>
+        <h4><i class="bi bi-building me-2" style="color: var(--primary)"></i>顧客一覧</h4>
+        <p class="text-muted mb-0" style="font-size:0.8rem">
+            全 {{ $customers->total() }} 件
+        </p>
+    </div>
     <a href="{{ route('customers.create') }}" class="btn btn-primary">
         <i class="bi bi-plus-circle me-1"></i>新規登録
     </a>
 </div>
 
+<!-- 検索フォーム -->
 <div class="card mb-4">
-    <div class="card-body">
-        <form action="{{ route('customers.index') }}" method="GET" class="row g-3">
+    <div class="card-body py-3">
+        <form action="{{ route('customers.index') }}" method="GET" class="row g-2 align-items-center">
             <div class="col-md-4">
-                <input type="text" name="search" class="form-control"
-                       placeholder="会社名・業種で検索" value="{{ request('search') }}">
-            </div>
-            <div class="col-md-2">
-                <button type="submit" class="btn btn-outline-secondary w-100">
-                    <i class="bi bi-search me-1"></i>検索
-                </button>
-            </div>
-            @if(request('search'))
-                <div class="col-md-2">
-                    <a href="{{ route('customers.index') }}" class="btn btn-outline-danger w-100">
-                        <i class="bi bi-x-circle me-1"></i>クリア
-                    </a>
+                <div class="input-group">
+                    <span class="input-group-text bg-white border-end-0">
+                        <i class="bi bi-search text-muted"></i>
+                    </span>
+                    <input type="text" name="search"
+                           class="form-control border-start-0"
+                           placeholder="会社名・業種で検索"
+                           value="{{ request('search') }}">
                 </div>
-            @endif
+            </div>
+            <div class="col-auto">
+                <button type="submit" class="btn btn-primary">検索</button>
+                @if(request('search'))
+                    <a href="{{ route('customers.index') }}" class="btn btn-outline-secondary ms-1">
+                        <i class="bi bi-x"></i> クリア
+                    </a>
+                @endif
+            </div>
         </form>
     </div>
 </div>
 
+<!-- 顧客一覧テーブル -->
 <div class="card">
     <div class="card-body p-0">
-        <table class="table table-hover mb-0">
-            <thead class="table-light">
+        <table class="table mb-0">
+            <thead>
                 <tr>
                     <th>会社名</th>
                     <th>業種</th>
@@ -51,21 +61,38 @@
                     <tr>
                         <td>
                             <a href="{{ route('customers.show', $customer) }}"
-                               class="text-decoration-none fw-bold">
+                               class="text-decoration-none fw-600"
+                               style="color: var(--primary); font-weight:600">
                                 {{ $customer->company_name }}
                             </a>
                         </td>
-                        <td>{{ $customer->industry ?? '-' }}</td>
+                        <td>
+                            @if($customer->industry)
+                                <span class="badge"
+                                      style="background-color: var(--primary-light);
+                                             color: var(--primary)">
+                                    {{ $customer->industry }}
+                                </span>
+                            @else
+                                <span class="text-muted">-</span>
+                            @endif
+                        </td>
                         <td>{{ $customer->employee_count ? number_format($customer->employee_count) . '名' : '-' }}</td>
                         <td>{{ $customer->phone ?? '-' }}</td>
-                        <td>{{ $customer->created_at->format('Y/m/d') }}</td>
+                        <td>
+                            <span style="color: var(--text-muted); font-size:0.8rem">
+                                {{ $customer->created_at->format('Y/m/d') }}
+                            </span>
+                        </td>
                         <td class="text-center">
                             <a href="{{ route('customers.show', $customer) }}"
-                               class="btn btn-sm btn-outline-primary me-1">
+                               class="btn btn-sm btn-outline-primary me-1"
+                               title="詳細">
                                 <i class="bi bi-eye"></i>
                             </a>
                             <a href="{{ route('customers.edit', $customer) }}"
-                               class="btn btn-sm btn-outline-warning me-1">
+                               class="btn btn-sm btn-outline-warning me-1"
+                               title="編集">
                                 <i class="bi bi-pencil"></i>
                             </a>
                             <form action="{{ route('customers.destroy', $customer) }}"
@@ -73,7 +100,7 @@
                                   onsubmit="return confirm('削除してもよろしいですか？')">
                                 @csrf
                                 @method('DELETE')
-                                <button type="submit" class="btn btn-sm btn-outline-danger">
+                                <button type="submit" class="btn btn-sm btn-outline-danger" title="削除">
                                     <i class="bi bi-trash"></i>
                                 </button>
                             </form>
@@ -81,8 +108,13 @@
                     </tr>
                 @empty
                     <tr>
-                        <td colspan="6" class="text-center text-muted py-4">
-                            顧客が登録されていません。
+                        <td colspan="6" class="text-center py-5">
+                            <i class="bi bi-inbox display-6 d-block mb-2 text-muted"></i>
+                            <span class="text-muted">顧客が登録されていません</span><br>
+                            <a href="{{ route('customers.create') }}"
+                               class="btn btn-primary btn-sm mt-3">
+                                <i class="bi bi-plus-circle me-1"></i>最初の顧客を登録する
+                            </a>
                         </td>
                     </tr>
                 @endforelse
