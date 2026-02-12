@@ -460,6 +460,10 @@
                class="sidebar-link {{ request()->is('customers*') ? 'active' : '' }}">
                 <i class="bi bi-building"></i>顧客管理
             </a>
+            <a href="{{ route('contacts.index') }}"
+                class="sidebar-link {{ request()->is('contacts*') ? 'active' : '' }}">
+                    <i class="bi bi-person"></i>担当者管理
+            </a>
             <a href="{{ route('deals.index') }}"
             class="sidebar-link {{ request()->is('deals*') ? 'active' : '' }}">
                 <i class="bi bi-briefcase"></i>商談管理
