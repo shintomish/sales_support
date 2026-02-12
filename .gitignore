@@ -25,3 +25,5 @@ Thumbs.db
 
 # Docker
 /mysql-data
+public/favicon.ico:com.dropbox.attrs
+public/favicon.ico_org
