@@ -109,7 +109,7 @@
                                 {{ $count }}件
                                 @if($status !== '失注' && $status !== '成約')
                                     &nbsp;/&nbsp;
-                                    ¥{{ number_format(($pipeline->firstWhere('status', $status)->total ?? 0) / 10000, 1) }}万円
+                                    {{ number_format(($pipeline->firstWhere('status', $status)->total ?? 0) / 10000, 1) }}万円
                                 @endif
                             </span>
                         </div>
