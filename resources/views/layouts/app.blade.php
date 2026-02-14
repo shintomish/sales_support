@@ -463,11 +463,15 @@
             </a>
             <a href="{{ route('contacts.index') }}"
                 class="sidebar-link {{ request()->is('contacts*') ? 'active' : '' }}">
-                    <i class="bi bi-person"></i>担当者管理
+                <i class="bi bi-person"></i>担当者管理
             </a>
             <a href="{{ route('deals.index') }}"
-            class="sidebar-link {{ request()->is('deals*') ? 'active' : '' }}">
+                class="sidebar-link {{ request()->is('deals*') ? 'active' : '' }}">
                 <i class="bi bi-briefcase"></i>商談管理
+            </a>
+            <a href="{{ route('activities.index') }}"
+                class="sidebar-link {{ request()->is('activities*') ? 'active' : '' }}">
+                <i class="bi bi-clock-history"></i>活動履歴
             </a>
         </div>
     </div>
