@@ -14,6 +14,10 @@ RUN apt-get update && apt-get install -y \
     unzip \
     libzip-dev
 
+# Node.js のインストール
+RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && apt-get install -y nodejs
+
 # PHP拡張機能のインストール
 RUN docker-php-ext-install pdo_mysql mbstring exif pcntl bcmath gd zip
 

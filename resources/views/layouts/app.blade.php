@@ -442,6 +442,31 @@
             color: var(--text-primary);
             font-weight: 500;
         }
+
+        /* ===== サイドバーをrelativeに ===== */
+        .sidebar {
+            position: relative !important;
+        }
+
+        /* ===== ログアウトボタン ===== */
+        .logout-btn {
+            width: 100%;
+            background: none;
+            border: 1px solid rgba(255, 140, 0, 0.3);
+            color: #64748B;
+            border-radius: 0.5rem;
+            padding: 0.4rem;
+            font-size: 0.8rem;
+            cursor: pointer;
+            transition: all 0.15s ease;
+            font-family: 'Noto Sans JP', sans-serif;
+        }
+
+        .logout-btn:hover {
+            border-color: #FF8C00;
+            color: #FF8C00;
+            background-color: rgba(255, 140, 0, 0.05);
+        }
     </style>
 </head>
 <body>
@@ -473,6 +498,24 @@
                 class="sidebar-link {{ request()->is('activities*') ? 'active' : '' }}">
                 <i class="bi bi-clock-history"></i>活動履歴
             </a>
+        </div>
+        <!-- {{-- ユーザー情報・ログアウト --}} -->
+        <div style="position: absolute; bottom: 0; left: 0; right: 0;
+                    padding: 1rem 1.25rem;
+                    border-top: 1px solid rgba(255,140,0,0.2);
+                    background: linear-gradient(160deg, #0F1C2E 0%, #1A2C42 100%);">
+            <div style="color: #94A3B8; font-size: 0.8rem; margin-bottom: 0.5rem;
+                        white-space: nowrap; overflow: hidden; text-overflow: ellipsis">
+                <i class="bi bi-person-circle me-2"></i>
+                {{ Auth::user()->name }}
+            </div>
+            <form method="POST" action="{{ route('logout') }}">
+                @csrf
+                <button type="submit"
+                        class="logout-btn">
+                    <i class="bi bi-box-arrow-left me-1"></i>ログアウト
+                </button>
+            </form>
         </div>
     </div>
 
