@@ -50,7 +50,7 @@
             height: 3px;
             background: linear-gradient(90deg, transparent, #FF8C00, transparent);
         }
-        .login-logo {
+        /* .login-logo {
             width: 52px;
             height: 52px;
             background: linear-gradient(135deg, #FF8C00, #E67E00);
@@ -62,7 +62,30 @@
             font-size: 1.5rem;
             color: #FFFFFF;
             box-shadow: 0 4px 15px rgba(255,140,0,0.4);
+        } */
+
+        /* アニメーション */
+        .login-logo {
+            width: 52px;
+            height: 52px;
+            background: linear-gradient(135deg, #FF8C00, #E67E00);
+            border-radius: 0.75rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 1rem;
+            font-size: 1.5rem;
+            color: #FFFFFF;
+            box-shadow: 0 4px 15px rgba(255, 140, 0, 0.4);
+            animation: logoPulse 2s ease-in-out infinite;
         }
+
+        @keyframes logoPulse {
+            0%   { transform: scale(1);    box-shadow: 0 4px 15px rgba(255,140,0,0.4); }
+            50%  { transform: scale(1.08); box-shadow: 0 8px 25px rgba(255,140,0,0.7); }
+            100% { transform: scale(1);    box-shadow: 0 4px 15px rgba(255,140,0,0.4); }
+        }
+
         .login-header h4 {
             color: #FFFFFF;
             font-weight: 700;
@@ -151,6 +174,22 @@
             font-size: 0.75rem;
             color: #94A3B8;
         }
+
+        /* 回転アニメーション */
+        .login-logo i {
+            animation: iconSpin 6s linear infinite;
+            display: inline-block;
+        }
+
+        @keyframes iconSpin {
+            0%   { transform: rotate(0deg);   }
+            15%  { transform: rotate(20deg);  }
+            30%  { transform: rotate(0deg);   }
+            45%  { transform: rotate(-20deg); }
+            60%  { transform: rotate(0deg);   }
+            100% { transform: rotate(0deg);   }
+        }
+
     </style>
 </head>
 <body>
