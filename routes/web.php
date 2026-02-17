@@ -6,6 +6,7 @@ use App\Http\Controllers\CustomerController;
 use App\Http\Controllers\ContactController;
 use App\Http\Controllers\DealController;
 use App\Http\Controllers\ActivityController;
+use App\Http\Controllers\TaskController;
 
 // 認証が必要なルート
 Route::middleware(['auth'])->group(function () {
@@ -24,6 +25,10 @@ Route::middleware(['auth'])->group(function () {
 
     // 活動履歴管理
     Route::resource('activities', ActivityController::class);
+
+    // タスク管理
+    Route::resource('tasks', TaskController::class);
+    Route::patch('tasks/{task}/status', [TaskController::class, 'updateStatus'])->name('tasks.updateStatus');
 
     // Ajax
     Route::get('api/contacts', [DealController::class, 'getContacts'])->name('api.contacts');

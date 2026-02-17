@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>@yield('title', '営業支援システム')</title>
+    <meta name="csrf-token" content="{{ csrf_token() }}">
     <link rel="icon" href="{{ asset('favicon.ico') }}" type="image/x-icon">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
@@ -497,6 +498,10 @@
             <a href="{{ route('activities.index') }}"
                 class="sidebar-link {{ request()->is('activities*') ? 'active' : '' }}">
                 <i class="bi bi-clock-history"></i>活動履歴
+            </a>
+            <a href="{{ route('tasks.index') }}"
+            class="sidebar-link {{ request()->is('tasks*') ? 'active' : '' }}">
+                <i class="bi bi-check2-square"></i>タスク管理
             </a>
         </div>
         <!-- {{-- ユーザー情報・ログアウト --}} -->
