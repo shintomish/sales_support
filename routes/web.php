@@ -8,7 +8,6 @@ use App\Http\Controllers\DealController;
 use App\Http\Controllers\ActivityController;
 use App\Http\Controllers\TaskController;
 
-// 認証が必要なルート
 Route::middleware(['auth'])->group(function () {
 
     // ダッシュボード
@@ -33,13 +32,6 @@ Route::middleware(['auth'])->group(function () {
     // Ajax
     Route::get('api/contacts', [DealController::class, 'getContacts'])->name('api.contacts');
     Route::get('api/customer-data', [ActivityController::class, 'getCustomerData'])->name('api.customer_data');
-
-    // Breezeのプロフィール（削除するまで必要）
-    Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
-    Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
-    Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
-
 });
 
-// 認証ルート（Breeze自動生成）
 require __DIR__.'/auth.php';
