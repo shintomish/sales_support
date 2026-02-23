@@ -1,69 +1,68 @@
 <?php
 
-namespace App\Http\Controllers\Api;
+namespace App\Http\Controllers;
 
-use App\Http\Controllers\Controller;
 use App\Models\Customer;
-use App\Http\Resources\CustomerResource;
+use App\Http\Requests\CustomerRequest;
 use Illuminate\Http\Request;
 
 class CustomerController extends Controller
 {
-    /**
-     * 顧客一覧取得
-     */
-    public function index()
+    // 顧客一覧
+    public function index(Request $request)
     {
-        $customers = Customer::paginate(20);
-        return CustomerResource::collection($customers);
+        $query = Customer::query();
+
+        if ($request->filled('search')) {
+            $query->where('company_name', 'like', '%' . $request->search . '%')
+                  ->orWhere('industry', 'like', '%' . $request->search . '%');
+        }
+
+        $customers = $query->orderBy('created_at', 'desc')->paginate(10);
+
+        return view('customers.index', compact('customers'));
     }
 
-    /**
-     * 顧客新規作成
-     */
-    public function store(Request $request)
-    {
-        $validated = $request->validate([
-            'company_name' => 'required|string|max:255',
-            'industry' => 'nullable|string|max:100',
-            'phone' => 'nullable|string|max:20',
-            'address' => 'nullable|string',
-        ]);
-
-        $customer = Customer::create($validated);
-        return new CustomerResource($customer);
-    }
-
-    /**
-     * 顧客詳細取得
-     */
+    // 顧客詳細
     public function show(Customer $customer)
     {
-        return new CustomerResource($customer);
+        $customer->load(['contacts', 'deals', 'activities']);
+        return view('customers.show', compact('customer'));
     }
 
-    /**
-     * 顧客更新
-     */
-    public function update(Request $request, Customer $customer)
+    // 顧客登録フォーム
+    public function create()
     {
-        $validated = $request->validate([
-            'company_name' => 'required|string|max:255',
-            'industry' => 'nullable|string|max:100',
-            'phone' => 'nullable|string|max:20',
-            'address' => 'nullable|string',
-        ]);
-
-        $customer->update($validated);
-        return new CustomerResource($customer);
+        return view('customers.create');
     }
 
-    /**
-     * 顧客削除
-     */
+    // 顧客登録処理
+    public function store(CustomerRequest $request)
+    {
+        Customer::create($request->validated());
+        return redirect()->route('customers.index')
+                         ->with('success', '顧客を登録しました。');
+    }
+
+    // 顧客編集フォーム
+    public function edit(Customer $customer)
+    {
+        return view('customers.edit', compact('customer'));
+    }
+
+    // 顧客更新処理
+    public function update(CustomerRequest $request, Customer $customer)
+    {
+        $customer->update($request->validated());
+        return redirect()->route('customers.show', $customer)
+                         ->with('success', '顧客情報を更新しました。');
+    }
+
+    // 顧客削除処理
     public function destroy(Customer $customer)
     {
         $customer->delete();
-        return response()->json(null, 204);
+        return redirect()->route('customers.index')
+                         ->with('success', '顧客を削除しました。');
     }
 }
