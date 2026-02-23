@@ -1,6 +1,6 @@
 ### 変数定義
 @baseUrl = http://localhost:8000/api/v1
-@token = 
+@token = 14|2C6gweHHm2KQ5NyqRTTgoAkvLQkmU7ftbfBH43VFb28fa9ac
 
 ### ===== 認証 =====
 
@@ -97,8 +97,8 @@ Content-Type: application/json
   "customer_id": 1,
   "title": "新規システム導入案件",
   "amount": 5000000,
-  "status": "見込み",
-  "close_date": "2026-03-31"
+  "status": "新規",
+  "expected_close_date": "2026-03-31"
 }
 
 
@@ -115,6 +115,7 @@ Content-Type: application/json
 
 {
   "customer_id": 1,
+  "subject": "新規システム提案",
   "type": "訪問",
   "description": "新規システムの提案を実施",
   "activity_date": "2026-02-23"
@@ -145,3 +146,4 @@ Content-Type: application/json
 ### ログアウト
 POST {{baseUrl}}/logout
 Authorization: Bearer {{token}}
+
