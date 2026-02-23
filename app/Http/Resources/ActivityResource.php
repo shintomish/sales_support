@@ -12,6 +12,7 @@ class ActivityResource extends JsonResource
         return [
             'id' => $this->id,
             'customer_id' => $this->customer_id,
+            'subject' => $this->subject,  // ← 追加
             'type' => $this->type,
             'description' => $this->description,
             'activity_date' => $this->activity_date,

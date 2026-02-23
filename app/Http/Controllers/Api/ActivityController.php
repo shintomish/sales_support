@@ -19,10 +19,13 @@ class ActivityController extends Controller
     {
         $validated = $request->validate([
             'customer_id' => 'required|exists:customers,id',
+            'subject' => 'required|string|max:255',  // ← 追加
             'type' => 'required|in:電話,メール,訪問,その他',
             'description' => 'required|string',
             'activity_date' => 'required|date',
         ]);
+        // user_id を追加
+        $validated['user_id'] = $request->user()->id;
 
         $activity = Activity::create($validated);
         return new ActivityResource($activity);

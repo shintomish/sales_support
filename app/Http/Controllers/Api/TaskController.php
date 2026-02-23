@@ -23,6 +23,9 @@ class TaskController extends Controller
             'status' => 'required|in:未着手,進行中,完了',
             'due_date' => 'nullable|date',
         ]);
+        
+        // user_id を追加
+        $validated['user_id'] = $request->user()->id;
 
         $task = Task::create($validated);
         return new TaskResource($task);

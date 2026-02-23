@@ -1,0 +1,147 @@
+### 変数定義
+@baseUrl = http://localhost:8000/api/v1
+@token = 
+
+### ===== 認証 =====
+
+### ログイン
+POST {{baseUrl}}/login
+Content-Type: application/json
+
+{
+  "email": "sales@gmail.com",
+  "password": "password"
+}
+
+### ログイン後、上記のレスポンスからtokenをコピーして @token に貼り付けてください
+
+
+### ===== 認証確認 =====
+
+### ログイン中のユーザー情報取得
+GET {{baseUrl}}/me
+Authorization: Bearer {{token}}
+
+
+### ===== 顧客管理 =====
+
+### 顧客一覧取得
+GET {{baseUrl}}/customers
+Authorization: Bearer {{token}}
+
+### 顧客詳細取得
+GET {{baseUrl}}/customers/1
+Authorization: Bearer {{token}}
+
+### 顧客新規作成
+POST {{baseUrl}}/customers
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "company_name": "新規テスト株式会社",
+  "industry": "IT",
+  "phone": "03-9999-9999",
+  "address": "東京都新宿区"
+}
+
+### 顧客更新
+PUT {{baseUrl}}/customers/1
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "company_name": "株式会社サンプル商事（更新）",
+  "industry": "製造業",
+  "phone": "03-1234-5678",
+  "address": "東京都千代田区丸の内1-1-1"
+}
+
+### 顧客削除
+DELETE {{baseUrl}}/customers/999
+Authorization: Bearer {{token}}
+
+
+### ===== 担当者管理 =====
+
+### 担当者一覧取得
+GET {{baseUrl}}/contacts
+Authorization: Bearer {{token}}
+
+### 担当者新規作成
+POST {{baseUrl}}/contacts
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "customer_id": 1,
+  "name": "テスト太郎",
+  "email": "test@example.com",
+  "phone": "090-1234-5678",
+  "position": "担当者"
+}
+
+
+### ===== 商談管理 =====
+
+### 商談一覧取得
+GET {{baseUrl}}/deals
+Authorization: Bearer {{token}}
+
+### 商談新規作成
+POST {{baseUrl}}/deals
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "customer_id": 1,
+  "title": "新規システム導入案件",
+  "amount": 5000000,
+  "status": "見込み",
+  "close_date": "2026-03-31"
+}
+
+
+### ===== 活動履歴 =====
+
+### 活動履歴一覧取得
+GET {{baseUrl}}/activities
+Authorization: Bearer {{token}}
+
+### 活動履歴新規作成
+POST {{baseUrl}}/activities
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "customer_id": 1,
+  "type": "訪問",
+  "description": "新規システムの提案を実施",
+  "activity_date": "2026-02-23"
+}
+
+
+### ===== タスク管理 =====
+
+### タスク一覧取得
+GET {{baseUrl}}/tasks
+Authorization: Bearer {{token}}
+
+### タスク新規作成
+POST {{baseUrl}}/tasks
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "title": "見積書作成",
+  "description": "新規システム導入の見積書を作成する",
+  "status": "未着手",
+  "due_date": "2026-02-28"
+}
+
+
+### ===== ログアウト =====
+
+### ログアウト
+POST {{baseUrl}}/logout
+Authorization: Bearer {{token}}

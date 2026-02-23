@@ -19,38 +19,41 @@ class DealController extends Controller
     {
         $validated = $request->validate([
             'customer_id' => 'required|exists:customers,id',
-            'name' => 'required|string|max:255',
-            'email' => 'nullable|email|max:255',
-            'phone' => 'nullable|string|max:20',
-            'position' => 'nullable|string|max:100',
+            'title' => 'required|string|max:255',
+            'amount' => 'nullable|numeric|min:0',
+            'status' => 'required|in:新規,提案,交渉,成約,失注',
+            'expected_close_date' => 'nullable|date',
         ]);
+        
+        // user_id を追加
+        $validated['user_id'] = $request->user()->id;
 
-        $contact = Contact::create($validated);
-        return new ContactResource($contact);
+        $deal = Deal::create($validated);
+        return new DealResource($deal);
     }
 
-    public function show(Contact $contact)
+    public function show(Deal $deal)
     {
-        return new ContactResource($contact);
+        return new DealResource($deal);
     }
 
-    public function update(Request $request, Contact $contact)
+    public function update(Request $request, Deal $deal)
     {
         $validated = $request->validate([
             'customer_id' => 'required|exists:customers,id',
-            'name' => 'required|string|max:255',
-            'email' => 'nullable|email|max:255',
-            'phone' => 'nullable|string|max:20',
-            'position' => 'nullable|string|max:100',
+            'title' => 'required|string|max:255',
+            'amount' => 'nullable|numeric|min:0',
+            'status' => 'required|in:新規,提案,交渉,成約,失注',
+            'expected_close_date' => 'nullable|date',
         ]);
 
-        $contact->update($validated);
-        return new ContactResource($contact);
+        $deal->update($validated);
+        return new DealResource($deal);
     }
 
-    public function destroy(Contact $contact)
+    public function destroy(Deal $deal)
     {
-        $contact->delete();
+        $deal->delete();
         return response()->json(null, 204);
     }
 }
