@@ -28,4 +28,7 @@ Thumbs.db
 public/favicon.ico:com.dropbox.attrs
 public/favicon.ico_org
 api-test.http
-api-test.http
+
+# local docker / xdebug
+Dockerfile
+docker/
