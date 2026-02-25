@@ -7,6 +7,7 @@ use App\Http\Controllers\Api\ContactController;
 use App\Http\Controllers\Api\DealController;
 use App\Http\Controllers\Api\ActivityController;
 use App\Http\Controllers\Api\TaskController;
+use App\Http\Controllers\Api\BusinessCardController;
 
 // ── 認証不要 ────────────────────────────────────────
 Route::prefix('v1')->group(function () {
@@ -58,4 +59,12 @@ Route::prefix('v1')->middleware('auth:sanctum')->group(function () {
         'update' => 'api.tasks.update',
         'destroy' => 'api.tasks.destroy',
     ]);
+
+    // 名刺OCR
+    Route::apiResource('cards', BusinessCardController::class)->names([
+        'index' => 'api.cards.index',
+        'store' => 'api.cards.store',
+        'show' => 'api.cards.show',
+        'destroy' => 'api.cards.destroy',
+    ])->only(['index', 'store', 'show', 'destroy']); // updateは不要
 });

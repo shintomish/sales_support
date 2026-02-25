@@ -32,3 +32,4 @@ api-test.http
 # local docker / xdebug
 Dockerfile
 docker/
+storage/credentials/
