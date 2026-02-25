@@ -27,6 +27,8 @@ Thumbs.db
 /mysql-data
 public/favicon.ico:com.dropbox.attrs
 public/favicon.ico_org
+
+# API test file
 api-test.http
 
 # local docker / xdebug
