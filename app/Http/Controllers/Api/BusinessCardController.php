@@ -15,6 +15,7 @@ use Google\Cloud\Vision\V1\Feature;
 use Google\Cloud\Vision\V1\AnnotateImageRequest;  // ← この行を追加
 use Google\Cloud\Vision\V1\BatchAnnotateImagesRequest;  // ← この行を追加
 use App\Services\ClaudeService;
+use App\Services\BusinessCardRegistrationService;
 
 class BusinessCardController extends Controller
 {
@@ -131,7 +132,34 @@ class BusinessCardController extends Controller
             ]);
             \Log::info('Database saved, ID: ' . $card->id);
 
-            return new BusinessCardResource($card);
+            // return new BusinessCardResource($card);
+            // 5. 顧客・担当者を自動登録
+            \Log::info('Starting auto-registration...');
+            $registrationService = new BusinessCardRegistrationService();
+            $result = $registrationService->register($card);
+            \Log::info('Auto-registration completed', [
+                'customer_id' => $result['customer']->id,
+                'contact_id' => $result['contact']->id,
+                'is_new_customer' => $result['is_new_customer'],
+            ]);
+
+            // レスポンスに登録結果を含める
+            $card->load(['customer', 'contact']);
+
+            return response()->json([
+                'data' => new BusinessCardResource($card),
+                'registration' => [
+                    'customer' => [
+                        'id' => $result['customer']->id,
+                        'name' => $result['customer']->company_name,
+                        'is_new' => $result['is_new_customer'],
+                    ],
+                    'contact' => [
+                        'id' => $result['contact']->id,
+                        'name' => $result['contact']->name,
+                    ],
+                ],
+            ], 201);
 
         } catch (\Exception $e) {
             \Log::error('Exception occurred: ' . $e->getMessage());
