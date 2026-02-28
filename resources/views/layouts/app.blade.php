@@ -503,6 +503,10 @@
             class="sidebar-link {{ request()->is('tasks*') ? 'active' : '' }}">
                 <i class="bi bi-check2-square"></i>タスク管理
             </a>
+            <a href="{{ route('business-cards.index') }}"
+            class="sidebar-link {{ request()->is('business-cards*') ? 'active' : '' }}">
+                <i class="bi bi-credit-card-2-front"></i>名刺管理
+            </a>
         </div>
         <!-- {{-- ユーザー情報・ログアウト --}} -->
         <div style="position: absolute; bottom: 0; left: 0; right: 0;
