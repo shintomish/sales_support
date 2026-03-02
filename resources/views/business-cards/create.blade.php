@@ -41,7 +41,7 @@
                         @csrf
 
                         <!-- ドラッグ&ドロップエリア -->
-                        <div id="dropArea" class="border border-2 border-dashed rounded p-5 text-center mb-4" 
+                        <div id="dropArea" class="border border-2 border-dashed rounded p-5 text-center mb-4"
                              style="background-color: #f8f9fa; cursor: pointer;">
                             <i class="bi bi-cloud-upload" style="font-size: 3rem; color: #6c757d;"></i>
                             <p class="mt-3 mb-2">
@@ -51,10 +51,10 @@
                             <label for="fileInput" class="btn btn-primary">
                                 <i class="bi bi-file-earmark-image"></i> ファイルを選択
                             </label>
-                            <input type="file" 
-                                   id="fileInput" 
-                                   name="images[]" 
-                                   multiple 
+                            <input type="file"
+                                   id="fileInput"
+                                   name="images[]"
+                                   multiple
                                    accept="image/jpeg,image/png,image/jpg"
                                    style="display: none;">
                             <p class="text-muted small mt-3 mb-0">
@@ -75,6 +75,16 @@
                             <button type="submit" id="submitBtn" class="btn btn-primary btn-lg ms-auto" style="display: none;">
                                 <i class="bi bi-upload"></i> <span id="fileCount">0</span>件の名刺をアップロード
                             </button>
+                        </div>
+                        <!-- プログレスバー（追加） -->
+                        <div id="progressArea" style="display: none;" class="mt-4">
+                            <p class="text-center mb-2" id="progressText">アップロード中...</p>
+                            <div class="progress" style="height: 25px;">
+                                <div id="progressBar"
+                                    class="progress-bar progress-bar-striped progress-bar-animated"
+                                    role="progressbar"
+                                    style="width: 0%;">0%</div>
+                            </div>
                         </div>
                     </form>
                 </div>
@@ -153,14 +163,61 @@ clearBtn.addEventListener('click', () => {
 
 // フォーム送信前にファイルをセット
 document.getElementById('uploadForm').addEventListener('submit', (e) => {
+    e.preventDefault();
+
     if (selectedFiles.length === 0) {
-        e.preventDefault();
         alert('ファイルを選択してください');
         return;
     }
+
     const dataTransfer = new DataTransfer();
     selectedFiles.forEach(file => dataTransfer.items.add(file));
     fileInput.files = dataTransfer.files;
+
+    // UI切り替え
+    submitBtn.disabled = true;
+    clearBtn.disabled = true;
+    document.getElementById('progressArea').style.display = 'block';
+
+    // プログレスバーをXHRで送信
+    const formData = new FormData(document.getElementById('uploadForm'));
+    const xhr = new XMLHttpRequest();
+
+    xhr.upload.addEventListener('progress', (e) => {
+        if (e.lengthComputable) {
+            const percent = Math.round((e.loaded / e.total) * 100);
+            const bar = document.getElementById('progressBar');
+            bar.style.width = percent + '%';
+            bar.textContent = percent + '%';
+            document.getElementById('progressText').textContent =
+                `アップロード中... ${percent}%`;
+        }
+    });
+
+    xhr.upload.addEventListener('load', () => {
+        const bar = document.getElementById('progressBar');
+        bar.style.width = '100%';
+        bar.textContent = '100%';
+        document.getElementById('progressText').textContent =
+            'OCR処理中... しばらくお待ちください';
+        // アニメーションを維持してOCR中であることを示す
+    });
+
+    xhr.addEventListener('load', () => {
+        // サーバー処理完了 → リダイレクト先に遷移
+        const redirect = xhr.responseURL;
+        window.location.href = redirect;
+    });
+
+    xhr.addEventListener('error', () => {
+        alert('アップロードに失敗しました');
+        submitBtn.disabled = false;
+        clearBtn.disabled = false;
+        document.getElementById('progressArea').style.display = 'none';
+    });
+
+    xhr.open('POST', document.getElementById('uploadForm').action);
+    xhr.send(formData);
 });
 
 // ファイル処理
@@ -184,7 +241,7 @@ function handleFiles(files) {
 // プレビュー更新
 function updatePreview() {
     previewArea.innerHTML = '';
-    
+
     if (selectedFiles.length === 0) {
         previewArea.style.display = 'none';
         submitBtn.style.display = 'none';
@@ -200,10 +257,10 @@ function updatePreview() {
     selectedFiles.forEach((file, index) => {
         const col = document.createElement('div');
         col.className = 'col-md-3';
-        
+
         const card = document.createElement('div');
         card.className = 'card';
-        
+
         const reader = new FileReader();
         reader.onload = (e) => {
             card.innerHTML = `
@@ -218,7 +275,7 @@ function updatePreview() {
             `;
         };
         reader.readAsDataURL(file);
-        
+
         col.appendChild(card);
         previewArea.appendChild(col);
     });

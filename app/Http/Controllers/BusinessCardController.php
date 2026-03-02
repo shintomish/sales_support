@@ -108,22 +108,28 @@ class BusinessCardController extends Controller
 
         foreach ($request->file('images') as $image) {
             try {
-                $path = $image->store('business-cards', 'public');
+                // Api\BusinessCardControllerの処理を直接呼び出す
+                $apiController = new \App\Http\Controllers\Api\BusinessCardController();
+                $singleRequest = Request::create('/api/v1/cards', 'POST');
+                $singleRequest->setUserResolver(fn() => $request->user());
+                $singleRequest->files->set('image', $image);
 
-                BusinessCard::create([
-                    'image_path' => $path,
-                    'status' => 'pending',
-                    'user_id' => auth()->id(),
-                ]);
+                $response = $apiController->store($singleRequest);
+                $data = json_decode($response->getContent(), true);
 
-                $uploadedCount++;
+                if ($response->getStatusCode() === 201) {
+                    $uploadedCount++;
+                } else {
+                    $errors[] = $image->getClientOriginalName() . ': ' . ($data['message'] ?? '失敗');
+                }
             } catch (\Exception $e) {
                 $errors[] = $image->getClientOriginalName() . ': ' . $e->getMessage();
             }
         }
+
         if (count($errors) > 0) {
             return redirect()->route('business-cards.index')
-                ->with('warning', "{$uploadedCount}件アップロード成功、" . count($errors) . "件失敗")
+                ->with('warning', "{$uploadedCount}件成功、" . count($errors) . "件失敗")
                 ->with('errors', $errors);
         }
 
