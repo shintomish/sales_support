@@ -110,186 +110,189 @@
 
 @push('scripts')
 <script>
-const dropArea = document.getElementById('dropArea');
-const fileInput = document.getElementById('fileInput');
-const previewArea = document.getElementById('previewArea');
-const submitBtn = document.getElementById('submitBtn');
-const clearBtn = document.getElementById('clearBtn');
-const fileCount = document.getElementById('fileCount');
+document.addEventListener('DOMContentLoaded', () => {
 
-let selectedFiles = [];
+    const dropArea = document.getElementById('dropArea');
+    const fileInput = document.getElementById('fileInput');
+    const previewArea = document.getElementById('previewArea');
+    const submitBtn = document.getElementById('submitBtn');
+    const clearBtn = document.getElementById('clearBtn');
+    const fileCount = document.getElementById('fileCount');
 
-// ドラッグ&ドロップイベント
-dropArea.addEventListener('click', (e) => {
-    if (e.target.tagName !== 'LABEL' && e.target.tagName !== 'INPUT') {
-        fileInput.click();
-    }
-});
+    let selectedFiles = [];
 
-// ドラッグ関連はdocumentレベルでも防ぐ
-document.addEventListener('dragover', (e) => e.preventDefault());
-document.addEventListener('drop', (e) => e.preventDefault());
-
-dropArea.addEventListener('dragover', (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    dropArea.style.backgroundColor = '#e9ecef';
-});
-
-dropArea.addEventListener('dragleave', (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    dropArea.style.backgroundColor = '#f8f9fa';
-});
-
-dropArea.addEventListener('drop', (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    dropArea.style.backgroundColor = '#f8f9fa';
-    handleFiles(e.dataTransfer.files);
-});
-
-// ファイル選択イベント
-fileInput.addEventListener('change', (e) => {
-    handleFiles(e.target.files);
-});
-
-// クリアボタン
-clearBtn.addEventListener('click', () => {
-    selectedFiles = [];
-    fileInput.value = '';
-    updatePreview();
-});
-
-// フォーム送信前にファイルをセット
-document.getElementById('uploadForm').addEventListener('submit', (e) => {
-    e.preventDefault();
-
-    if (selectedFiles.length === 0) {
-        alert('ファイルを選択してください');
-        return;
-    }
-
-    const dataTransfer = new DataTransfer();
-    selectedFiles.forEach(file => dataTransfer.items.add(file));
-    fileInput.files = dataTransfer.files;
-
-    // UI切り替え
-    submitBtn.disabled = true;
-    clearBtn.disabled = true;
-    document.getElementById('progressArea').style.display = 'block';
-
-    // プログレスバーをXHRで送信
-    const formData = new FormData(document.getElementById('uploadForm'));
-    const xhr = new XMLHttpRequest();
-
-    xhr.upload.addEventListener('progress', (e) => {
-        if (e.lengthComputable) {
-            const percent = Math.round((e.loaded / e.total) * 100);
-            const bar = document.getElementById('progressBar');
-            bar.style.width = percent + '%';
-            bar.textContent = percent + '%';
-            document.getElementById('progressText').textContent =
-                `アップロード中... ${percent}%`;
+    // ドラッグ&ドロップイベント
+    dropArea.addEventListener('click', (e) => {
+        if (e.target.tagName !== 'LABEL' && e.target.tagName !== 'INPUT') {
+            fileInput.click();
         }
     });
 
-    xhr.upload.addEventListener('load', () => {
-        const bar = document.getElementById('progressBar');
-        bar.style.width = '100%';
-        bar.textContent = '100%';
-        document.getElementById('progressText').textContent =
-            'OCR処理中... しばらくお待ちください';
-        // アニメーションを維持してOCR中であることを示す
+    // ドラッグ関連はdocumentレベルでも防ぐ
+    document.addEventListener('dragover', (e) => e.preventDefault());
+    document.addEventListener('drop', (e) => e.preventDefault());
+
+    dropArea.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        dropArea.style.backgroundColor = '#e9ecef';
     });
 
-    xhr.addEventListener('load', () => {
-        if (xhr.status === 200 || xhr.status === 302) {
-            window.location.href = "{{ route('business-cards.index') }}";
-        } else {
-            alert('アップロードに失敗しました（status: ' + xhr.status + '）');
+    dropArea.addEventListener('dragleave', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        dropArea.style.backgroundColor = '#f8f9fa';
+    });
+
+    dropArea.addEventListener('drop', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        dropArea.style.backgroundColor = '#f8f9fa';
+        handleFiles(e.dataTransfer.files);
+    });
+
+    // ファイル選択イベント
+    fileInput.addEventListener('change', (e) => {
+        handleFiles(e.target.files);
+    });
+
+    // クリアボタン
+    clearBtn.addEventListener('click', () => {
+        selectedFiles = [];
+        fileInput.value = '';
+        updatePreview();
+    });
+
+    // フォーム送信前にファイルをセット
+    document.getElementById('uploadForm').addEventListener('submit', (e) => {
+        e.preventDefault();
+
+        if (selectedFiles.length === 0) {
+            alert('ファイルを選択してください');
+            return;
+        }
+
+        const dataTransfer = new DataTransfer();
+        selectedFiles.forEach(file => dataTransfer.items.add(file));
+        fileInput.files = dataTransfer.files;
+
+        // UI切り替え
+        submitBtn.disabled = true;
+        clearBtn.disabled = true;
+        document.getElementById('progressArea').style.display = 'block';
+
+        // プログレスバーをXHRで送信
+        const formData = new FormData(document.getElementById('uploadForm'));
+        const xhr = new XMLHttpRequest();
+
+        xhr.upload.addEventListener('progress', (e) => {
+            if (e.lengthComputable) {
+                const percent = Math.round((e.loaded / e.total) * 100);
+                const bar = document.getElementById('progressBar');
+                bar.style.width = percent + '%';
+                bar.textContent = percent + '%';
+                document.getElementById('progressText').textContent =
+                    `アップロード中... ${percent}%`;
+            }
+        });
+
+        xhr.upload.addEventListener('load', () => {
+            const bar = document.getElementById('progressBar');
+            bar.style.width = '100%';
+            bar.textContent = '100%';
+            document.getElementById('progressText').textContent =
+                'OCR処理中... しばらくお待ちください';
+            // アニメーションを維持してOCR中であることを示す
+        });
+
+        xhr.addEventListener('load', () => {
+            if (xhr.status === 200 || xhr.status === 302) {
+                window.location.href = "{{ route('business-cards.index') }}";
+            } else {
+                alert('アップロードに失敗しました（status: ' + xhr.status + '）');
+                submitBtn.disabled = false;
+                clearBtn.disabled = false;
+                document.getElementById('progressArea').style.display = 'none';
+            }
+        });
+
+        xhr.addEventListener('error', () => {
+            alert('アップロードに失敗しました');
             submitBtn.disabled = false;
             clearBtn.disabled = false;
             document.getElementById('progressArea').style.display = 'none';
-        }
+        });
+
+        xhr.open('POST', document.getElementById('uploadForm').action);
+        xhr.send(formData);
     });
 
-    xhr.addEventListener('error', () => {
-        alert('アップロードに失敗しました');
-        submitBtn.disabled = false;
-        clearBtn.disabled = false;
-        document.getElementById('progressArea').style.display = 'none';
-    });
+    // ファイル処理
+    function handleFiles(files) {
+        const newFiles = Array.from(files).filter(file => {
+            if (!file.type.match('image/(jpeg|png|jpg)')) {
+                alert(`${file.name} は対応していない形式です`);
+                return false;
+            }
+            if (file.size > 10 * 1024 * 1024) {
+                alert(`${file.name} は10MBを超えています`);
+                return false;
+            }
+            return true;
+        });
 
-    xhr.open('POST', document.getElementById('uploadForm').action);
-    xhr.send(formData);
-});
-
-// ファイル処理
-function handleFiles(files) {
-    const newFiles = Array.from(files).filter(file => {
-        if (!file.type.match('image/(jpeg|png|jpg)')) {
-            alert(`${file.name} は対応していない形式です`);
-            return false;
-        }
-        if (file.size > 10 * 1024 * 1024) {
-            alert(`${file.name} は10MBを超えています`);
-            return false;
-        }
-        return true;
-    });
-
-    selectedFiles = [...selectedFiles, ...newFiles];
-    updatePreview();
-}
-
-// プレビュー更新
-function updatePreview() {
-    previewArea.innerHTML = '';
-
-    if (selectedFiles.length === 0) {
-        previewArea.style.display = 'none';
-        submitBtn.style.display = 'none';
-        clearBtn.style.display = 'none';
-        return;
+        selectedFiles = [...selectedFiles, ...newFiles];
+        updatePreview();
     }
 
-    previewArea.style.display = 'flex';
-    submitBtn.style.display = 'block';
-    clearBtn.style.display = 'block';
-    fileCount.textContent = selectedFiles.length;
+    // プレビュー更新
+    function updatePreview() {
+        previewArea.innerHTML = '';
 
-    selectedFiles.forEach((file, index) => {
-        const col = document.createElement('div');
-        col.className = 'col-md-3';
+        if (selectedFiles.length === 0) {
+            previewArea.style.display = 'none';
+            submitBtn.style.display = 'none';
+            clearBtn.style.display = 'none';
+            return;
+        }
 
-        const card = document.createElement('div');
-        card.className = 'card';
+        previewArea.style.display = 'flex';
+        submitBtn.style.display = 'block';
+        clearBtn.style.display = 'block';
+        fileCount.textContent = selectedFiles.length;
 
-        const reader = new FileReader();
-        reader.onload = (e) => {
-            card.innerHTML = `
-                <img src="${e.target.result}" class="card-img-top" style="height: 150px; object-fit: cover;">
-                <div class="card-body p-2">
-                    <small class="text-muted d-block text-truncate">${file.name}</small>
-                    <small class="text-muted">${(file.size / 1024).toFixed(1)} KB</small>
-                    <button type="button" class="btn btn-sm btn-danger w-100 mt-2" onclick="removeFile(${index})">
-                        <i class="bi bi-trash"></i> 削除
-                    </button>
-                </div>
-            `;
-        };
-        reader.readAsDataURL(file);
+        selectedFiles.forEach((file, index) => {
+            const col = document.createElement('div');
+            col.className = 'col-md-3';
 
-        col.appendChild(card);
-        previewArea.appendChild(col);
-    });
-}
+            const card = document.createElement('div');
+            card.className = 'card';
 
-// ファイル削除
-function removeFile(index) {
-    selectedFiles.splice(index, 1);
-    updatePreview();
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                card.innerHTML = `
+                    <img src="${e.target.result}" class="card-img-top" style="height: 150px; object-fit: cover;">
+                    <div class="card-body p-2">
+                        <small class="text-muted d-block text-truncate">${file.name}</small>
+                        <small class="text-muted">${(file.size / 1024).toFixed(1)} KB</small>
+                        <button type="button" class="btn btn-sm btn-danger w-100 mt-2" onclick="removeFile(${index})">
+                            <i class="bi bi-trash"></i> 削除
+                        </button>
+                    </div>
+                `;
+            };
+            reader.readAsDataURL(file);
+
+            col.appendChild(card);
+            previewArea.appendChild(col);
+        });
+    }
+
+    // ファイル削除
+    function removeFile(index) {
+        selectedFiles.splice(index, 1);
+        updatePreview();
+    }
 }
 </script>
 @endpush
