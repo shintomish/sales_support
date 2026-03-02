@@ -79,4 +79,58 @@ class BusinessCardController extends Controller
         return redirect()->route('business-cards.index')
             ->with('success', '名刺を削除しました');
     }
+
+    /**
+     * アップロード画面
+     */
+    public function create()
+    {
+        return view('business-cards.create');
+    }
+
+    /**
+     * アップロード処理
+     */
+    public function store(Request $request)
+    {
+        $request->validate([
+            'images' => 'required',
+            'images.*' => 'required|image|mimes:jpeg,png,jpg|max:10240',
+        ], [
+            'images.required' => '名刺画像を選択してください',
+            'images.*.image' => '画像ファイルを選択してください',
+            'images.*.mimes' => 'JPEG、PNG、JPG形式の画像を選択してください',
+            'images.*.max' => '画像サイズは10MB以下にしてください',
+        ]);
+
+        $uploadedCount = 0;
+        $errors = [];
+
+        foreach ($request->file('images') as $image) {
+            try {
+                // API経由でアップロード処理を実行
+                $response = \Http::withToken($request->user()->currentAccessToken()->plainTextToken ?? '')
+                    ->attach('image', file_get_contents($image->getRealPath()), $image->getClientOriginalName())
+                    ->post(url('/api/v1/cards'));
+
+                if ($response->successful()) {
+                    $uploadedCount++;
+                } else {
+                    $errors[] = $image->getClientOriginalName() . ': アップロード失敗';
+                }
+            } catch (\Exception $e) {
+                $errors[] = $image->getClientOriginalName() . ': ' . $e->getMessage();
+            }
+        }
+
+        if (count($errors) > 0) {
+            return redirect()->route('business-cards.index')
+                ->with('warning', "{$uploadedCount}件アップロード成功、" . count($errors) . "件失敗")
+                ->with('errors', $errors);
+        }
+
+        return redirect()->route('business-cards.index')
+            ->with('success', "{$uploadedCount}件の名刺をアップロードしました");
+    }
+
 }

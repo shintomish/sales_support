@@ -4,6 +4,9 @@
 <div class="container">
     <div class="d-flex justify-content-between align-items-center mb-4">
         <h2>名刺管理</h2>
+        <a href="{{ route('business-cards.create') }}" class="btn btn-primary">
+            <i class="fas fa-plus"></i> アップロード
+        </a>
     </div>
 
     @if(session('success'))
