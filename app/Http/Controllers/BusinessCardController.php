@@ -108,21 +108,19 @@ class BusinessCardController extends Controller
 
         foreach ($request->file('images') as $image) {
             try {
-                // API経由でアップロード処理を実行
-                $response = \Http::withToken($request->user()->currentAccessToken()->plainTextToken ?? '')
-                    ->attach('image', file_get_contents($image->getRealPath()), $image->getClientOriginalName())
-                    ->post(url('/api/v1/cards'));
+                $path = $image->store('business-cards', 'public');
 
-                if ($response->successful()) {
-                    $uploadedCount++;
-                } else {
-                    $errors[] = $image->getClientOriginalName() . ': アップロード失敗';
-                }
+                BusinessCard::create([
+                    'image_path' => $path,
+                    'status' => 'pending',
+                    'user_id' => auth()->id(),
+                ]);
+
+                $uploadedCount++;
             } catch (\Exception $e) {
                 $errors[] = $image->getClientOriginalName() . ': ' . $e->getMessage();
             }
         }
-
         if (count($errors) > 0) {
             return redirect()->route('business-cards.index')
                 ->with('warning', "{$uploadedCount}件アップロード成功、" . count($errors) . "件失敗")
