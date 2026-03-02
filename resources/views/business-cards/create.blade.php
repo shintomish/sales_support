@@ -110,24 +110,31 @@ const fileCount = document.getElementById('fileCount');
 let selectedFiles = [];
 
 // ドラッグ&ドロップイベント
-// 修正後：labelのクリックと競合しないよう、dropAreaのクリックをlabel以外に限定
 dropArea.addEventListener('click', (e) => {
     if (e.target.tagName !== 'LABEL' && e.target.tagName !== 'INPUT') {
         fileInput.click();
     }
 });
 
+// ドラッグ関連はdocumentレベルでも防ぐ
+document.addEventListener('dragover', (e) => e.preventDefault());
+document.addEventListener('drop', (e) => e.preventDefault());
+
 dropArea.addEventListener('dragover', (e) => {
     e.preventDefault();
+    e.stopPropagation();
     dropArea.style.backgroundColor = '#e9ecef';
 });
 
-dropArea.addEventListener('dragleave', () => {
+dropArea.addEventListener('dragleave', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
     dropArea.style.backgroundColor = '#f8f9fa';
 });
 
 dropArea.addEventListener('drop', (e) => {
     e.preventDefault();
+    e.stopPropagation();
     dropArea.style.backgroundColor = '#f8f9fa';
     handleFiles(e.dataTransfer.files);
 });
@@ -144,15 +151,25 @@ clearBtn.addEventListener('click', () => {
     updatePreview();
 });
 
+// フォーム送信前にファイルをセット
+document.getElementById('uploadForm').addEventListener('submit', (e) => {
+    if (selectedFiles.length === 0) {
+        e.preventDefault();
+        alert('ファイルを選択してください');
+        return;
+    }
+    const dataTransfer = new DataTransfer();
+    selectedFiles.forEach(file => dataTransfer.items.add(file));
+    fileInput.files = dataTransfer.files;
+});
+
 // ファイル処理
 function handleFiles(files) {
     const newFiles = Array.from(files).filter(file => {
-        // 画像ファイルのみ
         if (!file.type.match('image/(jpeg|png|jpg)')) {
             alert(`${file.name} は対応していない形式です`);
             return false;
         }
-        // 10MB以下
         if (file.size > 10 * 1024 * 1024) {
             alert(`${file.name} は10MBを超えています`);
             return false;
@@ -205,11 +222,6 @@ function updatePreview() {
         col.appendChild(card);
         previewArea.appendChild(col);
     });
-
-    // FileListオブジェクトを更新
-    const dataTransfer = new DataTransfer();
-    selectedFiles.forEach(file => dataTransfer.items.add(file));
-    fileInput.files = dataTransfer.files;
 }
 
 // ファイル削除
