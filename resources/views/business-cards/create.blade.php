@@ -224,7 +224,8 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         xhr.open('POST', document.getElementById('uploadForm').action);
-        xhr.setRequestHeader('X-CSRF-TOKEN', document.querySelector('meta[name="csrf-token"]')?.content || document.querySelector('input[name="_token"]').value);
+        xhr.withCredentials = true;
+        xhr.setRequestHeader('X-CSRF-TOKEN', document.querySelector('input[name="_token"]').value);
         xhr.send(formData);
     });
 
