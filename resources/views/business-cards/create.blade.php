@@ -293,7 +293,7 @@ document.addEventListener('DOMContentLoaded', () => {
         selectedFiles.splice(index, 1);
         updatePreview();
     }
-}
+});
 </script>
 @endpush
 @endsection
