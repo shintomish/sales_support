@@ -110,7 +110,12 @@ const fileCount = document.getElementById('fileCount');
 let selectedFiles = [];
 
 // ドラッグ&ドロップイベント
-dropArea.addEventListener('click', () => fileInput.click());
+// 修正後：labelのクリックと競合しないよう、dropAreaのクリックをlabel以外に限定
+dropArea.addEventListener('click', (e) => {
+    if (e.target.tagName !== 'LABEL' && e.target.tagName !== 'INPUT') {
+        fileInput.click();
+    }
+});
 
 dropArea.addEventListener('dragover', (e) => {
     e.preventDefault();
