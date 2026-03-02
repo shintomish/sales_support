@@ -204,9 +204,14 @@ document.getElementById('uploadForm').addEventListener('submit', (e) => {
     });
 
     xhr.addEventListener('load', () => {
-        // サーバー処理完了 → リダイレクト先に遷移
-        const redirect = xhr.responseURL;
-        window.location.href = redirect;
+        if (xhr.status === 200 || xhr.status === 302) {
+            window.location.href = "{{ route('business-cards.index') }}";
+        } else {
+            alert('アップロードに失敗しました（status: ' + xhr.status + '）');
+            submitBtn.disabled = false;
+            clearBtn.disabled = false;
+            document.getElementById('progressArea').style.display = 'none';
+        }
     });
 
     xhr.addEventListener('error', () => {
