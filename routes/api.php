@@ -15,7 +15,7 @@ Route::prefix('v1')->group(function () {
 });
 
 // ── 認証必須 ────────────────────────────────────────
-Route::prefix('v1')->middleware('auth:sanctum')->group(function () {
+Route::prefix('v1')->middleware(['web', 'auth'])->group(function () {
     Route::post('logout', [AuthController::class, 'logout']);
     Route::get('me', [AuthController::class, 'me']);
 
