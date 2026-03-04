@@ -170,19 +170,35 @@ class BusinessCardController extends Controller
             ], 500);
         }
     }
-    public function show(BusinessCard $businessCard)
+
+    // ✅ 修正後
+    public function show(string $id)
     {
-        return new BusinessCardResource($businessCard->load(['customer', 'contact']));
+        $card = BusinessCard::with(['customer', 'contact'])->findOrFail($id);
+        return new BusinessCardResource($card);
     }
 
-    public function destroy(BusinessCard $businessCard)
+    // ✅ update
+    public function update(Request $request, string $id)
     {
-        // 画像ファイルも削除
-        if ($businessCard->image_path) {
-            \Storage::disk('public')->delete($businessCard->image_path);
-        }
+        $card = BusinessCard::findOrFail($id);
+        $card->update($request->only([
+            'company_name', 'person_name', 'department', 'position',
+            'postal_code', 'address', 'phone', 'mobile', 'fax',
+            'email', 'website', 'status',
+        ]));
+        return new BusinessCardResource($card);
+    }
 
-        $businessCard->delete();
+    // ✅ destroy
+    public function destroy(string $id)
+    {
+        $card = BusinessCard::findOrFail($id);
+        if ($card->image_path) {
+            \Storage::disk('public')->delete($card->image_path);
+        }
+        $card->delete();
         return response()->json(null, 204);
     }
+
 }

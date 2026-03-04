@@ -15,7 +15,7 @@ Route::prefix('v1')->group(function () {
 });
 
 // ── 認証必須 ────────────────────────────────────────
-Route::prefix('v1')->middleware(['web', 'auth'])->group(function () {
+Route::prefix('v1')->middleware(['auth:sanctum'])->group(function () {
     Route::post('logout', [AuthController::class, 'logout']);
     Route::get('me', [AuthController::class, 'me']);
 
@@ -66,5 +66,5 @@ Route::prefix('v1')->middleware(['web', 'auth'])->group(function () {
         'store' => 'api.cards.store',
         'show' => 'api.cards.show',
         'destroy' => 'api.cards.destroy',
-    ])->only(['index', 'store', 'show', 'destroy']); // updateは不要
+    ])->only(['index', 'store', 'show', 'update','destroy']); // update追加
 });
