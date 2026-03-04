@@ -8,6 +8,7 @@ use App\Http\Controllers\Api\DealController;
 use App\Http\Controllers\Api\ActivityController;
 use App\Http\Controllers\Api\TaskController;
 use App\Http\Controllers\Api\BusinessCardController;
+use App\Http\Controllers\Api\DashboardController;
 
 // ── 認証不要 ────────────────────────────────────────
 Route::prefix('v1')->group(function () {
@@ -18,7 +19,8 @@ Route::prefix('v1')->group(function () {
 Route::prefix('v1')->middleware(['auth:sanctum'])->group(function () {
     Route::post('logout', [AuthController::class, 'logout']);
     Route::get('me', [AuthController::class, 'me']);
-
+    Route::get('dashboard', [DashboardController::class, 'index']);
+    
     // 各リソースのCRUDエンドポイント（名前にapi.を追加）
     Route::apiResource('customers', CustomerController::class)->names([
         'index' => 'api.customers.index',
