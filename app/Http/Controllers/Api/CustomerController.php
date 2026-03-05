@@ -28,6 +28,9 @@ class CustomerController extends Controller
             'industry' => 'nullable|string|max:100',
             'phone' => 'nullable|string|max:20',
             'address' => 'nullable|string',
+            'employee_count' => 'nullable|integer|min:0', // ★ 追加
+            'website'        => 'nullable|url|max:255',    // ★ 追加
+            'notes'          => 'nullable|string',          // ★ 追加
         ]);
 
         $customer = Customer::create($validated);
@@ -52,6 +55,9 @@ class CustomerController extends Controller
             'industry' => 'nullable|string|max:100',
             'phone' => 'nullable|string|max:20',
             'address' => 'nullable|string',
+            'employee_count' => 'nullable|integer|min:0', // ★ 追加
+            'website'        => 'nullable|url|max:255',    // ★ 追加
+            'notes'          => 'nullable|string',          // ★ 追加
         ]);
 
         $customer->update($validated);

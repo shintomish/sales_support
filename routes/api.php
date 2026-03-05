@@ -20,7 +20,7 @@ Route::prefix('v1')->middleware(['auth:sanctum'])->group(function () {
     Route::post('logout', [AuthController::class, 'logout']);
     Route::get('me', [AuthController::class, 'me']);
     Route::get('dashboard', [DashboardController::class, 'index']);
-    
+
     // 各リソースのCRUDエンドポイント（名前にapi.を追加）
     Route::apiResource('customers', CustomerController::class)->names([
         'index' => 'api.customers.index',
@@ -61,7 +61,8 @@ Route::prefix('v1')->middleware(['auth:sanctum'])->group(function () {
         'update' => 'api.tasks.update',
         'destroy' => 'api.tasks.destroy',
     ]);
-
+    Route::patch('tasks/{task}/status', [TaskController::class, 'updateStatus']);
+    
     // 名刺OCR
     Route::apiResource('cards', BusinessCardController::class)->names([
         'index' => 'api.cards.index',
