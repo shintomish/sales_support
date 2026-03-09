@@ -29,15 +29,16 @@ class DealController extends Controller
     {
         $validated = $request->validate([
             'customer_id'         => 'required|exists:customers,id',
-            'contact_id'          => 'nullable|exists:contacts,id',  // ★ 追加
+            'contact_id'          => 'nullable|exists:contacts,id',
             'title'               => 'required|string|max:255',
-            'amount'              => 'nullable|numeric|min:0',
+            'amount'              => 'nullable|numeric|min:0|max:999999999999',
             'status'              => 'required|in:新規,提案,交渉,成約,失注',
-            'probability'         => 'nullable|integer|min:0|max:100', // ★ 追加
+            'probability'         => 'nullable|integer|min:0|max:100',
             'expected_close_date' => 'nullable|date',
-            'actual_close_date'   => 'nullable|date',                 // ★ 追加
-            'notes'               => 'nullable|string',               // ★ 追加
-        ]);
+            'actual_close_date'   => 'nullable|date|after_or_equal:expected_close_date',
+            'notes'               => 'nullable|string|max:2000',
+        ], $this->messages());
+
         $validated['user_id'] = $request->user()->id;
         $deal = Deal::create($validated);
         return new DealResource($deal);
@@ -45,7 +46,7 @@ class DealController extends Controller
 
     public function show(Deal $deal)
     {
-        $deal->load(['customer', 'contact', 'user', 'activities']); // ★ eager load追加
+        $deal->load(['customer', 'contact', 'user', 'activities']);
         return new DealResource($deal);
     }
 
@@ -53,15 +54,16 @@ class DealController extends Controller
     {
         $validated = $request->validate([
             'customer_id'         => 'required|exists:customers,id',
-            'contact_id'          => 'nullable|exists:contacts,id',  // ★ 追加
+            'contact_id'          => 'nullable|exists:contacts,id',
             'title'               => 'required|string|max:255',
-            'amount'              => 'nullable|numeric|min:0',
+            'amount'              => 'nullable|numeric|min:0|max:999999999999',
             'status'              => 'required|in:新規,提案,交渉,成約,失注',
-            'probability'         => 'nullable|integer|min:0|max:100', // ★ 追加
+            'probability'         => 'nullable|integer|min:0|max:100',
             'expected_close_date' => 'nullable|date',
-            'actual_close_date'   => 'nullable|date',                 // ★ 追加
-            'notes'               => 'nullable|string',               // ★ 追加
-        ]);
+            'actual_close_date'   => 'nullable|date|after_or_equal:expected_close_date',
+            'notes'               => 'nullable|string|max:2000',
+        ], $this->messages());
+
         $deal->update($validated);
         return new DealResource($deal);
     }
@@ -70,5 +72,28 @@ class DealController extends Controller
     {
         $deal->delete();
         return response()->json(null, 204);
+    }
+
+    private function messages(): array
+    {
+        return [
+            'customer_id.required'             => '顧客を選択してください',
+            'customer_id.exists'               => '選択された顧客が存在しません',
+            'contact_id.exists'                => '選択された担当者が存在しません',
+            'title.required'                   => '商談名は必須です',
+            'title.max'                        => '商談名は255文字以内で入力してください',
+            'amount.numeric'                   => '金額は数値で入力してください',
+            'amount.min'                       => '金額は0以上で入力してください',
+            'amount.max'                       => '金額が大きすぎます',
+            'status.required'                  => 'ステータスを選択してください',
+            'status.in'                        => 'ステータスの値が正しくありません',
+            'probability.integer'              => '成約確度は整数で入力してください',
+            'probability.min'                  => '成約確度は0以上で入力してください',
+            'probability.max'                  => '成約確度は100以下で入力してください',
+            'expected_close_date.date'         => '予定成約日の形式が正しくありません',
+            'actual_close_date.date'           => '実際の成約日の形式が正しくありません',
+            'actual_close_date.after_or_equal' => '実際の成約日は予定成約日以降の日付を入力してください',
+            'notes.max'                        => '備考は2000文字以内で入力してください',
+        ];
     }
 }

@@ -9,67 +9,77 @@ use Illuminate\Http\Request;
 
 class CustomerController extends Controller
 {
-    /**
-     * 顧客一覧取得
-     */
-    public function index()
+    public function index(Request $request)
     {
-        $customers = Customer::paginate(20);
+        $customers = Customer::query()
+            ->when($request->search, fn($q, $s) =>
+                $q->where('company_name', 'like', "%{$s}%")
+                ->orWhere('industry', 'like', "%{$s}%")
+            )
+            ->paginate(20);
         return CustomerResource::collection($customers);
     }
 
-    /**
-     * 顧客新規作成
-     */
     public function store(Request $request)
     {
         $validated = $request->validate([
-            'company_name' => 'required|string|max:255',
-            'industry' => 'nullable|string|max:100',
-            'phone' => 'nullable|string|max:20',
-            'address' => 'nullable|string',
-            'employee_count' => 'nullable|integer|min:0', // ★ 追加
-            'website'        => 'nullable|url|max:255',    // ★ 追加
-            'notes'          => 'nullable|string',          // ★ 追加
-        ]);
+            'company_name'   => 'required|string|max:255|unique:customers,company_name',
+            'industry'       => 'nullable|string|max:100',
+            'phone'          => ['nullable', 'string', 'max:20', 'regex:/^[\d\-\+\(\)\s]+$/'],
+            'address'        => 'nullable|string|max:500',
+            'employee_count' => 'nullable|integer|min:0|max:9999999',
+            'website'        => 'nullable|url|max:255',
+            'notes'          => 'nullable|string|max:2000',
+        ], $this->messages());
 
         $customer = Customer::create($validated);
         return new CustomerResource($customer);
     }
 
-    /**
-     * 顧客詳細取得
-     */
     public function show(Customer $customer)
     {
+        $customer->load(['contacts', 'deals']);
         return new CustomerResource($customer);
     }
 
-    /**
-     * 顧客更新
-     */
     public function update(Request $request, Customer $customer)
     {
         $validated = $request->validate([
-            'company_name' => 'required|string|max:255',
-            'industry' => 'nullable|string|max:100',
-            'phone' => 'nullable|string|max:20',
-            'address' => 'nullable|string',
-            'employee_count' => 'nullable|integer|min:0', // ★ 追加
-            'website'        => 'nullable|url|max:255',    // ★ 追加
-            'notes'          => 'nullable|string',          // ★ 追加
-        ]);
+            'company_name'   => 'required|string|max:255|unique:customers,company_name,' . $customer->id,
+            'industry'       => 'nullable|string|max:100',
+            'phone'          => ['nullable', 'string', 'max:20', 'regex:/^[\d\-\+\(\)\s]+$/'],
+            'address'        => 'nullable|string|max:500',
+            'employee_count' => 'nullable|integer|min:0|max:9999999',
+            'website'        => 'nullable|url|max:255',
+            'notes'          => 'nullable|string|max:2000',
+        ], $this->messages());
 
         $customer->update($validated);
         return new CustomerResource($customer);
     }
 
-    /**
-     * 顧客削除
-     */
     public function destroy(Customer $customer)
     {
         $customer->delete();
         return response()->json(null, 204);
+    }
+
+    private function messages(): array
+    {
+        return [
+            'company_name.required' => '会社名は必須です',
+            'company_name.max'      => '会社名は255文字以内で入力してください',
+            'company_name.unique'   => 'この会社名はすでに登録されています',
+            'industry.max'          => '業種は100文字以内で入力してください',
+            'phone.regex'           => '電話番号の形式が正しくありません（例: 03-1234-5678）',
+            'phone.max'             => '電話番号は20文字以内で入力してください',
+            'address.max'           => '住所は500文字以内で入力してください',
+            'employee_count.integer'=> '従業員数は整数で入力してください',
+            'employee_count.min'    => '従業員数は0以上で入力してください',
+            'employee_count.max'    => '従業員数の値が大きすぎます',
+            'website.url'           => 'WebサイトのURLの形式が正しくありません（例: https://example.com）',
+            'website.max'           => 'WebサイトのURLは255文字以内で入力してください',
+            'notes.max'             => '備考は2000文字以内で入力してください',
+        ];
     }
 }

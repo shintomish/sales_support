@@ -30,13 +30,14 @@ class TaskController extends Controller
     {
         $validated = $request->validate([
             'title'       => 'required|string|max:255',
-            'priority'    => 'required|in:高,中,低',           // ★ 追加
+            'priority'    => 'required|in:高,中,低',
             'status'      => 'required|in:未着手,進行中,完了',
             'due_date'    => 'nullable|date',
-            'customer_id' => 'nullable|exists:customers,id',   // ★ 追加
-            'deal_id'     => 'nullable|exists:deals,id',       // ★ 追加
-            'description' => 'nullable|string',
-        ]);
+            'customer_id' => 'nullable|exists:customers,id',
+            'deal_id'     => 'nullable|exists:deals,id',
+            'description' => 'nullable|string|max:2000',
+        ], $this->messages());
+
         $validated['user_id'] = $request->user()->id;
         $task = Task::create($validated);
         return new TaskResource($task);
@@ -44,7 +45,7 @@ class TaskController extends Controller
 
     public function show(Task $task)
     {
-        $task->load(['customer', 'deal', 'user']); // ★ eager load追加
+        $task->load(['customer', 'deal', 'user']);
         return new TaskResource($task);
     }
 
@@ -52,28 +53,47 @@ class TaskController extends Controller
     {
         $validated = $request->validate([
             'title'       => 'required|string|max:255',
-            'priority'    => 'required|in:高,中,低',           // ★ 追加
+            'priority'    => 'required|in:高,中,低',
             'status'      => 'required|in:未着手,進行中,完了',
             'due_date'    => 'nullable|date',
-            'customer_id' => 'nullable|exists:customers,id',   // ★ 追加
-            'deal_id'     => 'nullable|exists:deals,id',       // ★ 追加
-            'description' => 'nullable|string',
-        ]);
+            'customer_id' => 'nullable|exists:customers,id',
+            'deal_id'     => 'nullable|exists:deals,id',
+            'description' => 'nullable|string|max:2000',
+        ], $this->messages());
+
         $task->update($validated);
         return new TaskResource($task);
     }
 
-    // ★ ステータス更新（詳細画面のボタン用）
     public function updateStatus(Request $request, Task $task)
     {
-        $request->validate(['status' => 'required|in:未着手,進行中,完了']);
+        $request->validate(
+            ['status' => 'required|in:未着手,進行中,完了'],
+            ['status.required' => 'ステータスは必須です', 'status.in' => 'ステータスの値が正しくありません']
+        );
         $task->update(['status' => $request->status]);
         return new TaskResource($task);
     }
-    
+
     public function destroy(Task $task)
     {
         $task->delete();
         return response()->json(null, 204);
+    }
+
+    private function messages(): array
+    {
+        return [
+            'title.required'      => 'タスク名は必須です',
+            'title.max'           => 'タスク名は255文字以内で入力してください',
+            'priority.required'   => '優先度を選択してください',
+            'priority.in'         => '優先度の値が正しくありません',
+            'status.required'     => 'ステータスを選択してください',
+            'status.in'           => 'ステータスの値が正しくありません',
+            'due_date.date'       => '期限日の形式が正しくありません',
+            'customer_id.exists'  => '選択された顧客が存在しません',
+            'deal_id.exists'      => '選択された商談が存在しません',
+            'description.max'     => '説明は2000文字以内で入力してください',
+        ];
     }
 }
