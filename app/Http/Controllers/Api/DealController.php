@@ -18,9 +18,10 @@ class DealController extends Controller
                     $q->where('company_name', 'like', "%{$s}%")
                 )
             )
-            ->when($request->status, fn($q, $s) =>
-                $q->where('status', $s)
-            )
+            ->when($request->status,      fn($q, $s) => $q->where('status', $s))
+            ->when($request->customer_id, fn($q, $id) => $q->where('customer_id', $id))
+            ->when($request->amount_min,  fn($q, $v) => $q->where('amount', '>=', $v))
+            ->when($request->amount_max,  fn($q, $v) => $q->where('amount', '<=', $v))
             ->paginate(20);
         return DealResource::collection($deals);
     }

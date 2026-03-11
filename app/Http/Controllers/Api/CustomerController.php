@@ -16,6 +16,9 @@ class CustomerController extends Controller
                 $q->where('company_name', 'like', "%{$s}%")
                 ->orWhere('industry', 'like', "%{$s}%")
             )
+            ->when($request->industry, fn($q, $i) =>
+                $q->where('industry', 'like', "%{$i}%")
+            )
             ->paginate(20);
         return CustomerResource::collection($customers);
     }
@@ -62,6 +65,17 @@ class CustomerController extends Controller
     {
         $customer->delete();
         return response()->json(null, 204);
+    }
+
+    // 業種一覧取得（フィルター用）
+    public function industries()
+    {
+        $industries = Customer::whereNotNull('industry')
+            ->where('industry', '!=', '')
+            ->distinct()
+            ->orderBy('industry')
+            ->pluck('industry');
+        return response()->json($industries);
     }
 
     private function messages(): array

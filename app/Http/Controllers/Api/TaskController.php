@@ -6,11 +6,14 @@ use App\Http\Controllers\Controller;
 use App\Models\Task;
 use App\Http\Resources\TaskResource;
 use Illuminate\Http\Request;
+use Carbon\Carbon;
 
 class TaskController extends Controller
 {
     public function index(Request $request)
     {
+        $today = Carbon::today();
+
         $tasks = Task::with(['customer', 'deal', 'user'])
             ->when($request->search, fn($q, $s) =>
                 $q->where('title', 'like', "%{$s}%")
@@ -20,6 +23,15 @@ class TaskController extends Controller
             )
             ->when($request->status,   fn($q, $s) => $q->where('status', $s))
             ->when($request->priority, fn($q, $p) => $q->where('priority', $p))
+            // 期限フィルター
+            ->when($request->due_filter, function($q, $filter) use ($today) {
+                return match($filter) {
+                    'today'   => $q->whereDate('due_date', $today),
+                    'overdue' => $q->whereDate('due_date', '<', $today)->where('status', '!=', '完了'),
+                    'week'    => $q->whereBetween('due_date', [$today, $today->copy()->endOfWeek()]),
+                    default   => $q,
+                };
+            })
             ->orderByRaw("FIELD(status, '未着手', '進行中', '完了')")
             ->orderByRaw("FIELD(priority, '高', '中', '低')")
             ->paginate(20);
