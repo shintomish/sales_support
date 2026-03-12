@@ -12,8 +12,8 @@ use Google\Cloud\Vision\V1\Client\ImageAnnotatorClient;
 use Google\Cloud\Vision\V1\Image;
 use Google\Cloud\Vision\V1\Feature\Type;
 use Google\Cloud\Vision\V1\Feature;
-use Google\Cloud\Vision\V1\AnnotateImageRequest;  // ← この行を追加
-use Google\Cloud\Vision\V1\BatchAnnotateImagesRequest;  // ← この行を追加
+use Google\Cloud\Vision\V1\AnnotateImageRequest;
+use Google\Cloud\Vision\V1\BatchAnnotateImagesRequest;
 use App\Services\ClaudeService;
 use App\Services\BusinessCardRegistrationService;
 
@@ -31,166 +31,161 @@ class BusinessCardController extends Controller
     public function store(Request $request)
     {
         \Log::info('BusinessCardController::store called');
-        \Log::info('Request data:', $request->all());
-        \Log::info('Has file:', ['has' => $request->hasFile('image')]);
-        \Log::info('File info:', [
-            'name' => $request->file('image')?->getClientOriginalName(),
-            'size' => $request->file('image')?->getSize(),
-            'mime' => $request->file('image')?->getMimeType(),
-            'extension' => $request->file('image')?->getClientOriginalExtension(),
+
+        // ★ バリデーション強化（複数画像対応）
+        $request->validate([
+            'images'   => 'required|array|min:1|max:20',
+            'images.*' => 'required|image|mimes:jpeg,png,jpg|max:10240',
+        ], [
+            'images.required'   => '画像ファイルは必須です',
+            'images.array'      => '画像は配列形式で送信してください',
+            'images.min'        => '少なくとも1枚の画像を選択してください',
+            'images.max'        => '一度にアップロードできる画像は20枚までです',
+            'images.*.required' => '画像ファイルは必須です',
+            'images.*.image'    => '画像ファイルのみアップロードできます',
+            'images.*.mimes'    => '対応形式はJPEG・PNG・JPGのみです',
+            'images.*.max'      => '各画像は10MB以内にしてください',
         ]);
 
         try {
-            \Log::info('Starting validation...');
+            $results = [];
 
-            $validator = \Validator::make($request->all(), [
-                'image' => 'required|image|mimes:jpeg,png,jpg|max:10240',
-            ]);
+            foreach ($request->file('images') as $imageFile) {
+                // 1. 画像を保存
+                $imagePath = $imageFile->store('business_cards', 'public');
+                $fullPath  = storage_path('app/public/' . $imagePath);
 
-            if ($validator->fails()) {
-                \Log::error('Validation failed:', $validator->errors()->toArray());
-                return response()->json([
-                    'message' => 'バリデーションエラー',
-                    'errors' => $validator->errors()
-                ], 422);
-            }
+                // 2. Google Cloud Vision APIでOCR実行
+                $credentialsPath = config('services.google_vision.credentials');
+                putenv('GOOGLE_APPLICATION_CREDENTIALS=' . $credentialsPath);
+                $vision = new ImageAnnotatorClient();
 
-            \Log::info('Validation passed');
+                $imageContent = file_get_contents($fullPath);
+                $feature      = (new Feature())->setType(Type::TEXT_DETECTION);
+                $imageObj     = (new Image())->setContent($imageContent);
+                $annotateReq  = (new AnnotateImageRequest())->setImage($imageObj)->setFeatures([$feature]);
+                $batchRequest = (new BatchAnnotateImagesRequest())->setRequests([$annotateReq]);
+                $response     = $vision->batchAnnotateImages($batchRequest);
+                $annotations  = $response->getResponses()[0];
 
-            // 1. 画像を保存
-            \Log::info('Saving image...');
-            $imagePath = $request->file('image')->store('business_cards', 'public');
-            \Log::info('Image saved: ' . $imagePath);
-            $fullPath = storage_path('app/public/' . $imagePath);
+                if ($annotations->hasError()) {
+                    \Log::error('OCR error: ' . $annotations->getError()->getMessage());
+                    continue;
+                }
 
-            // 2. Google Cloud Vision APIでOCR実行
-            // 2. Google Cloud Vision APIでOCR実行
-            \Log::info('Starting OCR...');
-            $credentialsPath = config('services.google_vision.credentials');
-            putenv('GOOGLE_APPLICATION_CREDENTIALS=' . $credentialsPath);
-            $vision = new ImageAnnotatorClient();
+                $texts = $annotations->getTextAnnotations();
+                if (count($texts) === 0) continue;
 
-            $imageContent = file_get_contents($fullPath);
+                $ocrText = $texts[0]->getDescription();
 
-            $feature = (new Feature())->setType(Type::TEXT_DETECTION);
-            $imageObj = (new Image())->setContent($imageContent);
-            $annotateRequest = (new AnnotateImageRequest())  // ← 変数名を変更
-                ->setImage($imageObj)
-                ->setFeatures([$feature]);
+                // 3. Claude APIで情報抽出
+                $claudeService = new ClaudeService();
+                $extractedData = $claudeService->extractBusinessCardInfo($ocrText);
 
-            $batchRequest = (new BatchAnnotateImagesRequest())
-                ->setRequests([$annotateRequest]);  // ← ここも変更
+                // 4. 名刺データとして保存
+                $card = BusinessCard::create([
+                    'user_id'      => $request->user()->id,
+                    'ocr_text'     => $ocrText,
+                    'company_name' => $extractedData['company_name'] ?? null,
+                    'person_name'  => $extractedData['person_name']  ?? null,
+                    'department'   => $extractedData['department']   ?? null,
+                    'position'     => $extractedData['position']     ?? null,
+                    'postal_code'  => $extractedData['postal_code']  ?? null,
+                    'address'      => $extractedData['address']      ?? null,
+                    'phone'        => $extractedData['phone']        ?? null,
+                    'mobile'       => $extractedData['mobile']       ?? null,
+                    'fax'          => $extractedData['fax']          ?? null,
+                    'email'        => $extractedData['email']        ?? null,
+                    'website'      => $extractedData['website']      ?? null,
+                    'image_path'   => $imagePath,
+                    'status'       => 'processed',
+                ]);
 
-            $response = $vision->batchAnnotateImages($batchRequest);
-            $annotations = $response->getResponses()[0];
+                // 5. 顧客・担当者を自動登録
+                $registrationService = new BusinessCardRegistrationService();
+                $result = $registrationService->register($card);
+                $card->load(['customer', 'contact']);
 
-            \Log::info('OCR response received');
-
-            if ($annotations->hasError()) {
-                \Log::error('OCR error: ' . $annotations->getError()->getMessage());
-                return response()->json([
-                    'message' => 'OCR処理でエラーが発生しました'
-                ], 500);
-            }
-
-            $texts = $annotations->getTextAnnotations();
-
-            if (count($texts) === 0) {
-                \Log::warning('No text detected');
-                return response()->json([
-                    'message' => 'テキストが検出されませんでした'
-                ], 400);
-            }
-
-            $ocrText = $texts[0]->getDescription();
-            \Log::info('OCR text extracted: ' . substr($ocrText, 0, 100));
-
-            // 3. Claude APIで情報抽出・構造化
-            \Log::info('Starting Claude API...');
-            $claudeService = new ClaudeService();
-            $extractedData = $claudeService->extractBusinessCardInfo($ocrText);
-            \Log::info('Claude API completed', $extractedData);
-
-            // 4. 名刺データとして保存
-            \Log::info('Saving to database...');
-            $card = BusinessCard::create([
-                'user_id' => $request->user()->id,
-                'ocr_text' => $ocrText,
-                'company_name' => $extractedData['company_name'] ?? null,
-                'person_name' => $extractedData['person_name'] ?? null,
-                'department' => $extractedData['department'] ?? null,
-                'position' => $extractedData['position'] ?? null,
-                'postal_code' => $extractedData['postal_code'] ?? null,
-                'address' => $extractedData['address'] ?? null,
-                'phone' => $extractedData['phone'] ?? null,
-                'mobile' => $extractedData['mobile'] ?? null,
-                'fax' => $extractedData['fax'] ?? null,
-                'email' => $extractedData['email'] ?? null,
-                'website' => $extractedData['website'] ?? null,
-                'image_path' => $imagePath,
-                'status' => 'processed',
-            ]);
-            \Log::info('Database saved, ID: ' . $card->id);
-
-            // return new BusinessCardResource($card);
-            // 5. 顧客・担当者を自動登録
-            \Log::info('Starting auto-registration...');
-            $registrationService = new BusinessCardRegistrationService();
-            $result = $registrationService->register($card);
-            \Log::info('Auto-registration completed', [
-                'customer_id' => $result['customer']->id,
-                'contact_id' => $result['contact']->id,
-                'is_new_customer' => $result['is_new_customer'],
-            ]);
-
-            // レスポンスに登録結果を含める
-            $card->load(['customer', 'contact']);
-
-            return response()->json([
-                'data' => new BusinessCardResource($card),
-                'registration' => [
-                    'customer' => [
-                        'id' => $result['customer']->id,
-                        'name' => $result['customer']->company_name,
-                        'is_new' => $result['is_new_customer'],
+                $results[] = [
+                    'data' => new BusinessCardResource($card),
+                    'registration' => [
+                        'customer' => [
+                            'id'     => $result['customer']->id,
+                            'name'   => $result['customer']->company_name,
+                            'is_new' => $result['is_new_customer'],
+                        ],
+                        'contact' => [
+                            'id'   => $result['contact']->id,
+                            'name' => $result['contact']->name,
+                        ],
                     ],
-                    'contact' => [
-                        'id' => $result['contact']->id,
-                        'name' => $result['contact']->name,
-                    ],
-                ],
-            ], 201);
+                ];
+            }
+
+            return response()->json(['results' => $results], 201);
 
         } catch (\Exception $e) {
-            \Log::error('Exception occurred: ' . $e->getMessage());
-            \Log::error('Stack trace: ' . $e->getTraceAsString());
+            \Log::error('Exception: ' . $e->getMessage());
             return response()->json([
                 'message' => 'OCR処理に失敗しました',
-                'error' => $e->getMessage()
+                'error'   => $e->getMessage(),
             ], 500);
         }
     }
 
-    // ✅ 修正後
     public function show(string $id)
     {
         $card = BusinessCard::with(['customer', 'contact'])->findOrFail($id);
         return new BusinessCardResource($card);
     }
 
-    // ✅ update
+    // ★ updateにバリデーション追加
     public function update(Request $request, string $id)
     {
         $card = BusinessCard::findOrFail($id);
+
+        $request->validate([
+            'company_name' => 'nullable|string|max:255',
+            'person_name'  => 'nullable|string|max:255',
+            'department'   => 'nullable|string|max:100',
+            'position'     => 'nullable|string|max:100',
+            'postal_code'  => 'nullable|string|max:10',
+            'address'      => 'nullable|string|max:500',
+            'phone'        => ['nullable', 'string', 'max:20', 'regex:/^[\d\-\+\(\)\s]+$/'],
+            'mobile'       => ['nullable', 'string', 'max:20', 'regex:/^[\d\-\+\(\)\s]+$/'],
+            'fax'          => ['nullable', 'string', 'max:20', 'regex:/^[\d\-\+\(\)\s]+$/'],
+            'email'        => 'nullable|email:rfc|max:255',
+            'website'      => 'nullable|url|max:255',
+            'status'       => 'nullable|in:processed,registered,pending',
+        ], [
+            'company_name.max' => '会社名は255文字以内で入力してください',
+            'person_name.max'  => '氏名は255文字以内で入力してください',
+            'department.max'   => '部署は100文字以内で入力してください',
+            'position.max'     => '役職は100文字以内で入力してください',
+            'postal_code.max'  => '郵便番号は10文字以内で入力してください',
+            'address.max'      => '住所は500文字以内で入力してください',
+            'phone.regex'      => '電話番号の形式が正しくありません（例: 03-1234-5678）',
+            'phone.max'        => '電話番号は20文字以内で入力してください',
+            'mobile.regex'     => '携帯番号の形式が正しくありません（例: 090-1234-5678）',
+            'mobile.max'       => '携帯番号は20文字以内で入力してください',
+            'fax.regex'        => 'FAX番号の形式が正しくありません',
+            'fax.max'          => 'FAX番号は20文字以内で入力してください',
+            'email.email'      => 'メールアドレスの形式が正しくありません',
+            'email.max'        => 'メールアドレスは255文字以内で入力してください',
+            'website.url'      => 'WebサイトのURLの形式が正しくありません（例: https://example.com）',
+            'website.max'      => 'WebサイトのURLは255文字以内で入力してください',
+            'status.in'        => 'ステータスの値が正しくありません',
+        ]);
+
         $card->update($request->only([
             'company_name', 'person_name', 'department', 'position',
             'postal_code', 'address', 'phone', 'mobile', 'fax',
             'email', 'website', 'status',
         ]));
+
         return new BusinessCardResource($card);
     }
 
-    // ✅ destroy
     public function destroy(string $id)
     {
         $card = BusinessCard::findOrFail($id);
@@ -200,5 +195,4 @@ class BusinessCardController extends Controller
         $card->delete();
         return response()->json(null, 204);
     }
-
 }
