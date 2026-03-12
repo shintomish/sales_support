@@ -41,6 +41,19 @@ class DashboardController extends Controller
                 'total'  => (int) $d->total,
             ]);
 
+        // 月別売上（過去6ヶ月）
+        $monthlyRevenue = collect(range(5, 0))->map(function ($i) use ($now) {
+            $month = $now->copy()->subMonths($i);
+            $revenue = Deal::where('status', '成約')
+                ->whereMonth('updated_at', $month->month)
+                ->whereYear('updated_at', $month->year)
+                ->sum('amount');
+            return [
+                'month'   => $month->format('Y/m'),
+                'revenue' => (int) $revenue,
+            ];
+        })->values();
+
         // 期限が近いタスク（7日以内・未完了）
         $upcomingTasks = Task::with('customer')
             ->where('status', '!=', '完了')
@@ -94,6 +107,7 @@ class DashboardController extends Controller
         return response()->json([
             'kpi'               => $kpi,
             'pipeline'          => $pipeline,
+            'monthly_revenue'   => $monthlyRevenue,
             'upcoming_tasks'    => $upcomingTasks,
             'recent_activities' => $recentActivities,
             'won_deals'         => $wonDeals,
