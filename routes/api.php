@@ -9,6 +9,7 @@ use App\Http\Controllers\Api\ActivityController;
 use App\Http\Controllers\Api\TaskController;
 use App\Http\Controllers\Api\BusinessCardController;
 use App\Http\Controllers\Api\DashboardController;
+use App\Http\Controllers\Api\NotificationController;
 
 // ── 認証不要 ────────────────────────────────────────
 Route::prefix('v1')->group(function () {
@@ -20,7 +21,8 @@ Route::prefix('v1')->middleware(['auth:sanctum'])->group(function () {
     Route::post('logout', [AuthController::class, 'logout']);
     Route::get('me', [AuthController::class, 'me']);
     Route::get('dashboard', [DashboardController::class, 'index']);
-
+    Route::get('notifications', [NotificationController::class, 'index']);
+    
     // ★ 業種一覧（customers resourceより前に記載すること）
     Route::get('customers/industries', [CustomerController::class, 'industries']);
     // 各リソースのCRUDエンドポイント（名前にapi.を追加）
