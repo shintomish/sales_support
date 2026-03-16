@@ -444,11 +444,6 @@
             font-weight: 500;
         }
 
-        /* ===== サイドバーをrelativeに ===== */
-        .sidebar {
-            position: relative !important;
-        }
-
         /* ===== ログアウトボタン ===== */
         .logout-btn {
             width: 100%;
