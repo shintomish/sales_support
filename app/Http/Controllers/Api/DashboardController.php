@@ -49,7 +49,7 @@ class DashboardController extends Controller
                 ->whereYear('updated_at', $month->year)
                 ->sum('amount');
             return [
-                'month'   => $month->format('Y/m'),
+                'month'   => $month->format('n月'),
                 'revenue' => (int) $revenue,
             ];
         })->values();

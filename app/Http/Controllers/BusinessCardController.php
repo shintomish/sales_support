@@ -93,6 +93,9 @@ class BusinessCardController extends Controller
      */
     public function store(Request $request)
     {
+        \Log::info('=== store() called ===');
+        \Log::info('files: ', ['has_images' => $request->hasFile('images')]);
+
         $request->validate([
             'images' => 'required',
             'images.*' => 'required|image|mimes:jpeg,png,jpg|max:10240',
@@ -132,6 +135,8 @@ class BusinessCardController extends Controller
                 ->with('warning', "{$uploadedCount}件成功、" . count($errors) . "件失敗")
                 ->with('errors', $errors);
         }
+
+        \Log::info('=== store() end ===');
 
         return redirect()->route('business-cards.index')
             ->with('success', "{$uploadedCount}件の名刺をアップロードしました");
