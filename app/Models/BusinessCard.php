@@ -4,33 +4,18 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
-use App\Traits\BelongsToTenant;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use App\Traits\BelongsToTenant;
 
 class BusinessCard extends Model
 {
-    use BelongsToTenant;
-{
-    use HasFactory, SoftDeletes;
+    use HasFactory, SoftDeletes, BelongsToTenant;
 
     protected $fillable = [
-        'user_id',
-        'customer_id',
-        'contact_id',
-        'ocr_text',
-        'company_name',
-        'person_name',
-        'department',
-        'position',
-        'postal_code',
-        'address',
-        'phone',
-        'mobile',
-        'fax',
-        'email',
-        'website',
-        'image_path',
-        'status',
+        'user_id', 'customer_id', 'contact_id', 'ocr_text',
+        'company_name', 'person_name', 'department', 'position',
+        'postal_code', 'address', 'phone', 'mobile', 'fax',
+        'email', 'website', 'image_path', 'status',
     ];
 
     protected $casts = [
@@ -39,19 +24,7 @@ class BusinessCard extends Model
         'deleted_at' => 'datetime',
     ];
 
-    // リレーション
-    public function user()
-    {
-        return $this->belongsTo(User::class);
-    }
-
-    public function customer()
-    {
-        return $this->belongsTo(Customer::class);
-    }
-
-    public function contact()
-    {
-        return $this->belongsTo(Contact::class);
-    }
+    public function user()     { return $this->belongsTo(User::class); }
+    public function customer() { return $this->belongsTo(Customer::class); }
+    public function contact()  { return $this->belongsTo(Contact::class); }
 }

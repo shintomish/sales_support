@@ -4,14 +4,12 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
-use App\Traits\BelongsToTenant;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use App\Traits\BelongsToTenant;
 
 class Customer extends Model
 {
-    use BelongsToTenant;
-{
-    use HasFactory, SoftDeletes;
+    use HasFactory, SoftDeletes, BelongsToTenant;
 
     protected $fillable = [
         'company_name',
@@ -23,7 +21,6 @@ class Customer extends Model
         'notes',
     ];
 
-    // リレーション
     public function contacts()
     {
         return $this->hasMany(Contact::class);
