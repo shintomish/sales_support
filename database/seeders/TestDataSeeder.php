@@ -113,12 +113,12 @@ class TestDataSeeder extends Seeder
         $deals = [
             ['title' => '生産管理システム導入支援',     'amount' => 5800000,  'status' => '提案', 'probability' => 60,  'expected_close_date' => '2026-05-31', 'customer_index' => 0],
             ['title' => 'クラウド移行プロジェクト',     'amount' => 12000000, 'status' => '交渉', 'probability' => 75,  'expected_close_date' => '2026-04-30', 'customer_index' => 1],
-            ['title' => '再生可能エネルギー設備導入',   'amount' => 28000000, 'status' => '成約', 'probability' => 100, 'expected_close_date' => '2026-03-31', 'customer_index' => 2],
+            ['title' => '再生可能エネルギー設備導入',   'amount' => 28000000, 'status' => '成約', 'probability' => 100, 'expected_close_date' => '2026-03-31', 'actual_close_date' => '2026-03-18', 'customer_index' => 2],
             ['title' => 'AI営業支援ツール開発',         'amount' => 22000000, 'status' => '交渉', 'probability' => 70,  'expected_close_date' => '2026-05-01', 'customer_index' => 3],
             ['title' => '物流管理システムリプレース',   'amount' => 9500000,  'status' => '新規', 'probability' => 40,  'expected_close_date' => '2026-06-30', 'customer_index' => 4],
             ['title' => '食品トレーサビリティ導入',     'amount' => 4200000,  'status' => '提案', 'probability' => 55,  'expected_close_date' => '2026-05-15', 'customer_index' => 5],
             ['title' => '建設現場DX化支援',             'amount' => 7600000,  'status' => '交渉', 'probability' => 80,  'expected_close_date' => '2026-04-15', 'customer_index' => 6],
-            ['title' => '電子カルテシステム更新',       'amount' => 15000000, 'status' => '成約', 'probability' => 100, 'expected_close_date' => '2026-03-20', 'customer_index' => 7],
+            ['title' => '電子カルテシステム更新',       'amount' => 15000000, 'status' => '成約', 'probability' => 100, 'expected_close_date' => '2026-03-20', 'actual_close_date' => '2026-03-18', 'customer_index' => 7],
             ['title' => '貿易管理プラットフォーム構築', 'amount' => 6300000,  'status' => '新規', 'probability' => 25,  'expected_close_date' => '2026-07-31', 'customer_index' => 8],
             ['title' => 'スマートホームIoT導入',        'amount' => 3800000,  'status' => '提案', 'probability' => 50,  'expected_close_date' => '2026-06-15', 'customer_index' => 9],
         ];
@@ -131,6 +131,7 @@ class TestDataSeeder extends Seeder
                 'status'              => $deal['status'],
                 'probability'         => $deal['probability'],
                 'expected_close_date' => $deal['expected_close_date'],
+                'actual_close_date'   => $deal['actual_close_date'] ?? null,
                 'customer_id'         => $customer['id'],
                 'user_id'             => $userId,
                 'tenant_id'           => $customer['tenant_id'],
