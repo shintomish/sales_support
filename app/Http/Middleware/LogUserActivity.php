@@ -9,14 +9,15 @@ use Illuminate\Support\Facades\Log;
 
 class LogUserActivity
 {
-    // 記録対象のHTTPメソッド
     private array $targetMethods = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'];
 
-    // ログに含めないパス
     private array $excludePaths = [
         'api/v1/login',
         'api/v1/logout',
         'api/v1/dashboard',
+        'login',
+        'logout',
+        'up',
     ];
 
     public function handle(Request $request, Closure $next)
@@ -26,9 +27,8 @@ class LogUserActivity
         $method = $request->method();
         $path   = $request->path();
 
-        // 除外パスはスキップ
         foreach ($this->excludePaths as $exclude) {
-            if (str_starts_with($path, $exclude)) {
+            if ($path === $exclude || str_starts_with($path, $exclude . '/')) {
                 return $response;
             }
         }
@@ -43,20 +43,17 @@ class LogUserActivity
         $tenantId = $user?->tenant_id ?? '-';
         $status   = $response->getStatusCode();
 
-        // 操作種別
         $action = match($method) {
-            'GET'    => 'READ',
-            'POST'   => 'CREATE',
+            'GET'          => 'READ',
+            'POST'         => 'CREATE',
             'PUT', 'PATCH' => 'UPDATE',
-            'DELETE' => 'DELETE',
-            default  => $method,
+            'DELETE'       => 'DELETE',
+            default        => $method,
         };
 
-        // リソース名（URLから推測）
         $segments = explode('/', $path);
-        $resource = $segments[2] ?? $path; // api/v1/{resource}
+        $resource = $segments[2] ?? $path;
 
-        // ログ出力
         Log::channel('daily')->info('[USER_ACTIVITY]', [
             'action'    => $action,
             'resource'  => $resource,
@@ -75,7 +72,6 @@ class LogUserActivity
 
     private function sanitizeParams(Request $request): array
     {
-        // パスワード等の機密情報は除外
-        return $request->except(['password', 'password_confirmation', 'token']);
+        return $request->except(['password', 'password_confirmation', 'token', '_token']);
     }
 }

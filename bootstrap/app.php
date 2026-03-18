@@ -17,6 +17,7 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->appendToGroup('api', SetTenantContext::class);
         $middleware->appendToGroup('api', LogUserActivity::class);
+        $middleware->appendToGroup('web', LogUserActivity::class);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         //
