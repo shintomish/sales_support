@@ -60,7 +60,7 @@
                 <div class="d-flex justify-content-between align-items-start">
                     <div>
                         <div class="kpi-label">今月の売上</div>
-                        <div class="kpi-value">{{ number_format($kpi['revenue_this_month'] / 10000, 1) }}</div>
+                        <div class="kpi-value">{{ number_format($kpi['revenue_this_month'] / 10000, 0) }}</div>
                         <div class="kpi-unit">万円</div>
                     </div>
                     <div class="kpi-icon" style="background-color: #FDF2F8; color: #DB2777">
@@ -109,7 +109,7 @@
                                 {{ $count }}件
                                 @if($status !== '失注' && $status !== '成約')
                                     &nbsp;/&nbsp;
-                                    {{ number_format(($pipeline->firstWhere('status', $status)->total ?? 0) / 10000, 1) }}万円
+                                    {{ number_format(($pipeline->firstWhere('status', $status)->total ?? 0) / 10000, 0) }}万円
                                 @endif
                             </span>
                         </div>
