@@ -32,35 +32,36 @@ class BusinessCardController extends Controller
     {
         \Log::info('BusinessCardController::store called');
 
-        // ★ バリデーション強化（複数画像対応）
+        // ── Supabase Storage 対応: image_urls[] で受信 ──
         $request->validate([
-            'images'   => 'required|array|min:1|max:20',
-            'images.*' => 'required|image|mimes:jpeg,png,jpg|max:10240',
+            'image_urls'   => 'required|array|min:1|max:20',
+            'image_urls.*' => 'required|url',
         ], [
-            'images.required'   => '画像ファイルは必須です',
-            'images.array'      => '画像は配列形式で送信してください',
-            'images.min'        => '少なくとも1枚の画像を選択してください',
-            'images.max'        => '一度にアップロードできる画像は20枚までです',
-            'images.*.required' => '画像ファイルは必須です',
-            'images.*.image'    => '画像ファイルのみアップロードできます',
-            'images.*.mimes'    => '対応形式はJPEG・PNG・JPGのみです',
-            'images.*.max'      => '各画像は10MB以内にしてください',
+            'image_urls.required'   => '画像URLは必須です',
+            'image_urls.array'      => '画像URLは配列形式で送信してください',
+            'image_urls.min'        => '少なくとも1枚の画像を選択してください',
+            'image_urls.max'        => '一度にアップロードできる画像は20枚までです',
+            'image_urls.*.required' => '画像URLは必須です',
+            'image_urls.*.url'      => '正しいURL形式で送信してください',
         ]);
 
         try {
             $results = [];
 
-            foreach ($request->file('images') as $imageFile) {
-                // 1. 画像を保存
-                $imagePath = $imageFile->store('business_cards', 'public');
-                $fullPath  = storage_path('app/public/' . $imagePath);
+            foreach ($request->input('image_urls') as $imageUrl) {
 
-                // 2. Google Cloud Vision APIでOCR実行
+                // 1. Supabase Storage から画像を取得
+                $imageContent = @file_get_contents($imageUrl);
+                if ($imageContent === false) {
+                    \Log::error('Failed to fetch image from Supabase: ' . $imageUrl);
+                    continue;
+                }
+
+                // 2. Google Cloud Vision API で OCR 実行
                 $credentialsPath = config('services.google_vision.credentials');
                 putenv('GOOGLE_APPLICATION_CREDENTIALS=' . $credentialsPath);
                 $vision = new ImageAnnotatorClient();
 
-                $imageContent = file_get_contents($fullPath);
                 $feature      = (new Feature())->setType(Type::TEXT_DETECTION);
                 $imageObj     = (new Image())->setContent($imageContent);
                 $annotateReq  = (new AnnotateImageRequest())->setImage($imageObj)->setFeatures([$feature]);
@@ -78,11 +79,12 @@ class BusinessCardController extends Controller
 
                 $ocrText = $texts[0]->getDescription();
 
-                // 3. Claude APIで情報抽出
+                // 3. Claude API で情報抽出
                 $claudeService = new ClaudeService();
                 $extractedData = $claudeService->extractBusinessCardInfo($ocrText);
 
                 // 4. 名刺データとして保存
+                //    image_path には Supabase の公開 URL をそのまま格納
                 $card = BusinessCard::create([
                     'user_id'      => $request->user()->id,
                     'ocr_text'     => $ocrText,
@@ -97,7 +99,7 @@ class BusinessCardController extends Controller
                     'fax'          => $extractedData['fax']          ?? null,
                     'email'        => $extractedData['email']        ?? null,
                     'website'      => $extractedData['website']      ?? null,
-                    'image_path'   => $imagePath,
+                    'image_path'   => $imageUrl,   // ← Supabase の公開 URL
                     'status'       => 'processed',
                 ]);
 
@@ -139,7 +141,6 @@ class BusinessCardController extends Controller
         return new BusinessCardResource($card);
     }
 
-    // ★ updateにバリデーション追加
     public function update(Request $request, string $id)
     {
         $card = BusinessCard::findOrFail($id);
@@ -189,7 +190,9 @@ class BusinessCardController extends Controller
     public function destroy(string $id)
     {
         $card = BusinessCard::findOrFail($id);
-        if ($card->image_path) {
+        // image_path が Supabase URL の場合はローカル削除不要
+        // （Supabase 側の削除は将来的に対応）
+        if ($card->image_path && !str_starts_with($card->image_path, 'http')) {
             \Storage::disk('public')->delete($card->image_path);
         }
         $card->delete();
