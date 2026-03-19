@@ -32,6 +32,7 @@ class BusinessCardController extends Controller
         \Log::info('BusinessCardController::store called');
 
         // multipart/form-data で画像受信
+        try {
         $request->validate([
             'images'   => 'required|array|min:1|max:20',
             'images.*' => 'required|image|mimes:jpeg,png,jpg|max:10240',
@@ -45,6 +46,10 @@ class BusinessCardController extends Controller
             'images.*.mimes'    => '対応形式はJPEG・PNG・JPGのみです',
             'images.*.max'      => '各画像は10MB以内にしてください',
         ]);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            \Log::error('VALIDATION ERROR: ' . json_encode($e->errors()));
+            throw $e;
+        }
 
         try {
             $results  = [];
