@@ -42,4 +42,10 @@ return [
     'google_vision' => [
         'credentials' => env('GOOGLE_APPLICATION_CREDENTIALS', storage_path('credentials/google-vision.json')),
     ],
+
+    'supabase' => [
+        'url'              => env('SUPABASE_URL'),
+        'service_role_key' => env('SUPABASE_SERVICE_ROLE_KEY'),
+        'bucket'           => env('SUPABASE_BUCKET', 'business-cards'),
+    ],
 ];
