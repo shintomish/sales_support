@@ -59,7 +59,13 @@ class BusinessCardController extends Controller
 
                 // 2. Google Cloud Vision API で OCR 実行
                 $credentialsPath = config('services.google_vision.credentials');
-                putenv('GOOGLE_APPLICATION_CREDENTIALS=' . $credentialsPath);
+
+                // putenv('GOOGLE_APPLICATION_CREDENTIALS=' . $credentialsPath);
+                $credentialsJson = json_decode(file_get_contents($credentialsPath), true);
+                $vision = new ImageAnnotatorClient([
+                        'credentials' => $credentialsJson,
+                ]);
+
                 $vision = new ImageAnnotatorClient();
 
                 $feature      = (new Feature())->setType(Type::TEXT_DETECTION);
