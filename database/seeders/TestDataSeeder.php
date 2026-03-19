@@ -25,7 +25,7 @@ class TestDataSeeder extends Seeder
 
         // ===== Users (10人) =====
         $users = [
-            ['name' => '新冨 泰明',   'email' => 'shintomi.sh@gmail.com',        'role' => 'super_admin',  'tenant_id' => null],
+            ['name' => '新冨 泰明',   'email' => 'shintomi.sh@gmail.com',        'role' => 'super_admin',  'tenant_id' => $tenantIds[0]],
             ['name' => '鈴木 健一',   'email' => 'suzuki.k@izen-solution.jp',    'role' => 'tenant_admin', 'tenant_id' => $tenantIds[0]],
             ['name' => '佐藤 美咲',   'email' => 'sato.m@izen-solution.jp',      'role' => 'tenant_user',  'tenant_id' => $tenantIds[0]],
             ['name' => '高橋 雄太',   'email' => 'takahashi.y@izen-solution.jp', 'role' => 'tenant_user',  'tenant_id' => $tenantIds[0]],

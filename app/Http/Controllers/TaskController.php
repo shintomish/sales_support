@@ -40,7 +40,7 @@ class TaskController extends Controller
             $query->where('user_id', Auth::id());
         }
 
-        $tasks = $query->orderByRaw("FIELD(priority, '高', '中', '低')")
+        $tasks = $query->orderByRaw("CASE priority WHEN '高' THEN 1 WHEN '中' THEN 2 WHEN '低' THEN 3 ELSE 4 END")
                        ->orderBy('due_date', 'asc')
                        ->paginate(15);
 
