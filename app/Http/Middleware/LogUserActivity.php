@@ -40,8 +40,11 @@ class LogUserActivity
         $user     = Auth::user();
         $userId   = $user?->id ?? 'guest';
         $userName = $user?->name ?? 'guest';
-        $tenantId = $user?->tenant_id ?? '-';
         $status   = $response->getStatusCode();
+
+        // super_admin はテナントに属さないため 'super_admin' と表示
+        $tenantId = $user?->tenant_id
+            ?? ($user?->role === 'super_admin' ? 'super_admin' : '-');
 
         $action = match($method) {
             'GET'          => 'READ',
