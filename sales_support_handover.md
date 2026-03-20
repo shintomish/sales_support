@@ -43,18 +43,19 @@ npm run dev
 
 ## 3. 技術スタック
 
-| 項目             | 技術 |
-|-----------------|-------------------------------------------------|
-| フロントエンド    | Next.js 15, TypeScript, Tailwind CSS, shadcn/ui |
-| バックエンド      | Laravel 11, PHP, Supabase Auth JWT認証           |
-| データベース      | Supabase PostgreSQL（Session Pooler経由）        |
-| 認証             | Supabase Auth（ES256 JWT / firebase/php-jwt）   |
-| ファイルストレージ | Supabase Storage（名刺画像）                     |
-| リアルタイム     | Supabase Realtime（tasks/deals/activities/cards）|
-| OCR             | Google Cloud Vision API                        |
-| AI情報抽出       | Claude API（claude-sonnet-4-20250514）          |
-| 状態管理         | Zustand（authStore）                            |
-| デプロイ         | Vercel（Next.js）/ Kagoya VPS（Laravel Docker） |
+| 項目 | 技術 |
+|---|---|
+| フロントエンド | Next.js 15, TypeScript, Tailwind CSS, shadcn/ui |
+| バックエンド | Laravel 11, PHP, Supabase Auth JWT認証 |
+| データベース | Supabase PostgreSQL（Session Pooler経由） |
+| 認証 | Supabase Auth（ES256 JWT / firebase/php-jwt） |
+| ファイルストレージ | Supabase Storage（名刺画像） |
+| リアルタイム | Supabase Realtime（tasks/deals/activities/cards） |
+| OCR | Google Cloud Vision API |
+| AI情報抽出 | Claude API（claude-sonnet-4-20250514） |
+| メール連携 | Gmail API（Outlook → Gmail転送 + OAuth2） |
+| 状態管理 | Zustand（authStore） |
+| デプロイ | Vercel（Next.js）/ Kagoya VPS（Laravel Docker） |
 
 ---
 
@@ -73,6 +74,8 @@ app/
 │   ├── page.tsx        一覧
 │   ├── create/         アップロード
 │   └── [id]/           詳細・編集
+├── emails/             メール管理
+│   └── page.tsx        一覧・詳細（2ペインレイアウト）
 ├── login/              ログイン
 lib/
 ├── axios.ts            APIクライアント（Supabase JWTを自動付与）
@@ -86,7 +89,6 @@ components/
 └── NotificationToast.tsx 期限切れタスク通知
 hooks/
 └── useRealtimeNotifications.ts  Supabase Realtimeフック
-proxy.ts                ルートガード（Supabase Auth対応）
 ```
 
 ### Laravel（`~/sales_support/app/`）
@@ -98,11 +100,14 @@ Http/Controllers/Api/
 ├── DealController.php
 ├── ActivityController.php
 ├── TaskController.php
-└── BusinessCardController.php  名刺OCR・Supabase連携
+├── BusinessCardController.php   名刺OCR・Supabase連携
+├── GmailOAuthController.php     Gmail OAuth2認可・トークン保存
+└── EmailController.php          メール一覧・詳細・同期・紐付け
 Services/
-├── ClaudeService.php            Claude API情報抽出
-├── BusinessCardRegistrationService.php  顧客・担当者自動登録
-└── SupabaseStorageService.php   Supabase Storageアップロード
+├── ClaudeService.php                      Claude API情報抽出
+├── BusinessCardRegistrationService.php    顧客・担当者自動登録
+├── SupabaseStorageService.php             Supabase Storageアップロード
+└── GmailService.php                       Gmail API（取得・同期・既読）
 Http/Middleware/
 ├── SupabaseAuth.php             Supabase JWT検証（ES256対応）
 ├── SetTenantContext.php         テナントコンテキスト設定
@@ -115,7 +120,9 @@ Models/
 ├── Deal.php
 ├── Activity.php
 ├── Task.php
-└── BusinessCard.php
+├── BusinessCard.php
+├── GmailToken.php               Gmail OAuthトークン管理
+└── Email.php                    受信メールキャッシュ
 ```
 
 ---
@@ -141,15 +148,60 @@ API呼び出し
 - JWKS エンドポイント: `https://qkjceppkrsurrynqsuse.supabase.co/auth/v1/.well-known/jwks.json`
 - `JWT::$leeway = 60` で時刻ずれを60秒許容（VPS環境対策）
 
-### SidebarWrapper による認証ガード
-- 未認証 + 非ログインページ → `/login` へリダイレクト
-- 認証済み + `/login` → `/dashboard` へリダイレクト
+---
+
+## 6. メール連携（Gmail API）
+
+### 構成
+```
+outsource@aizen-sol.co.jp（Outlook）
+  ↓ 自動転送
+aizenoutsource@gmail.com（Gmail）
+  ↓ Gmail API（OAuth2）
+Laravel GmailService
+  ↓
+emailsテーブル（Supabase PostgreSQL）
+  ↓
+Next.js /emails ページ
+```
+
+### Gmail OAuth フロー
+1. フロント → `GET /api/v1/gmail/redirect` → 認可URL取得（stateにuser_id埋め込み）
+2. ユーザーがGoogleで認可
+3. Google → `GET /api/v1/gmail/callback?code=...&state={user_id}`
+4. LaravelがトークンをgmailTokensテーブルに保存
+5. 「同期」ボタン → `POST /api/v1/emails/sync` → Gmail APIでメール取得・DB保存
+
+### APIエンドポイント
+| メソッド | パス | 説明 |
+|---|---|---|
+| GET | /api/v1/gmail/redirect | OAuth認可URL取得 |
+| GET | /api/v1/gmail/callback | OAuthコールバック（認証不要） |
+| GET | /api/v1/gmail/status | 接続状態確認 |
+| DELETE | /api/v1/gmail/disconnect | 接続解除 |
+| GET | /api/v1/emails | メール一覧 |
+| POST | /api/v1/emails/sync | Gmail同期 |
+| GET | /api/v1/emails/{id} | メール詳細（既読更新） |
+| PATCH | /api/v1/emails/{id}/link | 商談・担当者紐付け |
+| GET | /api/v1/emails/unread-count | 未読件数 |
+
+### GCPプロジェクト設定
+- プロジェクト: `sales-support`（Google Vision APIと同じ）
+- Gmail API: 有効化済み
+- OAuthクライアントID: `117456556358-ci3me2b8ml6cenija6mf424uejl295b7.apps.googleusercontent.com`
+- テストユーザー: `aizenoutsource@gmail.com`
+- スコープ: `gmail.readonly email profile`
+
+### 注意点
+- **受信のみ対応**（送信・返信は未実装）
+- Outlook → Gmail転送のため数秒〜数分の遅延あり
+- 同期は手動（「同期」ボタン）。自動同期は未実装
 
 ---
 
-## 6. 多テナント実装
+## 7. 多テナント実装
 
-- `tenants`テーブル・`BelongsToTenant` trait
+- `tenants`テーブル・`BelongsToTenant` trait（`app/Traits/BelongsToTenant.php`）
 - `GlobalScope`でテナントデータを自動フィルタ
 - `SetTenantContext` middlewareでテナントコンテキスト設定
 - Laravel は `service_role` キーで Supabase に接続（RLSバイパス）
@@ -157,7 +209,7 @@ API呼び出し
 
 ---
 
-## 7. テストユーザー（パスワード全員: `password`）
+## 8. テストユーザー（パスワード全員: `password`）
 
 | メールアドレス | ロール | テナント |
 |---|---|---|
@@ -172,11 +224,11 @@ API呼び出し
 | kato.m@next-stage.jp | tenant_user | テナント3 |
 | yoshida.n@next-stage.jp | tenant_user | テナント3 |
 
-※ ユーザーは Supabase Auth と users テーブル両方に登録済み（supabase_uid で紐付け）
+※ ユーザーはSupabase Authとusersテーブル両方に登録済み（supabase_uidで紐付け）
 
 ---
 
-## 8. 環境変数
+## 9. 環境変数
 
 ### Next.js（`.env.local`）
 ```env
@@ -215,14 +267,23 @@ SUPABASE_JWKS_URL=https://qkjceppkrsurrynqsuse.supabase.co/auth/v1/.well-known/j
 SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
 
 FRONTEND_URL=https://app.ai-mon.net          # 本番
-# FRONTEND_URL=http://localhost:3000          # ローカル
+# FRONTEND_URL=http://localhost:3000          # ローカル（CORSに影響するため切り替え必須）
+
 SANCTUM_STATEFUL_DOMAINS=app.ai-mon.net      # 本番
 # SANCTUM_STATEFUL_DOMAINS=localhost:3000     # ローカル
+
+# Gmail API
+GMAIL_CLIENT_ID=117456556358-ci3me2b8ml6cenija6mf424uejl295b7.apps.googleusercontent.com
+GMAIL_CLIENT_SECRET=GOCSPX-...              # 実際の値はVPS/.envを参照
+GMAIL_REDIRECT_URI=https://sales.ai-mon.net/api/v1/gmail/callback  # 本番
+# GMAIL_REDIRECT_URI=http://localhost:8090/api/v1/gmail/callback    # ローカル
 ```
+
+⚠️ **ローカル開発時の注意**: `FRONTEND_URL` と `GMAIL_REDIRECT_URI` をローカル用に変更し、作業後は本番用に戻すこと。
 
 ---
 
-## 9. Supabase構成
+## 10. Supabase構成
 
 - **プロジェクト**: sales-support（東京リージョン）
 - **URL**: https://qkjceppkrsurrynqsuse.supabase.co
@@ -230,8 +291,7 @@ SANCTUM_STATEFUL_DOMAINS=app.ai-mon.net      # 本番
 - **Storage バケット**: `business-cards`（PUBLIC）
 
 ### Realtime 有効テーブル
-`tasks` / `deals` / `activities` / `business_cards`
-（`supabase_realtime` publication に登録済み）
+`tasks` / `deals` / `activities` / `business_cards`（`supabase_realtime` publication に登録済み）
 
 ### RLSポリシー
 | 操作 | ロール |
@@ -241,39 +301,7 @@ SANCTUM_STATEFUL_DOMAINS=app.ai-mon.net      # 本番
 | UPDATE | authenticated |
 | DELETE | authenticated |
 
-※ Laravel は service_role キーで接続するため RLS をバイパス。
-テナント分離は Laravel の GlobalScope が担当。
-
-### アップロードフロー（名刺）
-```
-ブラウザ → Laravel API（multipart/form-data）
-→ SupabaseStorageService（service_roleキーでRLSバイパス）
-→ Supabase Storage に保存
-→ 公開URLをDBに保存（image_path）
-→ OCR処理（Google Vision API）
-→ Claude APIで情報抽出
-→ 顧客・担当者自動登録
-```
-
----
-
-## 10. Realtime通知の仕組み
-
-### 購読チャンネル
-`realtime:tenant:{tenant_id}` でテナント分離
-
-### 通知内容
-| テーブル | イベント | 通知例 |
-|---|---|---|
-| tasks | INSERT/UPDATE/DELETE | タスク「提案書作成」のステータスが「完了」に変更されました |
-| deals | INSERT/UPDATE/DELETE | 🎉 商談「クラウド移行PJ」が成約しました！ |
-| activities | INSERT/UPDATE/DELETE | 新しい活動「初回商談」が記録されました |
-| business_cards | INSERT | 📇 名刺のアップロードが完了しました |
-
-### トースト通知
-- 画面右下に表示（5秒で自動消去）
-- `src/components/RealtimeToast.tsx`
-- `src/hooks/useRealtimeNotifications.ts`
+※ Laravel は service_role キーで接続するため RLS をバイパス。テナント分離は Laravel の GlobalScope が担当。
 
 ---
 
@@ -290,7 +318,7 @@ src={card.image_path.startsWith('http')
 ## 12. VPS固有設定
 
 ### 本番Nginxの構成
-GitLab の Nginx（ポート443）がリバースプロキシとして動作：
+GitLabのNginx（ポート443）がリバースプロキシとして動作：
 - 設定ファイル: `/etc/gitlab/nginx-ai-mon.conf`
 - `https://sales.ai-mon.net` → `http://localhost:8090`（Docker Nginx）へ転送
 
@@ -302,51 +330,14 @@ sales_support_db     # MySQL（ローカル開発用のみ）
 ```
 
 ### ⚠️ VPS のカスタムDockerイメージ
-本番VPSの `sales_support_app` は `sales_support-app:with-pgsql` という
-カスタムイメージを使用（`docker commit` で作成）。
+本番VPSの `sales_support_app` は `sales_support-app:with-pgsql` というカスタムイメージを使用（`docker commit` で作成）。
 
-`docker-compose.yml`（VPS版）は `git update-index --skip-worktree` で
-git 管理から除外しており、git pull で上書きされない。
+`docker-compose.yml`（VPS版）は `git update-index --skip-worktree` で git 管理から除外しており、git pull で上書きされない。
 
-```yaml
+```bash
 # VPS の docker-compose.yml（抜粋）
 app:
   image: sales_support-app:with-pgsql  # カスタムイメージ
-```
-
-### VPS 完全再構築時の手順
-```bash
-docker compose up -d
-docker exec -u root sales_support_app bash -c \
-  "apt-get update -qq && apt-get install -y --no-install-recommends libpq-dev \
-  && docker-php-ext-install pdo_pgsql pgsql"
-docker commit sales_support_app sales_support-app:with-pgsql
-
-# docker-compose.ymlをimage版に変更
-python3 -c "
-content = open('docker-compose.yml').read()
-content = content.replace(
-    '    build:\n      context: .\n      dockerfile: Dockerfile',
-    '    image: sales_support-app:with-pgsql'
-)
-open('docker-compose.yml', 'w').write(content)
-"
-git update-index --skip-worktree docker-compose.yml
-git update-index --skip-worktree app/Http/Middleware/SupabaseAuth.php
-git update-index --skip-worktree Dockerfile
-git update-index --skip-worktree config/cors.php
-git update-index --skip-worktree nginx/conf.d/default.conf
-```
-
-### php-fpm専用プール（`/etc/php-fpm.d/sales_support.conf`）
-```ini
-[sales_support]
-user = nginx
-group = nginx
-listen = /run/php-fpm/sales_support.sock
-chdir = /var/www/sales_support
-php_admin_value[upload_max_filesize] = 20M
-php_admin_value[post_max_size] = 20M
 ```
 
 ### Google Vision API認証
@@ -388,6 +379,7 @@ git push origin main
 ssh root@v133-18-42-139.vir.kagoya.net
 cd /var/www/sales_support
 git pull origin main
+docker exec sales_support_app php artisan migrate --force
 docker exec sales_support_app php artisan config:clear
 docker exec sales_support_app php artisan cache:clear
 ```
@@ -427,6 +419,7 @@ docker exec sales_support_app php artisan db:seed --class=TestDataSeeder
 | 認証移行（Sanctum → Supabase Auth） | ✅ |
 | Realtimeリアルタイム通知 | ✅ |
 | 本番デプロイ（app.ai-mon.net） | ✅ |
+| メール連携（Gmail API・受信・一覧表示） | ✅ |
 
 ---
 
@@ -435,7 +428,9 @@ docker exec sales_support_app php artisan db:seed --class=TestDataSeeder
 | 優先度 | 機能 |
 |---|---|
 | 高 | 音声文字起こし（商談記録） |
-| 高 | メール連携（Gmail/Outlook） |
+| 高 | メール自動同期（定期バッチ・SyncEmailsJob） |
+| 中 | メール → 商談・担当者自動紐付け（Claude API活用） |
+| 中 | メール返信・送信（Outlook SMTP連携） |
 | 中 | カレンダー連携（Google Calendar） |
 | 中 | レポート・分析ダッシュボード強化 |
 | 中 | CSV インポート・エクスポート |
