@@ -43,10 +43,16 @@ return [
         'credentials' => env('GOOGLE_APPLICATION_CREDENTIALS', storage_path('credentials/google-vision.json')),
     ],
 
-    
+
     'supabase' => [
         'url'              => env('SUPABASE_URL'),
         'service_role_key' => env('SUPABASE_SERVICE_ROLE_KEY'),
         'bucket'           => env('SUPABASE_BUCKET', 'business-cards'),
+    ],
+
+    'gmail' => [
+        'client_id'     => env('GMAIL_CLIENT_ID'),
+        'client_secret' => env('GMAIL_CLIENT_SECRET'),
+        'redirect_uri'  => env('GMAIL_REDIRECT_URI', 'http://localhost:8090/api/v1/gmail/callback'),
     ],
 ];

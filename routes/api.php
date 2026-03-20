@@ -10,10 +10,16 @@ use App\Http\Controllers\Api\TaskController;
 use App\Http\Controllers\Api\BusinessCardController;
 use App\Http\Controllers\Api\DashboardController;
 use App\Http\Controllers\Api\NotificationController;
+use App\Http\Controllers\Api\GmailOAuthController;
+use App\Http\Controllers\Api\EmailController;
 
 // ── 認証不要 ────────────────────────────────────────
 Route::prefix('v1')->group(function () {
     Route::post('login', [AuthController::class, 'login']);
+
+    // Gmail OAuth（コールバックのみ認証不要）
+    Route::get('/gmail/callback', [GmailOAuthController::class, 'callback']);
+
 });
 
 // ── 認証必須 ────────────────────────────────────────
@@ -22,7 +28,7 @@ Route::prefix('v1')->middleware(['supabase.auth'])->group(function () {
     Route::get('me', [AuthController::class, 'me']);
     Route::get('dashboard', [DashboardController::class, 'index']);
     Route::get('notifications', [NotificationController::class, 'index']);
-    
+
     // ★ 業種一覧（customers resourceより前に記載すること）
     Route::get('customers/industries', [CustomerController::class, 'industries']);
     // 各リソースのCRUDエンドポイント（名前にapi.を追加）
@@ -74,4 +80,20 @@ Route::prefix('v1')->middleware(['supabase.auth'])->group(function () {
         'show' => 'api.cards.show',
         'destroy' => 'api.cards.destroy',
     ])->only(['index', 'store', 'show', 'update','destroy']); // update追加
+
+    // Gmail OAuth
+    Route::prefix('gmail')->group(function () {
+        Route::get('/redirect',    [GmailOAuthController::class, 'redirect']);
+        Route::get('/status',      [GmailOAuthController::class, 'status']);
+        Route::delete('/disconnect', [GmailOAuthController::class, 'disconnect']);
+    });
+
+    // メール
+    Route::prefix('emails')->group(function () {
+        Route::get('/',            [EmailController::class, 'index']);
+        Route::get('/unread-count',[EmailController::class, 'unreadCount']);
+        Route::post('/sync',       [EmailController::class, 'sync']);
+        Route::get('/{id}',        [EmailController::class, 'show']);
+        Route::patch('/{id}/link', [EmailController::class, 'link']);
+    });
 });
