@@ -27,6 +27,7 @@ class SupabaseAuth
             });
 
             $keys = JWK::parseKeySet($jwks);
+            JWT::$leeway = 60;
             $decoded = JWT::decode($token, $keys);
 
             $supabaseUid = $decoded->sub ?? null;
