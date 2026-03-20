@@ -1,10 +1,7 @@
 #version: '3.8'
-
 services:
   app:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    image: sales_support-app:with-pgsql
     container_name: sales_support_app
     restart: unless-stopped
     working_dir: /var/www
@@ -13,7 +10,6 @@ services:
       - ./docker/php/uploads.ini:/usr/local/etc/php/conf.d/uploads.ini
     networks:
       - sales_support_network
-
   db:
     image: mysql:8.0
     container_name: sales_support_db
@@ -27,10 +23,9 @@ services:
       - "3307:3306"
     volumes:
       - dbdata:/var/lib/mysql
-      - ./mysql/conf.d:/etc/mysql/conf.d  # この行を追加
+      - ./mysql/conf.d:/etc/mysql/conf.d
     networks:
       - sales_support_network
-
   nginx:
     image: nginx:alpine
     container_name: sales_support_nginx
@@ -42,11 +37,8 @@ services:
       - ./nginx/conf.d:/etc/nginx/conf.d
     networks:
       - sales_support_network
-
 networks:
   sales_support_network:
     driver: bridge
-
 volumes:
   dbdata:
-    driver: local
