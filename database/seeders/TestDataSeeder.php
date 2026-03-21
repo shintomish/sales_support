@@ -5,9 +5,19 @@ namespace Database\Seeders;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Http;
 
 class TestDataSeeder extends Seeder
 {
+    private string $supabaseUrl;
+    private string $serviceRoleKey;
+
+    public function __construct()
+    {
+        $this->supabaseUrl    = config('services.supabase.url');
+        $this->serviceRoleKey = config('services.supabase.service_role_key');
+    }
+
     public function run(): void
     {
         // ===== Tenants (3社) =====
@@ -36,13 +46,20 @@ class TestDataSeeder extends Seeder
             ['name' => '加藤 誠',     'email' => 'kato.m@next-stage.jp',         'role' => 'tenant_user',  'tenant_id' => $tenantIds[2]],
             ['name' => '吉田 奈々',   'email' => 'yoshida.n@next-stage.jp',      'role' => 'tenant_user',  'tenant_id' => $tenantIds[2]],
         ];
+
         $userIds = [];
         foreach ($users as $user) {
+            // Supabase Authにユーザー作成
+            $supabaseUid = $this->createSupabaseUser($user['email'], 'password');
+
             $userIds[] = DB::table('users')->insertGetId(array_merge($user, [
-                'password'   => Hash::make('password'),
-                'created_at' => now(), 'updated_at' => now(),
+                'password'     => Hash::make('password'),
+                'supabase_uid' => $supabaseUid,
+                'created_at'   => now(),
+                'updated_at'   => now(),
             ]));
         }
+
         // テナント別adminのuser_id
         $adminByTenant = [
             $tenantIds[0] => $userIds[1], // 鈴木 健一
@@ -98,7 +115,7 @@ class TestDataSeeder extends Seeder
             $customer = $customerIds[$contact['customer_index']];
             DB::table('contacts')->insert([
                 'name'        => $contact['name'],
-                'email'        => $contact['email'],
+                'email'       => $contact['email'],
                 'phone'       => $contact['phone'],
                 'position'    => $contact['position'],
                 'department'  => $contact['department'],
@@ -143,15 +160,15 @@ class TestDataSeeder extends Seeder
         // ===== Tasks (10件) =====
         $tasks = [
             ['title' => '提案書作成',             'description' => '生産管理システムの提案書を作成する',       'due_date' => '2026-03-25', 'priority' => '高',   'status' => '進行中', 'customer_index' => 0],
-            ['title' => 'デモ環境準備',           'description' => 'クラウド移行のデモ環境をセットアップする', 'due_date' => '2026-03-28', 'priority' => '高',   'status' => '未着手',     'customer_index' => 1],
-            ['title' => '契約書レビュー',         'description' => '再生可能エネルギー設備の契約書を確認する', 'due_date' => '2026-03-20', 'priority' => '中', 'status' => '完了',   'customer_index' => 2],
+            ['title' => 'デモ環境準備',           'description' => 'クラウド移行のデモ環境をセットアップする', 'due_date' => '2026-03-28', 'priority' => '高',   'status' => '未着手', 'customer_index' => 1],
+            ['title' => '契約書レビュー',         'description' => '再生可能エネルギー設備の契約書を確認する', 'due_date' => '2026-03-20', 'priority' => '中',   'status' => '完了',   'customer_index' => 2],
             ['title' => '開発スコープ確認',       'description' => 'AI営業支援ツールの開発スコープを確認する', 'due_date' => '2026-03-30', 'priority' => '高',   'status' => '進行中', 'customer_index' => 3],
-            ['title' => '要件定義ヒアリング',     'description' => '物流管理システムの要件をヒアリングする',   'due_date' => '2026-04-05', 'priority' => '中', 'status' => '未着手',     'customer_index' => 4],
-            ['title' => '競合調査',               'description' => '食品トレーサビリティ市場の競合を調査する', 'due_date' => '2026-04-01', 'priority' => '低',    'status' => '進行中', 'customer_index' => 5],
-            ['title' => '現地視察アポイント取得', 'description' => '建設現場のDX化に向けて現地視察を調整する', 'due_date' => '2026-03-27', 'priority' => '高',   'status' => '未着手',     'customer_index' => 6],
+            ['title' => '要件定義ヒアリング',     'description' => '物流管理システムの要件をヒアリングする',   'due_date' => '2026-04-05', 'priority' => '中',   'status' => '未着手', 'customer_index' => 4],
+            ['title' => '競合調査',               'description' => '食品トレーサビリティ市場の競合を調査する', 'due_date' => '2026-04-01', 'priority' => '低',   'status' => '進行中', 'customer_index' => 5],
+            ['title' => '現地視察アポイント取得', 'description' => '建設現場のDX化に向けて現地視察を調整する', 'due_date' => '2026-03-27', 'priority' => '高',   'status' => '未着手', 'customer_index' => 6],
             ['title' => '納品確認',               'description' => '電子カルテシステムの納品内容を確認する',   'due_date' => '2026-03-22', 'priority' => '高',   'status' => '完了',   'customer_index' => 7],
-            ['title' => 'ニーズヒアリング',       'description' => '貿易管理の課題をヒアリングする',           'due_date' => '2026-04-10', 'priority' => '低',    'status' => '未着手',     'customer_index' => 8],
-            ['title' => 'PoC提案',                'description' => 'スマートホームIoTのPoC提案書を作成する',   'due_date' => '2026-04-03', 'priority' => '中', 'status' => '進行中', 'customer_index' => 9],
+            ['title' => 'ニーズヒアリング',       'description' => '貿易管理の課題をヒアリングする',           'due_date' => '2026-04-10', 'priority' => '低',   'status' => '未着手', 'customer_index' => 8],
+            ['title' => 'PoC提案',                'description' => 'スマートホームIoTのPoC提案書を作成する',   'due_date' => '2026-04-03', 'priority' => '中',   'status' => '進行中', 'customer_index' => 9],
         ];
         foreach ($tasks as $task) {
             $customer = $customerIds[$task['customer_index']];
@@ -161,7 +178,7 @@ class TestDataSeeder extends Seeder
                 'due_date'    => $task['due_date'],
                 'priority'    => $task['priority'],
                 'status'      => $task['status'],
-                'user_id'             => $adminByTenant[$customer['tenant_id']],
+                'user_id'     => $adminByTenant[$customer['tenant_id']],
                 'customer_id' => $customer['id'],
                 'tenant_id'   => $customer['tenant_id'],
                 'created_at'  => now(),
@@ -171,16 +188,16 @@ class TestDataSeeder extends Seeder
 
         // ===== Activities (10件) =====
         $activities = [
-            ['type' => '訪問', 'subject' => '初回商談',           'description' => '生産管理システムについて初回商談を実施。担当者の課題をヒアリング。',         'activity_date' => '2026-03-10', 'customer_index' => 0],
-            ['type' => '電話',    'subject' => 'フォローアップ電話', 'description' => 'クラウド移行の進捗確認のため電話。来週デモ実施の日程調整完了。',             'activity_date' => '2026-03-12', 'customer_index' => 1],
-            ['type' => 'メール',   'subject' => '契約締結のご連絡',   'description' => '再生可能エネルギー設備導入の契約締結をメールにて正式通知。',                 'activity_date' => '2026-03-15', 'customer_index' => 2],
-            ['type' => '電話',    'subject' => '要件確認電話',       'description' => 'AI営業支援ツールの要件について電話確認。追加機能要望を把握。',               'activity_date' => '2026-03-17', 'customer_index' => 3],
+            ['type' => '訪問',   'subject' => '初回商談',           'description' => '生産管理システムについて初回商談を実施。担当者の課題をヒアリング。',         'activity_date' => '2026-03-10', 'customer_index' => 0],
+            ['type' => '電話',   'subject' => 'フォローアップ電話', 'description' => 'クラウド移行の進捗確認のため電話。来週デモ実施の日程調整完了。',             'activity_date' => '2026-03-12', 'customer_index' => 1],
+            ['type' => 'メール', 'subject' => '契約締結のご連絡',   'description' => '再生可能エネルギー設備導入の契約締結をメールにて正式通知。',                 'activity_date' => '2026-03-15', 'customer_index' => 2],
+            ['type' => '電話',   'subject' => '要件確認電話',       'description' => 'AI営業支援ツールの要件について電話確認。追加機能要望を把握。',               'activity_date' => '2026-03-17', 'customer_index' => 3],
             ['type' => '訪問',   'subject' => '現地調査訪問',       'description' => '物流センターを訪問し、現行システムの課題を調査。写真撮影および記録。',       'activity_date' => '2026-03-08', 'customer_index' => 4],
-            ['type' => '訪問', 'subject' => '提案プレゼン',       'description' => '食品トレーサビリティシステムの提案プレゼンを実施。担当者から好感触。',       'activity_date' => '2026-03-14', 'customer_index' => 5],
-            ['type' => '電話',    'subject' => '価格交渉電話',       'description' => '建設現場DX化の価格について電話にて交渉。値引き要望あり。社内確認中。',     'activity_date' => '2026-03-16', 'customer_index' => 6],
+            ['type' => '訪問',   'subject' => '提案プレゼン',       'description' => '食品トレーサビリティシステムの提案プレゼンを実施。担当者から好感触。',       'activity_date' => '2026-03-14', 'customer_index' => 5],
+            ['type' => '電話',   'subject' => '価格交渉電話',       'description' => '建設現場DX化の価格について電話にて交渉。値引き要望あり。社内確認中。',     'activity_date' => '2026-03-16', 'customer_index' => 6],
             ['type' => '訪問',   'subject' => '納品立会い',         'description' => '電子カルテシステムの納品に立会い。動作確認完了。担当者満足。',               'activity_date' => '2026-03-18', 'customer_index' => 7],
-            ['type' => 'メール',   'subject' => '資料送付',           'description' => '貿易管理プラットフォームの会社概要・製品資料をメール送付。',                 'activity_date' => '2026-03-11', 'customer_index' => 8],
-            ['type' => '訪問', 'subject' => 'PoC説明会',          'description' => 'スマートホームIoTのPoC内容を説明。技術的な質問多数あり。次回詳細説明予定。', 'activity_date' => '2026-03-13', 'customer_index' => 9],
+            ['type' => 'メール', 'subject' => '資料送付',           'description' => '貿易管理プラットフォームの会社概要・製品資料をメール送付。',                 'activity_date' => '2026-03-11', 'customer_index' => 8],
+            ['type' => '訪問',   'subject' => 'PoC説明会',          'description' => 'スマートホームIoTのPoC内容を説明。技術的な質問多数あり。次回詳細説明予定。', 'activity_date' => '2026-03-13', 'customer_index' => 9],
         ];
         foreach ($activities as $activity) {
             $customer = $customerIds[$activity['customer_index']];
@@ -199,5 +216,55 @@ class TestDataSeeder extends Seeder
 
         $this->command->info('テストデータの作成が完了しました！');
         $this->command->info('テナント: 3社 / ユーザー: 10人 / 顧客: 10社 / 連絡先: 20人 / 商談: 10件 / タスク: 10件 / 活動: 10件');
+    }
+
+    // Supabase Admin APIでユーザー作成
+    private function createSupabaseUser(string $email, string $password): ?string
+    {
+        $response = Http::withHeaders([
+            'apikey'        => $this->serviceRoleKey,
+            'Authorization' => "Bearer {$this->serviceRoleKey}",
+            'Content-Type'  => 'application/json',
+        ])->post("{$this->supabaseUrl}/auth/v1/admin/users", [
+            'email'            => $email,
+            'password'         => $password,
+            'email_confirm'    => true, // メール確認不要
+        ]);
+
+        if ($response->successful()) {
+            $uid = $response->json('id');
+            $this->command->info("Supabase Auth ユーザー作成: {$email} ({$uid})");
+            return $uid;
+        }
+
+        // 既に存在する場合はUIDを取得
+        if ($response->status() === 422) {
+            $this->command->warn("既存ユーザーのためスキップ: {$email}");
+            return $this->getSupabaseUserId($email);
+        }
+
+        $this->command->error("Supabase Authユーザー作成失敗: {$email} - " . $response->body());
+        return null;
+    }
+
+    // 既存ユーザーのUIDを取得
+    private function getSupabaseUserId(string $email): ?string
+    {
+        $response = Http::withHeaders([
+            'apikey'        => $this->serviceRoleKey,
+            'Authorization' => "Bearer {$this->serviceRoleKey}",
+        ])->get("{$this->supabaseUrl}/auth/v1/admin/users", [
+            'email' => $email,
+        ]);
+
+        if ($response->successful()) {
+            $users = $response->json('users', []);
+            foreach ($users as $user) {
+                if ($user['email'] === $email) {
+                    return $user['id'];
+                }
+            }
+        }
+        return null;
     }
 }
