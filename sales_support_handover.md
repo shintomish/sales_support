@@ -453,3 +453,14 @@ docker exec sales_support_app php artisan db:seed --class=TestDataSeeder
 | 中 | Supabase Auth → RLSによるテナント分離強化 |
 | 低 | SESマッチング機能（Phase 2） |
 | 低 | 売上予測AI |
+
+## 18. トラブル対応
+
+ローカルで動かない場合のチェックリスト
+| 確認項目　　　　　　| コマンド
+|------------------|------------------------------------------------------------------------------------|
+| DB接続　	　　　　 | docker compose exec app php artisan tinker --execute="DB::connection()->getPdo();"
+| CORS設定　　　　　 | grep FRONTEND_URL ~/sales_support/.env
+| Supabaseバケット　| ダッシュボードで business-cards バケット存在確認
+| ログ確認	　　　　 | docker compose exec app tail -f storage/logs/laravel.log
+| キャッシュクリア　 |  docker compose exec app php artisan config:clear
