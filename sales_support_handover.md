@@ -304,6 +304,8 @@ GMAIL_REDIRECT_URI=https://sales.ai-mon.net/api/v1/gmail/callback  # 本番
 - **DB接続**: Session Pooler（ポート5432・IPv4対応）
 - **Storage バケット**: `business-cards`（PUBLIC）
 
+- **Supabase環境分離・SeederでAuth自動登録対応**
+
 ### Realtime 有効テーブル
 `tasks` / `deals` / `activities` / `business_cards`（`supabase_realtime` publication に登録済み）
 
