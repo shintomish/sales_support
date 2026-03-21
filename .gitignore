@@ -38,3 +38,4 @@ storage/credentials/google-vision.json
 tmp/
 curl_output.txt
 output.txt
+.env.production.backup
