@@ -277,7 +277,7 @@ SUPABASE_JWKS_URL=https://qkjceppkrsurrynqsuse.supabase.co/auth/v1/.well-known/j
 SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
 
 FRONTEND_URL=https://app.ai-mon.net          # 本番
-# FRONTEND_URL=http://localhost:3000          # ローカル（CORSに影響するため切り替え必須）
+# FRONTEND_URL=http://localhost:3000          # ローカル
 
 SANCTUM_STATEFUL_DOMAINS=app.ai-mon.net      # 本番
 # SANCTUM_STATEFUL_DOMAINS=localhost:3000     # ローカル
@@ -289,14 +289,18 @@ GMAIL_REDIRECT_URI=https://sales.ai-mon.net/api/v1/gmail/callback  # 本番
 # GMAIL_REDIRECT_URI=http://localhost:8090/api/v1/gmail/callback    # ローカル
 ```
 
-⚠️ **ローカル開発時の注意**: `FRONTEND_URL` と `GMAIL_REDIRECT_URI` をローカル用に変更し、作業後は本番用に戻すこと。
-
 ---
 
 ## 10. Supabase構成
-
+- **本番**
 - **プロジェクト**: sales-support（東京リージョン）
 - **URL**: https://qkjceppkrsurrynqsuse.supabase.co
+- **DB接続**: Session Pooler（ポート5432・IPv4対応）
+- **Storage バケット**: `business-cards`（PUBLIC）
+
+- **ローカル**
+- **プロジェクト**: sales-support-dev（東京リージョン）
+- **URL**: https://smzoqpvaxznqcwrsgjju.supabase.co
 - **DB接続**: Session Pooler（ポート5432・IPv4対応）
 - **Storage バケット**: `business-cards`（PUBLIC）
 
