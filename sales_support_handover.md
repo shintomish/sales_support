@@ -460,6 +460,7 @@ docker exec sales_support_app php artisan db:seed --class=TestDataSeeder
 | 確認項目　　　　　　| コマンド
 |------------------|------------------------------------------------------------------------------------|
 | DB接続　	　　　　 | docker compose exec app php artisan tinker --execute="DB::connection()->getPdo();"
+|                  |                         "echo DB::connection()->getPdo() ? 'DB接続OK' : 'DB接続NG';"
 | CORS設定　　　　　 | grep FRONTEND_URL ~/sales_support/.env
 | Supabaseバケット　| ダッシュボードで business-cards バケット存在確認
 | ログ確認	　　　　 | docker compose exec app tail -f storage/logs/laravel.log
