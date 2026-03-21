@@ -244,7 +244,7 @@ NEXT_PUBLIC_SUPABASE_URL=https://qkjceppkrsurrynqsuse.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
 ```
 
-### Laravel（`.env` ローカル・本番共通）
+### Laravel（`.env` 本番）
 ```env
 DB_CONNECTION=pgsql
 DB_HOST=aws-1-ap-northeast-1.pooler.supabase.com   # Session Pooler（IPv4対応）
@@ -253,6 +253,16 @@ DB_DATABASE=postgres
 DB_USERNAME=postgres.qkjceppkrsurrynqsuse
 DB_PASSWORD=sales_password_2026
 DB_SSLMODE=require
+
+### Laravel（`.env` ローカル・03/21 分離）
+```env
+DB_CONNECTION=pgsql
+DB_HOST=aws-1-ap-northeast-1.pooler.supabase.com
+DB_PORT=5432
+DB_DATABASE=postgres
+DB_USERNAME=postgres.smzoqpvaxznqcwrsgjju
+DB_PASSWORD=DevPassword2026!
+PGSSLMODE=require
 
 ANTHROPIC_API_KEY=sk-ant-api03-...
 CLAUDE_MODEL=claude-sonnet-4-20250514
