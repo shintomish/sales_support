@@ -1,0 +1,27 @@
+[90m= [39m[
+    {#6361
+      +"[1mconname[22m": "[32mdeals_contact_id_foreign[39m",
+      +"[1mdef[22m": "[32mFOREIGN KEY (contact_id) REFERENCES contacts(id) ON DELETE SET NULL[39m",
+    },
+    {#6362
+      +"[1mconname[22m": "[32mdeals_customer_id_foreign[39m",
+      +"[1mdef[22m": "[32mFOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE CASCADE[39m",
+    },
+    {#6363
+      +"[1mconname[22m": "[32mdeals_pkey[39m",
+      +"[1mdef[22m": "[32mPRIMARY KEY (id)[39m",
+    },
+    {#6358
+      +"[1mconname[22m": "[32mdeals_status_check[39m",
+      +"[1mdef[22m": "[32mCHECK (((status)::text = ANY ((ARRAY['新規'::character varying, '提案'::character varying, '交渉'::character varying, '成約'::character varying, '失注'::character varying])::text[])))[39m",
+    },
+    {#6348
+      +"[1mconname[22m": "[32mdeals_tenant_id_foreign[39m",
+      +"[1mdef[22m": "[32mFOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE SET NULL[39m",
+    },
+    {#6357
+      +"[1mconname[22m": "[32mdeals_user_id_foreign[39m",
+      +"[1mdef[22m": "[32mFOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE[39m",
+    },
+  ]
+

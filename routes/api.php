@@ -48,6 +48,11 @@ Route::prefix('v1')->middleware(['supabase.auth'])->group(function () {
         'destroy' => 'api.contacts.destroy',
     ]);
 
+    // Excel インポート（apiResource の前に必須）
+    Route::post('deals/import', [App\Http\Controllers\Api\DealImportController::class, 'store']);
+    Route::get('deals/import/logs', [App\Http\Controllers\Api\DealImportController::class, 'logs']);
+    Route::get('deals/import/logs/{id}', [App\Http\Controllers\Api\DealImportController::class, 'showLog']);
+
     Route::apiResource('deals', DealController::class)->names([
         'index' => 'api.deals.index',
         'store' => 'api.deals.store',
