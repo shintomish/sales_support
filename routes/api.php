@@ -54,6 +54,10 @@ Route::prefix('v1')->middleware(['supabase.auth'])->group(function () {
     Route::get('deals/import/logs/{id}', [App\Http\Controllers\Api\DealImportController::class, 'showLog']);
     Route::get('ses-contracts/summary', [App\Http\Controllers\Api\SesContractController::class, 'summary']);
     Route::get('ses-contracts', [App\Http\Controllers\Api\SesContractController::class, 'index']);
+    Route::post('ses-contracts', [App\Http\Controllers\Api\SesContractController::class, 'store']);
+    Route::get('ses-contracts/{id}', [App\Http\Controllers\Api\SesContractController::class, 'show']);
+    Route::put('ses-contracts/{id}', [App\Http\Controllers\Api\SesContractController::class, 'update']);
+    Route::post('ses-contracts/import', [App\Http\Controllers\Api\SesContractController::class, 'import']);
 
     Route::apiResource('deals', DealController::class)->names([
         'index' => 'api.deals.index',
