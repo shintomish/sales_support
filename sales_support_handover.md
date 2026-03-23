@@ -442,6 +442,8 @@ docker exec sales_support_app php artisan db:seed --class=TestDataSeeder
 | SES台帳画面追加（/ses-contracts・列グループ切り替え・サマリーカード） | ✅ |
 | SES台帳画面実装（リスト/カンバン/Excel取込/新規登録/編集）| ✅ |
 | SES台帳画面実装（商談管理からExcel取込削除 | ✅ |
+| 商談管理をdeal_type:generalのみ表示・SES→商談管理promote機能追加 | ✅ |
+| SES台帳編集画面に商談管理への登録ボタン追加・適格請求書番号と特記事項を分割 | ✅ |
 
 ---
 

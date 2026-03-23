@@ -12,6 +12,7 @@ class DealController extends Controller
     public function index(Request $request)
     {
         $deals = Deal::with(['customer', 'contact'])
+            ->where('deal_type', 'general')
             ->when($request->search, fn($q, $s) =>
                 $q->where('title', 'like', "%{$s}%")
                 ->orWhereHas('customer', fn($q) =>
@@ -33,14 +34,15 @@ class DealController extends Controller
             'contact_id'          => 'nullable|exists:contacts,id',
             'title'               => 'required|string|max:255',
             'amount'              => 'nullable|numeric|min:0|max:999999999999',
-            'status'              => 'required|in:新規,提案,交渉,成約,失注',
+            'status'              => 'required|in:新規,提案,交渉,成約,失注,稼働中,更新交渉中,期限切れ',
             'probability'         => 'nullable|integer|min:0|max:100',
             'expected_close_date' => 'nullable|date',
             'actual_close_date'   => 'nullable|date|after_or_equal:expected_close_date',
             'notes'               => 'nullable|string|max:2000',
         ], $this->messages());
 
-        $validated['user_id'] = $request->user()->id;
+        $validated['user_id']   = $request->user()->id;
+        $validated['deal_type'] = 'general';
         $deal = Deal::create($validated);
         return new DealResource($deal);
     }
@@ -58,7 +60,7 @@ class DealController extends Controller
             'contact_id'          => 'nullable|exists:contacts,id',
             'title'               => 'required|string|max:255',
             'amount'              => 'nullable|numeric|min:0|max:999999999999',
-            'status'              => 'required|in:新規,提案,交渉,成約,失注',
+            'status'              => 'required|in:新規,提案,交渉,成約,失注,稼働中,更新交渉中,期限切れ',
             'probability'         => 'nullable|integer|min:0|max:100',
             'expected_close_date' => 'nullable|date',
             'actual_close_date'   => 'nullable|date|after_or_equal:expected_close_date',

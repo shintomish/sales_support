@@ -291,6 +291,45 @@ class SesContractController extends Controller
         ], $log->status === 'failed' ? 422 : 200);
     }
 
+
+    public function promote(int $id): JsonResponse
+    {
+        $tenantId = auth()->user()->tenant_id;
+        $deal = Deal::where('tenant_id', $tenantId)
+            ->where('deal_type', 'ses')
+            ->findOrFail($id);
+
+        $existing = Deal::where('tenant_id', $tenantId)
+            ->where('deal_type', 'general')
+            ->where('customer_id', $deal->customer_id)
+            ->where('title', $deal->title)
+            ->first();
+
+        if ($existing) {
+            return response()->json([
+                'message' => 'すでに商談管理に登録済みです',
+                'deal_id' => $existing->id,
+            ]);
+        }
+
+        $newDeal = Deal::create([
+            'tenant_id'   => $tenantId,
+            'user_id'     => auth()->id(),
+            'customer_id' => $deal->customer_id,
+            'contact_id'  => $deal->contact_id,
+            'title'       => $deal->title,
+            'deal_type'   => 'general',
+            'status'      => '新規',
+            'amount'      => $deal->sesContract?->income_amount ?? 0,
+            'notes'       => "SES台帳（ID:{$deal->id}）から登録",
+        ]);
+
+        return response()->json([
+            'message' => '商談管理に登録しました',
+            'deal_id' => $newDeal->id,
+        ], 201);
+    }
+
     public function summary(): JsonResponse
     {
         $tenantId = auth()->user()->tenant_id;
