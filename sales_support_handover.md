@@ -440,6 +440,8 @@ docker exec sales_support_app php artisan db:seed --class=TestDataSeeder
 | 商談一覧にカンバンUI・売上予測グラフ・Excelインポートモーダルを追加 | ✅ |
 | SES台帳API実装（SesContractController・ses_enabled migration） | ✅ |
 | SES台帳画面追加（/ses-contracts・列グループ切り替え・サマリーカード） | ✅ |
+| SES台帳画面実装（リスト/カンバン/Excel取込/新規登録/編集）| ✅ |
+| SES台帳画面実装（商談管理からExcel取込削除 | ✅ |
 
 ---
 
