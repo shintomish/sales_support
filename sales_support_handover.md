@@ -438,6 +438,9 @@ docker exec sales_support_app php artisan db:seed --class=TestDataSeeder
 | メール連携（Gmail API・受信・一覧表示） | ✅ |
 | ExcelインポートAPI実装・動作確認完了 | ✅ |
 | 商談一覧にカンバンUI・売上予測グラフ・Excelインポートモーダルを追加 | ✅ |
+| SES台帳API実装（SesContractController・ses_enabled migration） | ✅ |
+| SES台帳画面追加（/ses-contracts・列グループ切り替え・サマリーカード） | ✅ |
+
 ---
 
 ## 17. 次期開発候補
