@@ -436,7 +436,7 @@ docker exec sales_support_app php artisan db:seed --class=TestDataSeeder
 | Realtimeリアルタイム通知 | ✅ |
 | 本番デプロイ（app.ai-mon.net） | ✅ |
 | メール連携（Gmail API・受信・一覧表示） | ✅ |
-
+| ExcelインポートAPI実装・動作確認完了 | ✅ |
 ---
 
 ## 17. 次期開発候補
