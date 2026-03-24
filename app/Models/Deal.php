@@ -26,6 +26,11 @@ class Deal extends Model
         'affiliation',
         'affiliation_contact',
         'invoice_number',
+        'sales_person',
+        'client_contact',
+        'client_mobile',
+        'client_phone',
+        'client_fax',
     ];
 
     protected $casts = [

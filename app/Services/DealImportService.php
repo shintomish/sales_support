@@ -274,7 +274,12 @@ class DealImportService
             'change_type'         => $this->cleanString($row[2] ?? ''),
             'affiliation'         => $this->cleanString($row[4] ?? ''),
             'affiliation_contact' => $this->cleanString($row[5] ?? ''),
+            'sales_person'        => $this->cleanString($row[3] ?? ''),
             'invoice_number'      => $this->cleanString($row[46] ?? ''),
+            'client_contact'      => $this->cleanString($row[11] ?? ''),
+            'client_mobile'       => $this->cleanString($row[12] ?? ''),
+            'client_phone'        => $this->cleanString($row[13] ?? ''),
+            'client_fax'          => $this->cleanString($row[14] ?? ''),
             // ステータスは change_type から推測
             'status'              => $this->resolveStatus($row[2] ?? ''),
             'user_id'             => $this->importedBy,
@@ -416,6 +421,10 @@ class DealImportService
     {
         if ($value === null || $value === '' || $value === '-') {
             return null;
+        }
+        // カンマ区切り（例: 620,000）を除去
+        if (is_string($value)) {
+            $value = str_replace(',', '', trim($value));
         }
         // 数値以外の文字が含まれていたら null
         if (!is_numeric($value)) {
