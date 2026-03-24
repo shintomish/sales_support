@@ -140,7 +140,7 @@ class GmailService
         $dateStr  = $headers->firstWhere('name', 'Date')['value'] ?? null;
 
         [$fromName, $fromAddress] = $this->parseFrom($from);
-        $receivedAt = $dateStr ? Carbon::parse($dateStr) : Carbon::now();
+        $receivedAt = $dateStr ? Carbon::parse($dateStr)->utc() : Carbon::now()->utc();
 
         [$bodyText, $bodyHtml] = $this->extractBody($data['payload']);
 
