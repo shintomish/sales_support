@@ -10,10 +10,13 @@ Artisan::command('inspire', function () {
 })->purpose('Display an inspiring quote');
 
 // ── メール自動同期（15分毎）────────────────────────────────
-// 全テナントのGmailを自動取得してemailsテーブルに保存する
-Schedule::job(new SyncEmailsJob())
+// キューを使わず同期実行（dispatchSync）
+Schedule::call(function () {
+    (new SyncEmailsJob())->handle(app(\App\Services\GmailService::class));
+})
     ->everyFifteenMinutes()
-    ->withoutOverlapping()   // 前のJobが終わっていなければスキップ
+    ->withoutOverlapping()
+    ->name('sync-emails')
     ->onFailure(function () {
         \Illuminate\Support\Facades\Log::error('[Schedule] SyncEmailsJob 失敗');
     });
