@@ -221,6 +221,8 @@ class SesContractController extends Controller
         $tenantId = auth()->user()->tenant_id;
         $deal = Deal::where('tenant_id', $tenantId)->where('deal_type', 'ses')->findOrFail($id);
         DB::transaction(function () use ($request, $deal, $tenantId) {
+
+            // ── deals テーブル更新 ────────────────────────────
             $dealFields = array_filter([
                 'title'               => $request->input('project_name'),
                 'status'              => $request->input('status'),
@@ -231,8 +233,17 @@ class SesContractController extends Controller
                 'change_type'         => $request->input('change_type'),
                 'invoice_number'      => $request->input('invoice_number'),
                 'amount'              => $request->input('income_amount', 0),
+                'sales_person'        => $request->input('sales_person'),
+                // 客先担当者
+                'client_contact'      => $request->input('client_contact'),
+                'client_mobile'       => $request->input('client_mobile'),
+                'client_phone'        => $request->input('client_phone'),
+                'client_fax'          => $request->input('client_fax'),
+                'notes'               => $request->input('notes'),
             ], fn($v) => $v !== null);
             $deal->update($dealFields);
+
+            // ── ses_contracts テーブル更新 ────────────────────
             $scData = array_filter([
                 'income_amount'               => $request->input('income_amount'),
                 'billing_plus_22'             => $request->input('billing_plus_22'),
@@ -262,6 +273,30 @@ class SesContractController extends Controller
                 ['deal_id' => $deal->id],
                 array_merge(['tenant_id' => $tenantId, 'deal_id' => $deal->id], $scData)
             );
+
+            // ── work_records テーブル更新 ─────────────────────
+            // 勤務表受領日・交通費・請求書受領日が1つでもあれば保存
+            $timesheetDate = $request->input('timesheet_received_date');
+            $invoiceDate   = $request->input('invoice_received_date');
+            $transportFee  = $request->input('transportation_fee');
+
+            if ($timesheetDate || $invoiceDate || $transportFee !== null) {
+                // year_month: 契約期間終了月 → なければ現在月
+                $contractEnd = $request->input('contract_period_end');
+                $yearMonth = $contractEnd
+                    ? \Carbon\Carbon::parse($contractEnd)->format('Y-m')
+                    : now()->format('Y-m');
+
+                \App\Models\WorkRecord::updateOrCreate(
+                    ['deal_id' => $deal->id, 'year_month' => $yearMonth],
+                    [
+                        'tenant_id'               => $tenantId,
+                        'timesheet_received_date' => $timesheetDate ?: null,
+                        'transportation_fee'      => $transportFee,
+                        'invoice_received_date'   => $invoiceDate ?: null,
+                    ]
+                );
+            }
         });
         $deal->load(['sesContract', 'contact', 'customer', 'latestWorkRecord']);
         return response()->json(['data' => $this->formatDeal($deal)]);

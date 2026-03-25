@@ -51,7 +51,7 @@ use PhpOffice\PhpSpreadsheet\Shared\Date as ExcelDate;
  *   [26] 超過時間（顧客側）
  *   [27] 精算単位(分)
  *   [28] 入金サイト
- *   [29] 控除単価（仕入れ側）
+ *   [29] 控除単価（仕入れ側）  ※ 旧: [29] 控除単価（仕入れ側）← 変わらず
  *   [30] 控除時間（仕入れ側）
  *   [31] 超過単価（仕入れ側）
  *   [32] 超過時間（仕入れ側）
@@ -61,12 +61,12 @@ use PhpOffice\PhpSpreadsheet\Shared\Date as ExcelDate;
  *   [36] 契約期間終了
  *   [37] 期間末（所属）
  *   [38] 現場最寄駅
- *   [39] 勤務表 受領日
- *   [40] 交通費
+ *   [39] 勤務表受領日          ← 変わらず
+ *   [40] 交通費                ← 変わらず
  *   [41] 欠勤
  *   [42] 有給
- *   [43] 請求書 有無
- *   [44] 請求書 受領日
+ *   [43] 請求書有無
+ *   [44] 請求書受領日
  *   [45] 特記事項
  *   [46] 適格請求書発行事業者登録番号
  *   [47] 削除フラグ
@@ -81,7 +81,7 @@ class DealImportService
     /** ヘッダー行のキーワード（この文字列がある行をヘッダーとみなす） */
     private const HEADER_KEYWORD = '項番';
 
-    /** 削除フラグの列インデックス */
+    /** 削除フラグの列インデックス（新列構成） */
     private const COL_DELETE_FLAG = 47;
 
     // ── プロパティ ────────────────────────────────────────
@@ -222,8 +222,14 @@ class DealImportService
         $engineerName  = $this->cleanString($row[1] ?? '');
         $customerName  = $this->cleanString($row[8] ?? '');
 
-        // 必須項目チェック
-        if (empty($engineerName) || empty($customerName)) {
+        // 顧客名が空の場合、案件名 → 氏名 の順でフォールバック
+        if (empty($customerName)) {
+            $customerName = $this->cleanString($row[10] ?? '')  // 案件名
+                         ?? $engineerName;                       // 氏名
+        }
+
+        // 必須項目チェック（氏名は必須）
+        if (empty($engineerName)) {
             $this->skipped++;
             return;
         }
@@ -241,17 +247,20 @@ class DealImportService
         );
 
         // ── 2. Contact（技術者）の upsert ─────────────────
-        // email があればそれをキーにする。なければ名前＋顧客IDで突合
+        // メールがある場合は メール＋氏名 の組み合わせをキーにする
+        // （同じメールアドレスでも氏名が異なれば別人として扱う）
+        // メールがない場合は 氏名＋顧客ID で突合
+        $email = $this->cleanString($row[6] ?? '');
         $contactData = [
             'tenant_id'   => $this->tenantId,
             'customer_id' => $customer->id,
             'name'        => $engineerName,
-            'email'       => $this->cleanString($row[6] ?? ''),
+            'email'       => $email,
             'phone'       => $this->cleanString($row[7] ?? ''),
         ];
 
-        $contactKey = !empty($contactData['email'])
-            ? ['tenant_id' => $this->tenantId, 'email' => $contactData['email']]
+        $contactKey = !empty($email)
+            ? ['tenant_id' => $this->tenantId, 'email' => $email, 'name' => $engineerName]
             : ['tenant_id' => $this->tenantId, 'name'  => $engineerName, 'customer_id' => $customer->id];
 
         $contact = Contact::updateOrCreate($contactKey, $contactData);
@@ -275,7 +284,7 @@ class DealImportService
             'affiliation'         => $this->cleanString($row[4] ?? ''),
             'affiliation_contact' => $this->cleanString($row[5] ?? ''),
             'sales_person'        => $this->cleanString($row[3] ?? ''),
-            'invoice_number'      => $this->cleanString($row[46] ?? ''),
+            'invoice_number'      => $this->cleanString($row[46] ?? ''), // [46] 適格請求書番号
             'client_contact'      => $this->cleanString($row[11] ?? ''),
             'client_mobile'       => $this->cleanString($row[12] ?? ''),
             'client_phone'        => $this->cleanString($row[13] ?? ''),
@@ -340,22 +349,19 @@ class DealImportService
             : now()->format('Y-m');
 
         // 勤務表受領日 or 請求書受領日があるときだけ保存
-        $timesheetDate = $this->toDate($row[39] ?? null);
-        $invoiceDate   = $this->toDate($row[44] ?? null);
-        $invoiceExists = $this->cleanString($row[43] ?? '');
+        $timesheetDate = $this->toDate($row[39] ?? null);  // 変わらず
+        $invoiceDate   = $this->toDate($row[44] ?? null);  // [44] 請求書受領日
+        $notes         = $this->cleanString($row[45] ?? ''); // [45] 特記事項
 
-        if ($timesheetDate || $invoiceDate || !empty($invoiceExists)) {
+        if ($timesheetDate || $invoiceDate) {
             WorkRecord::updateOrCreate(
                 ['deal_id' => $deal->id, 'year_month' => $yearMonth],
                 [
                     'tenant_id'               => $this->tenantId,
                     'timesheet_received_date' => $timesheetDate,
-                    'transportation_fee'      => $this->toDecimal($row[40] ?? null),
-                    'absence_days'            => $this->toDecimal($row[41] ?? null),
-                    'paid_leave_days'         => $this->toDecimal($row[42] ?? null),
-                    'invoice_exists'          => $invoiceExists === '有' ? true : ($invoiceExists === '無' ? false : null),
+                    'transportation_fee'      => $this->toDecimal($row[40] ?? null), // 変わらず
                     'invoice_received_date'   => $invoiceDate,
-                    'notes'                   => $this->cleanString($row[45] ?? ''),
+                    'notes'                   => $notes,
                 ]
             );
         }
