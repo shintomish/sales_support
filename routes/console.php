@@ -13,7 +13,6 @@ Artisan::command('inspire', function () {
 // 全テナントのGmailを自動取得してemailsテーブルに保存する
 Schedule::job(new SyncEmailsJob())
     ->everyFifteenMinutes()
-    ->timezone('UTC')
     ->withoutOverlapping()   // 前のJobが終わっていなければスキップ
     ->onFailure(function () {
         \Illuminate\Support\Facades\Log::error('[Schedule] SyncEmailsJob 失敗');
