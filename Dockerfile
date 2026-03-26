@@ -30,4 +30,4 @@ COPY . .
 RUN composer install --no-interaction --prefer-dist --optimize-autoloader
 RUN chown -R www-data:www-data /var/www/storage /var/www/bootstrap/cache
 EXPOSE 9000
-CMD ["php-fpm"]
+CMD ["sh", "-c", "chown -R www-data:www-data /var/www/storage /var/www/bootstrap/cache && php-fpm"]
