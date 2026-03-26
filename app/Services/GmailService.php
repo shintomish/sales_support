@@ -139,8 +139,9 @@ class GmailService
         $to       = $headers->firstWhere('name', 'To')['value'] ?? '';
         $dateStr  = $headers->firstWhere('name', 'Date')['value'] ?? null;
 
-        [$fromName, $fromAddress] = $this->parseFrom($from);
-        $receivedAt = $dateStr ? Carbon::parse($dateStr)->utc() : Carbon::now()->utc();
+	[$fromName, $fromAddress] = $this->parseFrom($from);
+
+$receivedAt = isset($data['internalDate']) ? Carbon::createFromTimestampMs((int)$data['internalDate'])->setTimezone('Asia/Tokyo') : ($dateStr ? Carbon::parse($dateStr)->setTimezone('Asia/Tokyo') : Carbon::now()->setTimezone('Asia/Tokyo'));
 
         [$bodyText, $bodyHtml] = $this->extractBody($data['payload']);
 
