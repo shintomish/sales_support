@@ -102,10 +102,11 @@ Route::prefix('v1')->middleware(['supabase.auth'])->group(function () {
 
     // メール
     Route::prefix('emails')->group(function () {
-        Route::get('/',            [EmailController::class, 'index']);
-        Route::get('/unread-count',[EmailController::class, 'unreadCount']);
-        Route::post('/sync',       [EmailController::class, 'sync']);
-        Route::get('/{id}',        [EmailController::class, 'show']);
-        Route::patch('/{id}/link', [EmailController::class, 'link']);
+        Route::get('/',              [EmailController::class, 'index']);
+        Route::get('/unread-count',  [EmailController::class, 'unreadCount']);
+        Route::post('/sync',         [EmailController::class, 'sync']);
+        Route::post('/mark-all-read',[EmailController::class, 'markAllRead']); // 全件既読
+        Route::get('/{id}',          [EmailController::class, 'show']);
+        Route::patch('/{id}/link',   [EmailController::class, 'link']);
     });
 });

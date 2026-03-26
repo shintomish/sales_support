@@ -1,13 +1,10 @@
 <?php
-
 namespace App\Http\Controllers\Api;
-
 use App\Http\Controllers\Controller;
 use App\Models\Email;
 use App\Models\GmailToken;
 use App\Services\GmailService;
 use Illuminate\Http\Request;
-
 class EmailController extends Controller
 {
     public function __construct(private GmailService $gmailService) {}
@@ -18,10 +15,8 @@ class EmailController extends Controller
         $perPage  = $request->integer('per_page', 30);
         $search   = $request->string('search');
         $unread   = $request->boolean('unread');
-
         $query = Email::query()
             ->orderBy('received_at', 'desc');
-
         if ($search) {
             $query->where(function ($q) use ($search) {
                 $q->where('subject', 'like', "%{$search}%")
@@ -30,19 +25,16 @@ class EmailController extends Controller
                   ->orWhere('body_text', 'like', "%{$search}%");
             });
         }
-
         if ($unread) {
             $query->where('is_read', false);
         }
-
         return response()->json($query->paginate($perPage));
     }
 
-    // メール詳細
+    // メール詳細（自動既読）
     public function show(int $id)
     {
         $email = Email::findOrFail($id);
-
         // 既読にする
         if (!$email->is_read) {
             $token = GmailToken::where('tenant_id', auth()->user()->tenant_id)->first();
@@ -51,7 +43,6 @@ class EmailController extends Controller
             }
             $email->update(['is_read' => true]);
         }
-
         return response()->json($email->load(['contact', 'deal', 'customer']));
     }
 
@@ -60,11 +51,9 @@ class EmailController extends Controller
     {
         $user  = auth()->user();
         $token = GmailToken::where('tenant_id', $user->tenant_id)->first();
-
         if (!$token) {
             return response()->json(['message' => 'Gmail未接続です'], 422);
         }
-
         try {
             $count = $this->gmailService->fetchAndStoreEmails($token);
             return response()->json([
@@ -85,10 +74,8 @@ class EmailController extends Controller
             'deal_id'     => 'nullable|exists:deals,id',
             'customer_id' => 'nullable|exists:customers,id',
         ]);
-
         $email = Email::findOrFail($id);
         $email->update($request->only(['contact_id', 'deal_id', 'customer_id']));
-
         return response()->json($email->load(['contact', 'deal', 'customer']));
     }
 
@@ -97,5 +84,18 @@ class EmailController extends Controller
     {
         $count = Email::where('is_read', false)->count();
         return response()->json(['count' => $count]);
+    }
+
+    // 全件既読
+    public function markAllRead()
+    {
+        $tenantId = auth()->user()->tenant_id;
+        $updated = Email::where('tenant_id', $tenantId)
+            ->where('is_read', false)
+            ->update(['is_read' => true]);
+        return response()->json([
+            'message' => "{$updated}件を既読にしました",
+            'count'   => $updated,
+        ]);
     }
 }
