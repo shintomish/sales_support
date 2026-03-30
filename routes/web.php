@@ -33,6 +33,9 @@ Route::middleware(['auth'])->group(function () {
     // 名刺管理 ← 追加
     Route::resource('business-cards', BusinessCardController::class);
 
+    // SES台帳（ses_enabled テナントのみ表示）
+    Route::get('ses-contracts', fn() => abort(404))->name('ses-contracts.index');
+
     // Ajax
     Route::get('api/contacts', [DealController::class, 'getContacts'])->name('api.contacts');
     Route::get('api/customer-data', [ActivityController::class, 'getCustomerData'])->name('api.customer_data');

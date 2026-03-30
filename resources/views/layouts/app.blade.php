@@ -502,6 +502,12 @@
             class="sidebar-link {{ request()->is('business-cards*') ? 'active' : '' }}">
                 <i class="bi bi-credit-card-2-front"></i>名刺管理
             </a>
+            @if(Auth::user()->tenant->ses_enabled)
+            <a href="{{ route('ses-contracts.index') }}"
+            class="sidebar-link {{ request()->is('ses-contracts*') ? 'active' : '' }}">
+                <i class="bi bi-file-earmark-spreadsheet"></i>SES台帳
+            </a>
+            @endif
         </div>
         <!-- {{-- ユーザー情報・ログアウト --}} -->
         <div style="position: absolute; bottom: 0; left: 0; right: 0;
