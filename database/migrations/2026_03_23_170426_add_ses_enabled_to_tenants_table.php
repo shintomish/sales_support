@@ -12,7 +12,7 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('tenants', function (Blueprint $table) {
-            //
+            $table->boolean('ses_enabled')->default(false)->after('plan');
         });
     }
 
@@ -22,7 +22,7 @@ return new class extends Migration
     public function down(): void
     {
         Schema::table('tenants', function (Blueprint $table) {
-            //
+            $table->dropColumn('ses_enabled');
         });
     }
 };
