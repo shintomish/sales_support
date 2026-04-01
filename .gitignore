@@ -39,3 +39,5 @@ tmp/
 curl_output.txt
 output.txt
 .env.production.backup
+.skills/
+.claude/
