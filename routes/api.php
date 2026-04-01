@@ -12,6 +12,10 @@ use App\Http\Controllers\Api\DashboardController;
 use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\GmailOAuthController;
 use App\Http\Controllers\Api\EmailController;
+use App\Http\Controllers\Api\EngineerController;
+use App\Http\Controllers\Api\PublicProjectController;
+use App\Http\Controllers\Api\ApplicationController;
+use App\Http\Controllers\Api\MatchingController;
 
 // ── 認証不要 ────────────────────────────────────────
 Route::prefix('v1')->group(function () {
@@ -109,4 +113,43 @@ Route::prefix('v1')->middleware(['supabase.auth'])->group(function () {
         Route::get('/{id}',          [EmailController::class, 'show']);
         Route::patch('/{id}/link',   [EmailController::class, 'link']);
     });
+
+    // ── マッチング機能 ───────────────────────────────────
+
+    // スキルマスタ
+    Route::get('matching/skills',  [MatchingController::class, 'skills']);
+    Route::post('matching/skills', [MatchingController::class, 'storeSkill']);
+
+    // 技術者 CRUD
+    Route::get('engineers',       [EngineerController::class, 'index']);
+    Route::post('engineers',      [EngineerController::class, 'store']);
+    Route::get('engineers/{id}',  [EngineerController::class, 'show']);
+    Route::put('engineers/{id}',  [EngineerController::class, 'update']);
+    Route::delete('engineers/{id}', [EngineerController::class, 'destroy']);
+    // 技術者へのおすすめ案件
+    Route::get('matching/engineers/{id}/projects', [MatchingController::class, 'recommendProjects']);
+    // 技術者の応募一覧
+    Route::get('engineers/{id}/applications', [ApplicationController::class, 'indexByEngineer']);
+
+    // 公開案件 CRUD
+    Route::get('public-projects',        [PublicProjectController::class, 'index']);
+    Route::post('public-projects',       [PublicProjectController::class, 'store']);
+    Route::get('public-projects/{id}',   [PublicProjectController::class, 'show']);
+    Route::put('public-projects/{id}',   [PublicProjectController::class, 'update']);
+    Route::delete('public-projects/{id}',[PublicProjectController::class, 'destroy']);
+    Route::post('public-projects/{id}/favorite', [PublicProjectController::class, 'toggleFavorite']);
+    // 案件へのおすすめ技術者
+    Route::get('matching/projects/{id}/engineers', [MatchingController::class, 'recommendEngineers']);
+    // 案件への応募一覧
+    Route::get('public-projects/{id}/applications', [ApplicationController::class, 'indexByProject']);
+
+    // 応募 CRUD・選考
+    Route::post('applications',                       [ApplicationController::class, 'store']);
+    Route::get('applications/{id}',                   [ApplicationController::class, 'show']);
+    Route::patch('applications/{id}/status',          [ApplicationController::class, 'updateStatus']);
+    Route::post('applications/{id}/messages',         [ApplicationController::class, 'sendMessage']);
+    Route::post('applications/{id}/messages/read',    [ApplicationController::class, 'readMessages']);
+
+    // マッチングスコア詳細（AI説明付き）
+    Route::get('matching/projects/{projectId}/engineers/{engineerId}', [MatchingController::class, 'scoreDetail']);
 });
