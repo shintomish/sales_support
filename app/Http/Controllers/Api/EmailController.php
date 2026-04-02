@@ -10,6 +10,7 @@ use App\Models\PublicProject;
 use App\Models\ProjectRequiredSkill;
 use App\Models\Skill;
 use App\Services\EmailExtractionService;
+use App\Services\EmailMatchPreviewService;
 use App\Services\GmailService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
@@ -149,6 +150,21 @@ class EmailController extends Controller
             Log::error("Attachment download failed: {$e->getMessage()}");
             return response()->json(['message' => 'ダウンロードに失敗しました'], 500);
         }
+    }
+
+    // ── マッチングプレビュー ──────────────────────────────────
+
+    public function matchPreview(int $id)
+    {
+        $email = Email::findOrFail($id);
+
+        if (empty($email->extracted_data['result'])) {
+            return response()->json(['message' => '先にClaude抽出を実行してください'], 422);
+        }
+
+        $result = app(EmailMatchPreviewService::class)->preview($email);
+
+        return response()->json($result);
     }
 
     // ── Claude抽出（手動トリガー）─────────────────────────────

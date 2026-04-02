@@ -113,6 +113,7 @@ Route::prefix('v1')->middleware(['supabase.auth'])->group(function () {
         Route::get('/{id}',                        [EmailController::class, 'show']);
         Route::patch('/{id}/link',                 [EmailController::class, 'link']);
         Route::post('/{id}/extract',                             [EmailController::class, 'extract']);
+        Route::get('/{id}/match-preview',                        [EmailController::class, 'matchPreview']);
         Route::post('/{id}/register-engineer',               [EmailController::class, 'registerEngineer']);
         Route::post('/{id}/register-project',                [EmailController::class, 'registerProject']);
         Route::get('/{id}/attachments/{attachmentId}/download', [EmailController::class, 'downloadAttachment']);
