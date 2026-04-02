@@ -85,10 +85,10 @@ class EmailController extends Controller
                 Log::warning('classify after sync failed: ' . $e->getMessage());
             }
 
-            // 分類後に即時抽出（最大3件・Claude API速度上限のため少量）
+            // 分類後に即時抽出（最大5件・Claude API速度上限のため少量）
             $extracted = 0;
             try {
-                $extracted = $this->extractionService->extractPending(3);
+                $extracted = $this->extractionService->extractPending(5);
             } catch (\Throwable $e) {
                 Log::warning('extract after sync failed: ' . $e->getMessage());
             }
