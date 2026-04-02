@@ -33,8 +33,7 @@ RUN chown -R www-data:www-data /var/www/storage /var/www/bootstrap/cache
 
 # Laravel スケジューラーを毎分実行するcron設定
 RUN echo "* * * * * www-data /usr/local/bin/php /var/www/artisan schedule:run >> /var/www/storage/logs/schedule.log 2>&1" > /etc/cron.d/laravel-scheduler \
-    && chmod 0644 /etc/cron.d/laravel-scheduler \
-    && crontab /etc/cron.d/laravel-scheduler
+    && chmod 0644 /etc/cron.d/laravel-scheduler
 
 EXPOSE 9000
 CMD ["sh", "-c", "chown -R www-data:www-data /var/www/storage /var/www/bootstrap/cache && service cron start && php-fpm"]
