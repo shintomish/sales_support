@@ -6,6 +6,7 @@ use App\Models\Email;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use App\Services\EmailMatchPreviewService;
 
 class EmailExtractionService
 {
@@ -147,6 +148,15 @@ class EmailExtractionService
                 'extracted_at'  => Carbon::now()->toIso8601String(),
             ]),
         ]);
+
+        // 5. マッチングスコアを自動計算してDBに保存（左ペイン色分け用）
+        if (!($result['parse_error'] ?? false)) {
+            try {
+                app(EmailMatchPreviewService::class)->previewAndStore($email->fresh());
+            } catch (\Throwable $e) {
+                Log::warning("[EmailExtraction] match preview store failed email_id={$email->id}: " . $e->getMessage());
+            }
+        }
     }
 
     // ── URLフィルタリング ────────────────────────────────────────

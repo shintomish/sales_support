@@ -13,6 +13,24 @@ class EmailMatchPreviewService
     private const WORKSTYLE_WEIGHT = 0.20;
 
     /**
+     * 抽出後に自動呼び出し: マッチングを実行してスコアをemailsテーブルに保存する
+     */
+    public function previewAndStore(Email $email): void
+    {
+        if (empty($email->extracted_data['result'])) {
+            return;
+        }
+
+        $result  = $this->preview($email);
+        $matches = $result['matches'] ?? [];
+
+        $email->update([
+            'best_match_score' => empty($matches) ? null : $matches[0]['score'],
+            'match_count'      => count($matches),
+        ]);
+    }
+
+    /**
      * メールの抽出データを元に上位5件の候補を返す
      * @return array{ category: string, matches: array }
      */

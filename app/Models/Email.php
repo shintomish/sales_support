@@ -30,6 +30,8 @@ class Email extends Model
         'registered_at',
         'registered_engineer_id',
         'registered_project_id',
+        'best_match_score',
+        'match_count',
     ];
 
     protected $casts = [
