@@ -34,6 +34,7 @@ class MatchingController extends Controller
                 'engineer_name'            => $item['engineer']->name,
                 'affiliation'              => $item['engineer']->affiliation,
                 'score'                    => $item['score'],
+                'score_badge'              => $this->scoreBadge($item['score']),
                 'skill_match_score'        => $item['skill_match_score'],
                 'price_match_score'        => $item['price_match_score'],
                 'location_match_score'     => $item['location_match_score'],
@@ -73,6 +74,7 @@ class MatchingController extends Controller
                 'work_style'               => $item['project']->work_style,
                 'start_date'               => $item['project']->start_date,
                 'score'                    => $item['score'],
+                'score_badge'              => $this->scoreBadge($item['score']),
                 'skill_match_score'        => $item['skill_match_score'],
                 'price_match_score'        => $item['price_match_score'],
                 'location_match_score'     => $item['location_match_score'],
@@ -108,6 +110,14 @@ class MatchingController extends Controller
         return response()->json([
             'data' => array_merge($scores, ['explanation' => $explanation]),
         ]);
+    }
+
+    /** スコアに応じた色バッジを返す（🟢70以上 / 🟡45以上 / ⚫それ以下） */
+    private function scoreBadge(int $score): string
+    {
+        if ($score >= 70) return '🟢';
+        if ($score >= 45) return '🟡';
+        return '⚫';
     }
 
     /**

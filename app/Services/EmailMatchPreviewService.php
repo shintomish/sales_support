@@ -64,6 +64,7 @@ class EmailMatchPreviewService
                 'id'             => $p->id,
                 'title'          => $p->title,
                 'score'          => $score,
+                'score_badge'    => $this->scoreBadge($score),
                 'skill_matches'  => $matchedSkills,
                 'unit_price_min' => $p->unit_price_min,
                 'unit_price_max' => $p->unit_price_max,
@@ -111,6 +112,7 @@ class EmailMatchPreviewService
                 'id'               => $e->id,
                 'name'             => $e->name,
                 'score'            => $score,
+                'score_badge'      => $this->scoreBadge($score),
                 'skill_matches'    => $matchedSkills,
                 'desired_price_min'=> $e->profile?->desired_unit_price_min,
                 'desired_price_max'=> $e->profile?->desired_unit_price_max,
@@ -125,6 +127,16 @@ class EmailMatchPreviewService
         ->toArray();
 
         return $scored;
+    }
+
+    // ── バッジ ───────────────────────────────────────────────
+
+    /** スコアに応じた色バッジを返す（🟢70以上 / 🟡45以上 / ⚫それ以下） */
+    private function scoreBadge(int $score): string
+    {
+        if ($score >= 70) return '🟢';
+        if ($score >= 45) return '🟡';
+        return '⚫';
     }
 
     // ── スコア計算 ────────────────────────────────────────────
