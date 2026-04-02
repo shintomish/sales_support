@@ -38,7 +38,7 @@ class EmailClassificationService
     {
         $query = Email::whereNull('category')
             ->with('attachments')
-            ->orderBy('received_at');
+            ->orderByDesc('received_at');
 
         if ($limit !== null) {
             $query->limit($limit);

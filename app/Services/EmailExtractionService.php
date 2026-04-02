@@ -96,7 +96,7 @@ class EmailExtractionService
                 $q->whereNull('extracted_data')
                   ->orWhereRaw("extracted_data->>'result' IS NULL");
             })
-            ->orderBy('received_at')
+            ->orderByDesc('received_at')
             ->limit($limit)
             ->get();
 
