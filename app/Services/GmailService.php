@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\GmailToken;
 use App\Models\Email;
+use App\Models\EmailAttachment;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Carbon\Carbon;
@@ -144,8 +145,9 @@ class GmailService
 $receivedAt = isset($data['internalDate']) ? Carbon::createFromTimestampMs((int)$data['internalDate'])->setTimezone('Asia/Tokyo') : ($dateStr ? Carbon::parse($dateStr)->setTimezone('Asia/Tokyo') : Carbon::now()->setTimezone('Asia/Tokyo'));
 
         [$bodyText, $bodyHtml] = $this->extractBody($data['payload']);
+        $attachments = $this->extractAttachments($data['payload']);
 
-        Email::create([
+        $email = Email::create([
             'tenant_id'        => $tenantId,
             'gmail_message_id' => $data['id'],
             'thread_id'        => $data['threadId'] ?? null,
@@ -158,6 +160,16 @@ $receivedAt = isset($data['internalDate']) ? Carbon::createFromTimestampMs((int)
             'received_at'      => $receivedAt,
             'is_read'          => !in_array('UNREAD', $data['labelIds'] ?? []),
         ]);
+
+        foreach ($attachments as $att) {
+            EmailAttachment::create([
+                'email_id'            => $email->id,
+                'filename'            => $att['filename'],
+                'mime_type'           => $att['mime_type'],
+                'size'                => $att['size'],
+                'gmail_attachment_id' => $att['gmail_attachment_id'],
+            ]);
+        }
     }
 
     private function parseFrom(string $from): array
@@ -173,8 +185,13 @@ $receivedAt = isset($data['internalDate']) ? Carbon::createFromTimestampMs((int)
         $text = null;
         $html = null;
 
-        // シングルパート
         $mimeType = $payload['mimeType'] ?? '';
+
+        // 添付ファイルパートはスキップ
+        if (!empty($payload['filename'])) {
+            return [$text, $html];
+        }
+
         if ($mimeType === 'text/plain') {
             $text = base64_decode(strtr($payload['body']['data'] ?? '', '-_', '+/'));
         } elseif ($mimeType === 'text/html') {
@@ -189,6 +206,46 @@ $receivedAt = isset($data['internalDate']) ? Carbon::createFromTimestampMs((int)
         }
 
         return [$text, $html];
+    }
+
+    private function extractAttachments(array $payload): array
+    {
+        $attachments = [];
+
+        // filenameがあり attachmentId があるパートが添付ファイル
+        if (!empty($payload['filename']) && !empty($payload['body']['attachmentId'])) {
+            $attachments[] = [
+                'filename'            => $payload['filename'],
+                'mime_type'           => $payload['mimeType'] ?? null,
+                'size'                => $payload['body']['size'] ?? null,
+                'gmail_attachment_id' => $payload['body']['attachmentId'],
+            ];
+        }
+
+        // マルチパートを再帰的に探索
+        foreach ($payload['parts'] ?? [] as $part) {
+            $attachments = array_merge($attachments, $this->extractAttachments($part));
+        }
+
+        return $attachments;
+    }
+
+    // 添付ファイルのバイナリデータを取得
+    public function fetchAttachmentData(GmailToken $gmailToken, string $messageId, string $attachmentId): string
+    {
+        $accessToken = $this->getValidAccessToken($gmailToken);
+
+        $response = Http::withToken($accessToken)
+            ->get("{$this->apiBase}/users/me/messages/{$messageId}/attachments/{$attachmentId}");
+
+        if ($response->failed()) {
+            throw new \Exception('Gmail attachment fetch failed: ' . $response->body());
+        }
+
+        $data = $response->json('data', '');
+
+        // Gmail APIはURL-safe Base64で返す
+        return base64_decode(strtr($data, '-_', '+/'));
     }
 
     // メール既読にする

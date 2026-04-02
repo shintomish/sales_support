@@ -24,12 +24,36 @@ class Email extends Model
         'contact_id',
         'deal_id',
         'customer_id',
+        'category',
+        'extracted_data',
+        'classified_at',
+        'registered_at',
+        'registered_engineer_id',
+        'registered_project_id',
     ];
 
     protected $casts = [
-        'received_at' => 'datetime',
-        'is_read'     => 'boolean',
+        'received_at'    => 'datetime',
+        'is_read'        => 'boolean',
+        'extracted_data' => 'array',
+        'classified_at'  => 'datetime',
+        'registered_at'  => 'datetime',
     ];
+
+    public function attachments()
+    {
+        return $this->hasMany(EmailAttachment::class);
+    }
+
+    public function registeredEngineer()
+    {
+        return $this->belongsTo(Engineer::class, 'registered_engineer_id');
+    }
+
+    public function registeredProject()
+    {
+        return $this->belongsTo(PublicProject::class, 'registered_project_id');
+    }
 
     public function contact()
     {
