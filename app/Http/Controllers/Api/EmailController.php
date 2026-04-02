@@ -76,8 +76,13 @@ class EmailController extends Controller
         try {
             $count = $this->gmailService->fetchAndStoreEmails($token);
 
-            // 同期直後に未分類メールを即時分類
-            $classified = app(\App\Services\EmailClassificationService::class)->classifyPending();
+            // 同期直後に新着分のみ即時分類（タイムアウト防止のため最大20件）
+            $classified = 0;
+            try {
+                $classified = app(\App\Services\EmailClassificationService::class)->classifyPending(20);
+            } catch (\Throwable $e) {
+                Log::warning('classify after sync failed: ' . $e->getMessage());
+            }
 
             return response()->json([
                 'message'    => "{$count}件の新着メールを取得しました",

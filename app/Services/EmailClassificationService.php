@@ -31,14 +31,20 @@ class EmailClassificationService
 
     /**
      * 未分類メールを一括分類する
+     * @param int|null $limit nullで全件、数値で上限
      * @return int 分類件数
      */
-    public function classifyPending(): int
+    public function classifyPending(?int $limit = null): int
     {
-        $emails = Email::whereNull('category')
+        $query = Email::whereNull('category')
             ->with('attachments')
-            ->orderBy('received_at')
-            ->get();
+            ->orderBy('received_at');
+
+        if ($limit !== null) {
+            $query->limit($limit);
+        }
+
+        $emails = $query->get();
 
         $count = 0;
         foreach ($emails as $email) {
