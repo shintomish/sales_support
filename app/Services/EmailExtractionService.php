@@ -88,7 +88,7 @@ class EmailExtractionService
      * 分類済み・未抽出のメールを一括処理
      * @return int 処理件数
      */
-    public function extractPending(): int
+    public function extractPending(int $limit = 20): int
     {
         // category設定済み かつ extracted_data に result キーがまだないもの
         $emails = Email::whereNotNull('category')
@@ -97,7 +97,7 @@ class EmailExtractionService
                   ->orWhereRaw("extracted_data->>'result' IS NULL");
             })
             ->orderBy('received_at')
-            ->limit(20)  // 1バッチ最大20件（API制限対策）
+            ->limit($limit)
             ->get();
 
         $count = 0;
