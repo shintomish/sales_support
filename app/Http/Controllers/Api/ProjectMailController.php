@@ -127,4 +127,14 @@ class ProjectMailController extends Controller
             'count'   => $count,
         ]);
     }
+
+    // 既存レコードの抽出情報を一括再計算
+    public function reextractAll()
+    {
+        $count = $this->scoringService->reextractAll();
+        return response()->json([
+            'message' => "{$count}件の抽出情報を更新しました",
+            'count'   => $count,
+        ]);
+    }
 }

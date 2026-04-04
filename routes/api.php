@@ -119,7 +119,8 @@ Route::prefix('v1')->middleware(['supabase.auth'])->group(function () {
     // ── 案件メール（スコアリング済み）────────────────────
     Route::prefix('project-mails')->group(function () {
         Route::get('/',              [ProjectMailController::class, 'index']);
-        Route::post('/score-all',    [ProjectMailController::class, 'scoreAll']);
+        Route::post('/score-all',     [ProjectMailController::class, 'scoreAll']);
+        Route::post('/reextract-all', [ProjectMailController::class, 'reextractAll']);
         Route::get('/{id}',          [ProjectMailController::class, 'show']);
         Route::patch('/{id}',        [ProjectMailController::class, 'update']);
         Route::patch('/{id}/status', [ProjectMailController::class, 'updateStatus']);

@@ -7,17 +7,11 @@ use App\Models\ProjectMailSource;
 use Illuminate\Support\Facades\Log;
 
 /**
- * 案件メール判定・スコアリングサービス
+ * 案件メール判定・スコアリング＋正規表現抽出サービス
  *
- * emails テーブル（保管庫）の category='project' メールを対象に
- * 以下のフローで案件業務エンジン（project_mail_sources）へ取り込む:
- *
- *   ① 除外判定（即NG）
- *   ② 強ワード判定（即OK）
- *   ③ スコア判定（グレーゾーン）
- *
- * 将来の AI 差し替えを見越し、判定結果は
- * { score, reasons[], engine } の共通形式で保存する。
+ * ① 除外判定 → ② 強ワード判定 → ③ スコア判定
+ * スコア確定後に正規表現で案件情報を抽出して保存する。
+ * 将来 AI 差し替え時は engine='ai' で同一 IF を使う。
  */
 class ProjectMailScoringService
 {
@@ -30,7 +24,7 @@ class ProjectMailScoringService
 
     private const EXCLUDE_FROM = ['no-reply', 'noreply'];
 
-    // ── ② 強ワード（A群 AND B/C群 で即OK）──────────────────
+    // ── ② 強ワード ────────────────────────────────────────
 
     private const STRONG_A = [
         '案件', '要員', '技術者募集', 'エンジニア募集',
@@ -38,15 +32,12 @@ class ProjectMailScoringService
     ];
 
     private const STRONG_BC = [
-        // B群（条件系）
         '単価', 'スキル', '勤務地', '最寄駅', '稼働', '開始',
-        // C群（契約系）
         '準委任', '常駐', 'リモート',
     ];
 
     // ── ③ スコア辞書 ──────────────────────────────────────
 
-    /** 言語/FW（上限30点） */
     private const TECH_LANG = [
         'Java', 'Spring', 'SpringBoot', 'PHP', 'Laravel',
         'Python', 'Django', 'Flask', 'C#', '.NET',
@@ -54,50 +45,34 @@ class ProjectMailScoringService
         'Ruby', 'Rails', 'Go', 'Golang', 'Swift', 'Kotlin',
     ];
 
-    /** インフラ/クラウド */
     private const TECH_INFRA = [
         'AWS', 'EC2', 'RDS', 'S3', 'Lambda',
         'Azure', 'GCP', 'Docker', 'Kubernetes', 'Linux',
     ];
 
-    /** DB */
     private const TECH_DB = [
         'MySQL', 'PostgreSQL', 'Oracle', 'SQLServer', 'MongoDB', 'Redis',
     ];
 
-    /** 上流工程 */
     private const PROCESS_UPPER = ['要件定義', '基本設計', '詳細設計'];
-
-    /** 開発工程 */
-    private const PROCESS_DEV = ['開発', '実装', '製造'];
-
-    /** その他工程 */
+    private const PROCESS_DEV   = ['開発', '実装', '製造'];
     private const PROCESS_OTHER = ['テスト', '保守', '運用'];
 
-    /** 金額（具体） */
     private const PRICE_CONCRETE_PATTERN = '/\d{2,3}\s*万[円]?/u';
-
-    /** 金額（曖昧：減点） */
-    private const PRICE_VAGUE = ['スキル見合い', '応相談'];
-
-    /** 期間・稼働 */
-    private const TIMING = ['月', '人月', '即日', '長期'];
-
-    /** 場所 */
-    private const LOCATION = [
+    private const PRICE_VAGUE  = ['スキル見合い', '応相談'];
+    private const TIMING       = ['月', '人月', '即日', '長期'];
+    private const LOCATION_KW  = [
         '東京', '大阪', '名古屋', '横浜', '品川', '渋谷', '新宿',
         '福岡', '仙台', '札幌', '在宅',
     ];
 
-    // ── 閾値 ──────────────────────────────────────────────
-
-    private const SCORE_OK       = 60;
-    private const SCORE_REVIEW   = 40;
+    private const SCORE_OK     = 60;
+    private const SCORE_REVIEW = 40;
 
     // ── 公開メソッド ──────────────────────────────────────
 
     /**
-     * 未処理の project カテゴリメールを一括スコアリング
+     * 未処理メールを一括スコアリング
      */
     public function scorePending(?int $limit = null): int
     {
@@ -125,32 +100,252 @@ class ProjectMailScoringService
     }
 
     /**
-     * 1件のメールをスコアリングして project_mail_sources に保存
+     * 既存レコードの抽出情報だけを再計算（スコアは変えない）
+     */
+    public function reextractAll(?int $limit = null): int
+    {
+        $query = ProjectMailSource::with('email')
+            ->whereNotNull('email_id');
+
+        if ($limit !== null) {
+            $query->limit($limit);
+        }
+
+        $count = 0;
+        foreach ($query->get() as $pms) {
+            if (!$pms->email) continue;
+            try {
+                $extracted = $this->extract($pms->email);
+                $pms->update($extracted);
+                $count++;
+            } catch (\Throwable $e) {
+                Log::error("[ProjectMailExtract] pms_id={$pms->id} 失敗: " . $e->getMessage());
+            }
+        }
+
+        return $count;
+    }
+
+    /**
+     * 1件スコアリング＋抽出して保存
      */
     public function score(Email $email): ProjectMailSource
     {
         $subject = $email->subject ?? '';
         $body    = $email->body_text ?? strip_tags($email->body_html ?? '');
         $from    = $email->from_address ?? '';
-        $text    = $subject . ' ' . $body;
+        $text    = $subject . "\n" . $body;
 
-        // ① 除外判定
+        // ① 除外
         if ($this->isExcluded($subject, $from)) {
-            return $this->save($email, 0, ['excluded'], 'rule');
+            return $this->save($email, 0, ['excluded'], 'rule', []);
         }
 
-        // ② 強ワード判定
+        // ② 強ワード
         if ($this->isStrongMatch($text)) {
-            return $this->save($email, 100, ['strong_keyword_match'], 'rule');
+            $extracted = $this->extract($email);
+            return $this->save($email, 100, ['strong_keyword_match'], 'rule', $extracted);
         }
 
-        // ③ スコア判定
+        // ③ スコア
         [$score, $reasons] = $this->calcScore($text);
+        $extracted = $this->extract($email);
 
-        return $this->save($email, $score, $reasons, 'rule');
+        return $this->save($email, $score, $reasons, 'rule', $extracted);
     }
 
-    // ── 内部メソッド ──────────────────────────────────────
+    // ── 抽出（正規表現）──────────────────────────────────
+
+    public function extract(Email $email): array
+    {
+        $subject = $email->subject ?? '';
+        $body    = $email->body_text ?? strip_tags($email->body_html ?? '');
+        $text    = $subject . "\n" . $body;
+
+        return [
+            'title'            => $this->extractTitle($subject, $body),
+            'required_skills'  => $this->extractSkills($text),
+            'process'          => $this->extractProcess($text),
+            'work_location'    => $this->extractLocation($text),
+            'remote_ok'        => $this->extractRemoteOk($text),
+            'unit_price_min'   => $this->extractPriceMin($text),
+            'unit_price_max'   => $this->extractPriceMax($text),
+            'start_date'       => $this->extractStartDate($text),
+            'contract_type'    => $this->extractContractType($text),
+            'age_limit'        => $this->extractAgeLimit($text),
+            'nationality_ok'   => $this->extractNationalityOk($text),
+            'supply_chain'     => $this->extractSupplyChain($text),
+        ];
+    }
+
+    // ── 各抽出ロジック ─────────────────────────────────────
+
+    private function extractTitle(string $subject, string $body): ?string
+    {
+        // 件名から【】を除去してタイトルとして使う
+        $title = preg_replace('/【[^】]*】/', '', $subject);
+        $title = trim($title);
+        if (mb_strlen($title) >= 5) {
+            return mb_substr($title, 0, 200);
+        }
+        // 件名が短い場合は本文1行目を使う
+        $lines = array_filter(explode("\n", $title . "\n" . $body));
+        foreach ($lines as $line) {
+            $line = trim($line);
+            if (mb_strlen($line) >= 10 && mb_strlen($line) <= 100) {
+                return $line;
+            }
+        }
+        return $subject ?: null;
+    }
+
+    private function extractSkills(string $text): array
+    {
+        $found = [];
+        $allSkills = array_merge(self::TECH_LANG, self::TECH_INFRA, self::TECH_DB);
+        foreach ($allSkills as $skill) {
+            if (mb_stripos($text, $skill) !== false) {
+                $found[] = $skill;
+            }
+        }
+        return array_values(array_unique($found));
+    }
+
+    private function extractProcess(string $text): array
+    {
+        $found = [];
+        $allProcess = array_merge(self::PROCESS_UPPER, self::PROCESS_DEV, self::PROCESS_OTHER);
+        foreach ($allProcess as $p) {
+            if (mb_strpos($text, $p) !== false) {
+                $found[] = $p;
+            }
+        }
+        return array_values(array_unique($found));
+    }
+
+    private function extractLocation(string $text): ?string
+    {
+        // 「勤務地：〇〇」「場所：〇〇」「最寄駅：〇〇」
+        if (preg_match('/(?:勤務地|就業場所|作業場所|場所)\s*[：:]\s*([^\n\r　]{2,30})/u', $text, $m)) {
+            return trim($m[1]);
+        }
+        if (preg_match('/(?:最寄[駅り]?)\s*[：:]\s*([^\n\r　]{2,20})/u', $text, $m)) {
+            return trim($m[1]);
+        }
+        // 都道府県パターン
+        if (preg_match('/([東西南北]?(?:東京|大阪|名古屋|横浜|福岡|仙台|札幌|神奈川|埼玉|千葉)[^\n\r　]{0,20})/u', $text, $m)) {
+            return trim($m[1]);
+        }
+        return null;
+    }
+
+    private function extractRemoteOk(string $text): ?bool
+    {
+        // 不可を先に判定
+        if (preg_match('/(?:リモート不可|フル出社|常駐必須|出社必須|在宅不可)/u', $text)) {
+            return false;
+        }
+        if (preg_match('/(?:フルリモート|完全リモート|リモートOK|リモート可|テレワーク可|在宅(?:勤務)?可|週[2-5]リモート|一部リモート)/u', $text)) {
+            return true;
+        }
+        // 「常駐」単独は不可寄り
+        if (mb_strpos($text, '常駐') !== false && mb_strpos($text, 'リモート') === false) {
+            return false;
+        }
+        return null;
+    }
+
+    private function extractPriceMin(string $text): ?float
+    {
+        // 「60〜80万」「60万〜80万」のレンジ
+        if (preg_match('/(\d{2,3})\s*万[円]?\s*[〜～~]\s*(\d{2,3})\s*万/u', $text, $m)) {
+            return (float) min($m[1], $m[2]);
+        }
+        // 「〜80万」（上限のみ）
+        if (preg_match('/[〜～~]\s*(\d{2,3})\s*万/u', $text, $m)) {
+            return null; // 下限不明
+        }
+        // 単独「70万」
+        if (preg_match('/(\d{2,3})\s*万[円]?/u', $text, $m)) {
+            return (float) $m[1];
+        }
+        return null;
+    }
+
+    private function extractPriceMax(string $text): ?float
+    {
+        // レンジ
+        if (preg_match('/(\d{2,3})\s*万[円]?\s*[〜～~]\s*(\d{2,3})\s*万/u', $text, $m)) {
+            return (float) max($m[1], $m[2]);
+        }
+        // 「〜80万」
+        if (preg_match('/[〜～~]\s*(\d{2,3})\s*万/u', $text, $m)) {
+            return (float) $m[1];
+        }
+        // 単独
+        if (preg_match('/(\d{2,3})\s*万[円]?/u', $text, $m)) {
+            return (float) $m[1];
+        }
+        return null;
+    }
+
+    private function extractStartDate(string $text): ?string
+    {
+        if (preg_match('/(?:即日|即時|即スタート)/u', $text)) {
+            return '即日';
+        }
+        // 「2026年5月」「2026/05」「5月〜」「6月上旬」
+        if (preg_match('/(\d{4})\s*年\s*(\d{1,2})\s*月/u', $text, $m)) {
+            return "{$m[1]}-{$m[2]}";
+        }
+        if (preg_match('/(\d{4})[\/\-](\d{1,2})/u', $text, $m)) {
+            return "{$m[1]}-{$m[2]}";
+        }
+        if (preg_match('/(\d{1,2})\s*月(?:[上中下]旬|初め|末)?(?:[〜～~]|から|より)/u', $text, $m)) {
+            return (int)$m[1] . '月〜';
+        }
+        return null;
+    }
+
+    private function extractContractType(string $text): ?string
+    {
+        if (mb_strpos($text, '準委任') !== false) return '準委任';
+        if (mb_strpos($text, '派遣') !== false)   return '派遣';
+        if (mb_strpos($text, '請負') !== false)   return '請負';
+        return null;
+    }
+
+    private function extractAgeLimit(string $text): ?string
+    {
+        if (preg_match('/(?:年齢[：:\s]*)?[〜～~上]?\s*(\d{2,3})\s*歳(?:まで|以下|未満)/u', $text, $m)) {
+            return '〜' . $m[1] . '歳';
+        }
+        if (preg_match('/(\d{2,3})\s*歳[〜～~]\s*(\d{2,3})\s*歳/u', $text, $m)) {
+            return $m[1] . '〜' . $m[2] . '歳';
+        }
+        return null;
+    }
+
+    private function extractNationalityOk(string $text): ?bool
+    {
+        if (preg_match('/(?:外国籍不可|日本人のみ|日本国籍|日本語ネイティブのみ)/u', $text)) {
+            return false;
+        }
+        if (preg_match('/(?:外国籍可|国籍不問|外国籍OK)/u', $text)) {
+            return true;
+        }
+        return null;
+    }
+
+    private function extractSupplyChain(string $text): ?int
+    {
+        if (preg_match('/(?:元請|エンド直|一次請?け?)/u', $text)) return 1;
+        if (preg_match('/二次請?け?/u', $text)) return 2;
+        if (preg_match('/三次請?け?/u', $text)) return 3;
+        return null;
+    }
+
+    // ── スコア計算 ────────────────────────────────────────
 
     private function isExcluded(string $subject, string $from): bool
     {
@@ -170,7 +365,6 @@ class ProjectMailScoringService
             if (mb_strpos($text, $kw) !== false) { $hasA = true; break; }
         }
         if (!$hasA) return false;
-
         foreach (self::STRONG_BC as $kw) {
             if (mb_strpos($text, $kw) !== false) return true;
         }
@@ -179,83 +373,56 @@ class ProjectMailScoringService
 
     private function calcScore(string $text): array
     {
-        $score   = 0;
-        $reasons = [];
+        $score = 0; $reasons = [];
 
-        // 技術ワード（上限30点）
         $techScore = 0;
         foreach (self::TECH_LANG as $kw) {
             if (mb_stripos($text, $kw) !== false) {
-                $techScore = min($techScore + 20, 30);
-                $reasons[] = "lang:{$kw}";
-                break;
+                $techScore = min($techScore + 20, 30); $reasons[] = "lang:{$kw}"; break;
             }
         }
         foreach (self::TECH_INFRA as $kw) {
             if (mb_stripos($text, $kw) !== false) {
-                $techScore = min($techScore + 15, 30);
-                $reasons[] = "infra:{$kw}";
-                break;
+                $techScore = min($techScore + 15, 30); $reasons[] = "infra:{$kw}"; break;
             }
         }
         foreach (self::TECH_DB as $kw) {
             if (mb_stripos($text, $kw) !== false) {
-                $techScore = min($techScore + 10, 30);
-                $reasons[] = "db:{$kw}";
-                break;
+                $techScore = min($techScore + 10, 30); $reasons[] = "db:{$kw}"; break;
             }
         }
         $score += $techScore;
 
-        // 工程ワード
         foreach (self::PROCESS_UPPER as $kw) {
-            if (mb_strpos($text, $kw) !== false) {
-                $score += 15; $reasons[] = "process_upper:{$kw}"; break;
-            }
+            if (mb_strpos($text, $kw) !== false) { $score += 15; $reasons[] = "process_upper:{$kw}"; break; }
         }
         foreach (self::PROCESS_DEV as $kw) {
-            if (mb_strpos($text, $kw) !== false) {
-                $score += 10; $reasons[] = "process_dev:{$kw}"; break;
-            }
+            if (mb_strpos($text, $kw) !== false) { $score += 10; $reasons[] = "process_dev:{$kw}"; break; }
         }
         foreach (self::PROCESS_OTHER as $kw) {
-            if (mb_strpos($text, $kw) !== false) {
-                $score += 5; $reasons[] = "process_other:{$kw}"; break;
-            }
+            if (mb_strpos($text, $kw) !== false) { $score += 5; $reasons[] = "process_other:{$kw}"; break; }
         }
 
-        // 金額（具体）
         if (preg_match(self::PRICE_CONCRETE_PATTERN, $text)) {
             $score += 20; $reasons[] = 'price_concrete';
         }
-
-        // 金額（曖昧：減点）
         foreach (self::PRICE_VAGUE as $kw) {
-            if (mb_strpos($text, $kw) !== false) {
-                $score -= 10; $reasons[] = "price_vague:{$kw}"; break;
-            }
+            if (mb_strpos($text, $kw) !== false) { $score -= 10; $reasons[] = "price_vague:{$kw}"; break; }
         }
-
-        // 期間・稼働
         foreach (self::TIMING as $kw) {
-            if (mb_strpos($text, $kw) !== false) {
-                $score += 10; $reasons[] = "timing:{$kw}"; break;
-            }
+            if (mb_strpos($text, $kw) !== false) { $score += 10; $reasons[] = "timing:{$kw}"; break; }
         }
-
-        // 場所
-        foreach (self::LOCATION as $kw) {
-            if (mb_strpos($text, $kw) !== false) {
-                $score += 10; $reasons[] = "location:{$kw}"; break;
-            }
+        foreach (self::LOCATION_KW as $kw) {
+            if (mb_strpos($text, $kw) !== false) { $score += 10; $reasons[] = "location:{$kw}"; break; }
         }
 
         return [max(0, $score), $reasons];
     }
 
-    private function save(Email $email, int $score, array $reasons, string $engine): ProjectMailSource
+    // ── 保存 ──────────────────────────────────────────────
+
+    private function save(Email $email, int $score, array $reasons, string $engine, array $extracted): ProjectMailSource
     {
-        // スコアから status を決定
         $status = match(true) {
             $score === 0              => 'excluded',
             $score >= self::SCORE_OK  => 'new',
@@ -265,14 +432,14 @@ class ProjectMailScoringService
 
         return ProjectMailSource::updateOrCreate(
             ['email_id' => $email->id],
-            [
-                'tenant_id'   => $email->tenant_id,
+            array_merge([
+                'tenant_id'    => $email->tenant_id,
                 'score'        => $score,
                 'score_reasons'=> $reasons,
                 'engine'       => $engine,
                 'status'       => $status,
                 'received_at'  => $email->received_at,
-            ]
+            ], $extracted)
         );
     }
 }
