@@ -42,6 +42,11 @@ class Email extends Model
         'registered_at'  => 'datetime',
     ];
 
+    public function projectMailSource()
+    {
+        return $this->hasOne(ProjectMailSource::class);
+    }
+
     public function attachments()
     {
         return $this->hasMany(EmailAttachment::class);

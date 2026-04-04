@@ -16,6 +16,7 @@ use App\Http\Controllers\Api\EngineerController;
 use App\Http\Controllers\Api\PublicProjectController;
 use App\Http\Controllers\Api\ApplicationController;
 use App\Http\Controllers\Api\MatchingController;
+use App\Http\Controllers\Api\ProjectMailController;
 
 // ── 認証不要 ────────────────────────────────────────
 Route::prefix('v1')->group(function () {
@@ -113,6 +114,16 @@ Route::prefix('v1')->middleware(['supabase.auth'])->group(function () {
         Route::get('/{id}',                                      [EmailController::class, 'show']);
         Route::patch('/{id}/link',                               [EmailController::class, 'link']);
         Route::get('/{id}/attachments/{attachmentId}/download',  [EmailController::class, 'downloadAttachment']);
+    });
+
+    // ── 案件メール（スコアリング済み）────────────────────
+    Route::prefix('project-mails')->group(function () {
+        Route::get('/',              [ProjectMailController::class, 'index']);
+        Route::post('/score-all',    [ProjectMailController::class, 'scoreAll']);
+        Route::get('/{id}',          [ProjectMailController::class, 'show']);
+        Route::patch('/{id}',        [ProjectMailController::class, 'update']);
+        Route::patch('/{id}/status', [ProjectMailController::class, 'updateStatus']);
+        Route::post('/{id}/rescore', [ProjectMailController::class, 'rescore']);
     });
 
     // ── マッチング機能 ───────────────────────────────────
