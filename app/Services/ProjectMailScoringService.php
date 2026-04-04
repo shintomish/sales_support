@@ -185,17 +185,22 @@ class ProjectMailScoringService
 
     private function extractCustomerName(string $body, string $fromName, string $fromAddr): ?string
     {
-        // ① 本文から「〇〇会社の〇〇と申します」パターン（差出人が自己紹介している箇所）
-        // 例: 「株式会社キャリアビートの渡辺翼空と申します」
+        // ① SmoothContact フォーム形式: 「[ 御社名 ] Cynet株式会社」
+        if (preg_match('/\[[ 　]*御社名[ 　]*\][ 　\t]*([^\n\r\[]{2,80})/u', $body, $m)) {
+            return mb_substr(trim($m[1]), 0, 100);
+        }
+
+        // ② 本文から「〇〇会社の〇〇と申します」パターン（会社名のみ取得、人名は不要）
+        // 例: 「株式会社キャリアビートの渡辺翼空と申します」→「株式会社キャリアビート」
         if (preg_match(
-            '/((?:株式|有限|合同|一般社団|一般財団)会社[\p{Han}\p{Hiragana}\p{Katakana}ー－\-・\w]+)(?:の.{1,20})?(?:と申し|でございます|営業部|の者)/u',
+            '/((?:株式|有限|合同|一般社団|一般財団)会社[\p{Han}\p{Hiragana}\p{Katakana}ー－\-・\w]+)(?:の[\p{Han}\p{Hiragana}\p{Katakana}ー\w]{1,20})?(?:と申し|でございます|営業部|の者)/u',
             $body, $m
         )) {
             return mb_substr(trim($m[1]), 0, 100);
         }
         // 後置パターン: 「〇〇株式会社の〇〇と申します」
         if (preg_match(
-            '/([\p{Han}\p{Hiragana}\p{Katakana}ー－\-・\w]+(?:株式|有限|合同)会社)(?:の.{1,20})?(?:と申し|でございます|営業部|の者)/u',
+            '/([\p{Han}\p{Hiragana}\p{Katakana}ー－\-・\w]+(?:株式|有限|合同)会社)(?:の[\p{Han}\p{Hiragana}\p{Katakana}ー\w]{1,20})?(?:と申し|でございます|営業部|の者)/u',
             $body, $m
         )) {
             return mb_substr(trim($m[1]), 0, 100);
