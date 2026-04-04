@@ -164,8 +164,12 @@ class ProjectMailScoringService
         $fromAddr = $email->from_address ?? '';
         $text     = $subject . "\n" . $body;
 
+        $isSmoothContact = str_contains($fromAddr, 'smoothcontact');
+
         return [
             'customer_name'    => $this->extractCustomerName($body, $fromName, $fromAddr),
+            'sales_contact'    => $this->extractSalesContact($body, $isSmoothContact),
+            'phone'            => $this->extractPhone($body, $isSmoothContact),
             'title'            => $this->extractTitle($subject, $body),
             'required_skills'  => $this->extractSkills($text),
             'process'          => $this->extractProcess($text),
@@ -233,6 +237,45 @@ class ProjectMailScoringService
             return $m[1];
         }
 
+        return null;
+    }
+
+    private function extractSalesContact(string $body, bool $isSmoothContact): ?string
+    {
+        if ($isSmoothContact) {
+            // SmoothContact: 「[ ご担当者様 ] 山路 康太郎 (ヤマジ コウタロウ)」
+            if (preg_match('/\[[ 　]*ご担当者様[ 　]*\][ 　\t]*([^\n\r\[]{2,80})/u', $body, $m)) {
+                // 読み仮名（括弧内）を除去: 「山路 康太郎 (ヤマジ コウタロウ)」→「山路 康太郎」
+                $name = preg_replace('/\s*[（(][^）)]*[）)]\s*$/', '', trim($m[1]));
+                return mb_substr(trim($name), 0, 100);
+            }
+            return null;
+        }
+
+        // 一般メール: 担当者ラベル
+        if (preg_match('/(?:担当者?|ご担当|連絡先担当|営業担当)\s*[：:]\s*([^\n\r　]{2,50})/u', $body, $m)) {
+            return mb_substr(trim($m[1]), 0, 100);
+        }
+        return null;
+    }
+
+    private function extractPhone(string $body, bool $isSmoothContact): ?string
+    {
+        if ($isSmoothContact) {
+            // SmoothContact: 「[ お電話番号 ] 090-1234-5678」
+            if (preg_match('/\[[ 　]*お電話番号[ 　]*\][ 　\t]*([^\n\r\[]{4,30})/u', $body, $m)) {
+                return mb_substr(trim($m[1]), 0, 50);
+            }
+            return null;
+        }
+
+        // 一般メール: 電話番号ラベル or 裸の電話番号
+        if (preg_match('/(?:電話番号?|TEL|Tel)\s*[：:。\s]*([0-9０-９(（)）\-－]{8,20})/u', $body, $m)) {
+            return mb_substr(trim($m[1]), 0, 50);
+        }
+        if (preg_match('/0[0-9]{1,3}[-－][0-9]{2,4}[-－][0-9]{3,4}/', $body, $m)) {
+            return $m[0];
+        }
         return null;
     }
 

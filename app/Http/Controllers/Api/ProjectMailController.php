@@ -66,6 +66,8 @@ class ProjectMailController extends Controller
 
         $v = $request->validate([
             'customer_name'    => 'nullable|string|max:200',
+            'sales_contact'    => 'nullable|string|max:100',
+            'phone'            => 'nullable|string|max:50',
             'title'            => 'nullable|string|max:300',
             'required_skills'  => 'nullable|array',
             'required_skills.*'=> 'string|max:100',
