@@ -120,6 +120,7 @@ Route::prefix('v1')->middleware(['supabase.auth'])->group(function () {
     Route::prefix('project-mails')->group(function () {
         Route::get('/',              [ProjectMailController::class, 'index']);
         Route::post('/score-all',     [ProjectMailController::class, 'scoreAll']);
+        Route::post('/rescore-all',   [ProjectMailController::class, 'rescoreAll']);
         Route::post('/reextract-all', [ProjectMailController::class, 'reextractAll']);
         Route::get('/{id}',          [ProjectMailController::class, 'show']);
         Route::patch('/{id}',        [ProjectMailController::class, 'update']);

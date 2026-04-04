@@ -130,6 +130,16 @@ class ProjectMailController extends Controller
         ]);
     }
 
+    // 既存レコードを全件再スコアリング＋再抽出
+    public function rescoreAll()
+    {
+        $count = $this->scoringService->rescoreAll();
+        return response()->json([
+            'message' => "{$count}件を再スコアリングしました",
+            'count'   => $count,
+        ]);
+    }
+
     // 既存レコードの抽出情報を一括再計算
     public function reextractAll()
     {

@@ -24,47 +24,60 @@ class ProjectMailScoringService
 
     private const EXCLUDE_FROM = ['no-reply', 'noreply'];
 
-    // ── ② 強ワード ────────────────────────────────────────
+    // ── ② スコア辞書（max 85点設計）────────────────────────
+    //
+    // [A] 案件確度A (+15): 明示的な案件紹介ワード
+    // [B] 案件確度B (+10): 条件明示ワード（稼働・期間）
+    // [C] 技術スタック (max 20): 言語+インフラ+DB
+    // [D] 単価具体性  (+15): XX万 という数字
+    // [E] 勤務地      (+10): 都市名
+    // [F] 工程        (max 10): 上流>開発>テスト
+    // [G] 稼働・期間  (+5): 即日/長期/人月
+    // ペナルティ: 曖昧単価(-10) / 高次商流(-10)
+    // 合計上限: 85点
 
-    private const STRONG_A = [
-        '案件', '要員', '技術者募集', 'エンジニア募集',
-        'SE募集', 'PG募集', '技術者紹介',
+    // [A] 明示的案件ワード
+    private const PROJECT_A = [
+        '案件ご紹介', '要員ご紹介', '技術者ご紹介', '案件情報',
+        '要員紹介', '技術者紹介', '技術者募集', 'エンジニア募集',
+        'SE募集', 'PG募集',
     ];
 
-    private const STRONG_BC = [
-        '単価', 'スキル', '勤務地', '最寄駅', '稼働', '開始',
-        '準委任', '常駐', 'リモート',
+    // [B] 条件提示ワード
+    private const PROJECT_B = [
+        '稼働期間', '稼働開始', '開始時期', '参画時期', '稼働率',
+        '単価', '月額', '工数',
     ];
 
-    // ── ③ スコア辞書 ──────────────────────────────────────
-
+    // [C] 技術スタック
     private const TECH_LANG = [
         'Java', 'Spring', 'SpringBoot', 'PHP', 'Laravel',
         'Python', 'Django', 'Flask', 'C#', '.NET',
         'JavaScript', 'TypeScript', 'React', 'Vue', 'Angular',
         'Ruby', 'Rails', 'Go', 'Golang', 'Swift', 'Kotlin',
     ];
-
     private const TECH_INFRA = [
         'AWS', 'EC2', 'RDS', 'S3', 'Lambda',
         'Azure', 'GCP', 'Docker', 'Kubernetes', 'Linux',
     ];
-
     private const TECH_DB = [
         'MySQL', 'PostgreSQL', 'Oracle', 'SQLServer', 'MongoDB', 'Redis',
     ];
 
+    // [F] 工程
     private const PROCESS_UPPER = ['要件定義', '基本設計', '詳細設計'];
     private const PROCESS_DEV   = ['開発', '実装', '製造'];
     private const PROCESS_OTHER = ['テスト', '保守', '運用'];
 
-    private const PRICE_CONCRETE_PATTERN = '/\d{2,3}\s*万[円]?/u';
-    private const PRICE_VAGUE  = ['スキル見合い', '応相談'];
-    private const TIMING       = ['月', '人月', '即日', '長期'];
-    private const LOCATION_KW  = [
+    // [E] 勤務地
+    private const LOCATION_KW = [
         '東京', '大阪', '名古屋', '横浜', '品川', '渋谷', '新宿',
         '福岡', '仙台', '札幌', '在宅',
     ];
+
+    // ペナルティ
+    private const PENALTY_VAGUE = ['スキル見合い', '応相談'];
+    private const PENALTY_CHAIN = ['4次', '5次', '6次', '7次', '8次'];  // 高次商流
 
     private const SCORE_OK     = 60;
     private const SCORE_REVIEW = 40;
@@ -96,6 +109,49 @@ class ProjectMailScoringService
             }
         }
 
+        return $count;
+    }
+
+    /**
+     * 既存レコードを全件再スコアリング＋再抽出
+     */
+    public function rescoreAll(?int $limit = null): int
+    {
+        $query = ProjectMailSource::with('email')->whereNotNull('email_id');
+        if ($limit !== null) $query->limit($limit);
+
+        $count = 0;
+        foreach ($query->get() as $pms) {
+            if (!$pms->email) continue;
+            try {
+                $email   = $pms->email;
+                $subject = $email->subject ?? '';
+                $body    = $email->body_text ?? strip_tags($email->body_html ?? '');
+                $from    = $email->from_address ?? '';
+                $text    = $subject . "\n" . $body;
+
+                if ($this->isExcluded($subject, $from)) {
+                    $pms->update(['score' => 0, 'score_reasons' => ['excluded'], 'status' => 'excluded']);
+                } else {
+                    [$score, $reasons] = $this->calcScore($text);
+                    $extracted = $this->extract($email);
+                    $status = match(true) {
+                        $score >= self::SCORE_OK     => 'new',
+                        $score >= self::SCORE_REVIEW => 'review',
+                        default                      => 'excluded',
+                    };
+                    $pms->update(array_merge($extracted, [
+                        'score'         => $score,
+                        'score_reasons' => $reasons,
+                        'engine'        => 'rule',
+                        'status'        => $status,
+                    ]));
+                }
+                $count++;
+            } catch (\Throwable $e) {
+                Log::error("[ProjectMailRescore] pms_id={$pms->id} 失敗: " . $e->getMessage());
+            }
+        }
         return $count;
     }
 
@@ -141,13 +197,7 @@ class ProjectMailScoringService
             return $this->save($email, 0, ['excluded'], 'rule', []);
         }
 
-        // ② 強ワード
-        if ($this->isStrongMatch($text)) {
-            $extracted = $this->extract($email);
-            return $this->save($email, 100, ['strong_keyword_match'], 'rule', $extracted);
-        }
-
-        // ③ スコア
+        // ② スコアリング（max 85点）
         [$score, $reasons] = $this->calcScore($text);
         $extracted = $this->extract($email);
 
@@ -457,65 +507,97 @@ class ProjectMailScoringService
         return false;
     }
 
-    private function isStrongMatch(string $text): bool
-    {
-        $hasA = false;
-        foreach (self::STRONG_A as $kw) {
-            if (mb_strpos($text, $kw) !== false) { $hasA = true; break; }
-        }
-        if (!$hasA) return false;
-        foreach (self::STRONG_BC as $kw) {
-            if (mb_strpos($text, $kw) !== false) return true;
-        }
-        return false;
-    }
-
     private function calcScore(string $text): array
     {
         $score = 0; $reasons = [];
 
-        $techScore = 0;
+        // [A] 案件確度A: 明示的案件紹介ワード (+15, max 1回)
+        foreach (self::PROJECT_A as $kw) {
+            if (mb_strpos($text, $kw) !== false) {
+                $score += 15; $reasons[] = "project_a:{$kw}"; break;
+            }
+        }
+
+        // [B] 案件確度B: 条件提示ワード (+10, max 1回)
+        foreach (self::PROJECT_B as $kw) {
+            if (mb_strpos($text, $kw) !== false) {
+                $score += 10; $reasons[] = "project_b:{$kw}"; break;
+            }
+        }
+
+        // [C] 技術スタック (max 20)
+        $techScore = 0; $langCount = 0;
         foreach (self::TECH_LANG as $kw) {
             if (mb_stripos($text, $kw) !== false) {
-                $techScore = min($techScore + 20, 30); $reasons[] = "lang:{$kw}"; break;
+                $langCount++;
+                if ($langCount === 1) { $techScore += 10; $reasons[] = "lang:{$kw}"; }
+                elseif ($langCount === 2) { $techScore += 5;  $reasons[] = "lang2:{$kw}"; break; }
             }
         }
         foreach (self::TECH_INFRA as $kw) {
-            if (mb_stripos($text, $kw) !== false) {
-                $techScore = min($techScore + 15, 30); $reasons[] = "infra:{$kw}"; break;
-            }
+            if (mb_stripos($text, $kw) !== false) { $techScore += 5; $reasons[] = "infra:{$kw}"; break; }
         }
         foreach (self::TECH_DB as $kw) {
-            if (mb_stripos($text, $kw) !== false) {
-                $techScore = min($techScore + 10, 30); $reasons[] = "db:{$kw}"; break;
+            if (mb_stripos($text, $kw) !== false) { $techScore += 3; $reasons[] = "db:{$kw}"; break; }
+        }
+        $score += min($techScore, 20);
+
+        // [D] 単価具体性: XX万 という数字 (+15)
+        if (preg_match('/\d{2,3}\s*万[円]?/u', $text)) {
+            $score += 15; $reasons[] = 'price_concrete';
+        }
+
+        // [E] 勤務地 (+10, max 1回)
+        foreach (self::LOCATION_KW as $kw) {
+            if (mb_strpos($text, $kw) !== false) {
+                $score += 10; $reasons[] = "location:{$kw}"; break;
             }
         }
-        $score += $techScore;
 
+        // [F] 工程 (max 10)
+        $procAdded = false;
         foreach (self::PROCESS_UPPER as $kw) {
-            if (mb_strpos($text, $kw) !== false) { $score += 15; $reasons[] = "process_upper:{$kw}"; break; }
+            if (mb_strpos($text, $kw) !== false) {
+                $score += 10; $reasons[] = "process:{$kw}"; $procAdded = true; break;
+            }
         }
-        foreach (self::PROCESS_DEV as $kw) {
-            if (mb_strpos($text, $kw) !== false) { $score += 10; $reasons[] = "process_dev:{$kw}"; break; }
+        if (!$procAdded) {
+            foreach (self::PROCESS_DEV as $kw) {
+                if (mb_strpos($text, $kw) !== false) {
+                    $score += 7; $reasons[] = "process:{$kw}"; $procAdded = true; break;
+                }
+            }
         }
-        foreach (self::PROCESS_OTHER as $kw) {
-            if (mb_strpos($text, $kw) !== false) { $score += 5; $reasons[] = "process_other:{$kw}"; break; }
-        }
-
-        if (preg_match(self::PRICE_CONCRETE_PATTERN, $text)) {
-            $score += 20; $reasons[] = 'price_concrete';
-        }
-        foreach (self::PRICE_VAGUE as $kw) {
-            if (mb_strpos($text, $kw) !== false) { $score -= 10; $reasons[] = "price_vague:{$kw}"; break; }
-        }
-        foreach (self::TIMING as $kw) {
-            if (mb_strpos($text, $kw) !== false) { $score += 10; $reasons[] = "timing:{$kw}"; break; }
-        }
-        foreach (self::LOCATION_KW as $kw) {
-            if (mb_strpos($text, $kw) !== false) { $score += 10; $reasons[] = "location:{$kw}"; break; }
+        if (!$procAdded) {
+            foreach (self::PROCESS_OTHER as $kw) {
+                if (mb_strpos($text, $kw) !== false) {
+                    $score += 4; $reasons[] = "process:{$kw}"; break;
+                }
+            }
         }
 
-        return [max(0, $score), $reasons];
+        // [G] 稼働・期間 (+5)
+        foreach (['即日', '長期', '人月'] as $kw) {
+            if (mb_strpos($text, $kw) !== false) {
+                $score += 5; $reasons[] = "timing:{$kw}"; break;
+            }
+        }
+
+        // ペナルティ: 単価曖昧 (-10)
+        foreach (self::PENALTY_VAGUE as $kw) {
+            if (mb_strpos($text, $kw) !== false) {
+                $score -= 10; $reasons[] = "penalty_vague:{$kw}"; break;
+            }
+        }
+
+        // ペナルティ: 高次商流 (-10)
+        foreach (self::PENALTY_CHAIN as $kw) {
+            if (mb_strpos($text, $kw) !== false) {
+                $score -= 10; $reasons[] = "penalty_chain:{$kw}"; break;
+            }
+        }
+
+        return [max(0, min(85, $score)), $reasons];
     }
 
     // ── 保存 ──────────────────────────────────────────────
