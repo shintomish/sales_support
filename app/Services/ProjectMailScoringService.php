@@ -24,6 +24,9 @@ class ProjectMailScoringService
 
     private const EXCLUDE_FROM = ['no-reply', 'noreply'];
 
+    // 自社ドメイン（自社・当社営業担当のメールは案件対象外）
+    private const EXCLUDE_DOMAIN = ['aizen-sol.co.jp'];
+
     // ── ② スコア辞書（max 85点設計）────────────────────────
     //
     // [A] 案件確度A (+15): 明示的な案件紹介ワード
@@ -503,6 +506,10 @@ class ProjectMailScoringService
         }
         foreach (self::EXCLUDE_FROM as $kw) {
             if (str_contains(strtolower($from), $kw)) return true;
+        }
+        // 自社ドメインは除外（自社営業担当からのメール）
+        foreach (self::EXCLUDE_DOMAIN as $domain) {
+            if (str_ends_with(strtolower($from), '@' . $domain)) return true;
         }
         return false;
     }
