@@ -165,7 +165,7 @@ class ProjectMailScoringService
         $text     = $subject . "\n" . $body;
 
         return [
-            'customer_name'    => $this->extractCustomerName($fromName, $fromAddr),
+            'customer_name'    => $this->extractCustomerName($body, $fromName, $fromAddr),
             'title'            => $this->extractTitle($subject, $body),
             'required_skills'  => $this->extractSkills($text),
             'process'          => $this->extractProcess($text),
@@ -183,29 +183,47 @@ class ProjectMailScoringService
 
     // ── 各抽出ロジック ─────────────────────────────────────
 
-    private function extractCustomerName(string $fromName, string $fromAddr): ?string
+    private function extractCustomerName(string $body, string $fromName, string $fromAddr): ?string
     {
-        // ① from_name から会社名を抽出（最優先：送信元＝取引先BP）
+        // ① 本文から「〇〇会社の〇〇と申します」パターン（差出人が自己紹介している箇所）
+        // 例: 「株式会社キャリアビートの渡辺翼空と申します」
+        if (preg_match(
+            '/((?:株式|有限|合同|一般社団|一般財団)会社[\p{Han}\p{Hiragana}\p{Katakana}ー－\-・\w]+)(?:の.{1,20})?(?:と申し|でございます|営業部|の者)/u',
+            $body, $m
+        )) {
+            return mb_substr(trim($m[1]), 0, 100);
+        }
+        // 後置パターン: 「〇〇株式会社の〇〇と申します」
+        if (preg_match(
+            '/([\p{Han}\p{Hiragana}\p{Katakana}ー－\-・\w]+(?:株式|有限|合同)会社)(?:の.{1,20})?(?:と申し|でございます|営業部|の者)/u',
+            $body, $m
+        )) {
+            return mb_substr(trim($m[1]), 0, 100);
+        }
+
+        // ② 明示ラベル（クライアント：, エンド：, 常駐先：等）
+        if (preg_match(
+            '/(?:クライアント|エンド(?:先|クライアント)?|常駐先|顧客|発注元|取引先|企業名)\s*[：:]\s*([^\n\r　]{2,50})/u',
+            $body, $m
+        )) {
+            return mb_substr(trim($m[1]), 0, 100);
+        }
+
+        // ③ from_name に会社名が含まれる場合
         if ($fromName) {
-            // 「株式会社〇〇」「〇〇株式会社」を含む場合
-            if (preg_match('/((?:株式|有限|合同|一般社団|一般財団)会社[\w\p{Han}\p{Hiragana}\p{Katakana}ー－\-・　]+)/u', $fromName, $m)) {
+            if (preg_match('/((?:株式|有限|合同)会社[\p{Han}\p{Hiragana}\p{Katakana}ー－\-・\w]+)/u', $fromName, $m)) {
                 return mb_substr(trim($m[1]), 0, 100);
             }
-            if (preg_match('/([\w\p{Han}\p{Hiragana}\p{Katakana}ー－\-・]+(?:株式|有限|合同)会社)/u', $fromName, $m)) {
+            if (preg_match('/([\p{Han}\p{Hiragana}\p{Katakana}ー－\-・\w]+(?:株式|有限|合同)会社)/u', $fromName, $m)) {
                 return mb_substr(trim($m[1]), 0, 100);
             }
-            // 「山田 太郎 | 株式会社ABC」のように区切り文字以降に会社名
-            if (preg_match('/[|｜\/\s]\s*([\p{Han}\p{Hiragana}\p{Katakana}ー\w]+(?:株式|有限|合同)会社[\w\p{Han}\p{Hiragana}\p{Katakana}ー－\-・]*)/u', $fromName, $m)) {
-                return mb_substr(trim($m[1]), 0, 100);
-            }
-            // from_name が4文字以上かつ個人名でなければそのまま使う
             $name = trim($fromName);
             if (mb_strlen($name) >= 4 && !preg_match('/^[\p{Han}\p{Hiragana}\p{Katakana}ー]{2,5}$/u', $name)) {
                 return mb_substr($name, 0, 100);
             }
         }
 
-        // ② from_name が個人名のみの場合はドメインから推測
+        // ④ ドメインから推測
         if ($fromAddr && preg_match('/@([\w\-]+)\.(?:co\.jp|com|jp)/i', $fromAddr, $m)) {
             return $m[1];
         }
