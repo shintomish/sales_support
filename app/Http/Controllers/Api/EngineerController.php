@@ -24,10 +24,15 @@ class EngineerController extends Controller
             'phone'                   => $e->phone,
             'affiliation'             => $e->affiliation,
             'affiliation_contact'     => $e->affiliation_contact,
+            'age'                     => $e->age,
+            'nationality'             => $e->nationality,
+            'affiliation_type'        => $e->affiliation_type,
             'profile' => $p ? [
                 'desired_unit_price_min' => $p->desired_unit_price_min,
                 'desired_unit_price_max' => $p->desired_unit_price_max,
                 'available_from'         => $p->available_from,
+                'availability_status'    => $p->availability_status,
+                'past_client_count'      => $p->past_client_count,
                 'work_style'             => $p->work_style,
                 'preferred_location'     => $p->preferred_location,
                 'self_introduction'      => $p->self_introduction,
@@ -107,10 +112,15 @@ class EngineerController extends Controller
             'phone'                   => 'nullable|string|max:50',
             'affiliation'             => 'nullable|string|max:100',
             'affiliation_contact'     => 'nullable|string|max:100',
+            'age'                     => 'nullable|integer|min:18|max:80',
+            'nationality'             => 'nullable|string|max:100',
+            'affiliation_type'        => 'nullable|in:self,bp',
             // プロフィール
             'desired_unit_price_min'  => 'nullable|numeric|min:0',
             'desired_unit_price_max'  => 'nullable|numeric|min:0',
             'available_from'          => 'nullable|date',
+            'availability_status'     => 'nullable|in:available,working,scheduled',
+            'past_client_count'       => 'nullable|integer|min:0',
             'work_style'              => 'nullable|in:remote,office,hybrid',
             'preferred_location'      => 'nullable|string|max:100',
             'self_introduction'       => 'nullable|string',
@@ -133,6 +143,9 @@ class EngineerController extends Controller
                 'phone'               => $v['phone'] ?? null,
                 'affiliation'         => $v['affiliation'] ?? null,
                 'affiliation_contact' => $v['affiliation_contact'] ?? null,
+                'age'                 => $v['age'] ?? null,
+                'nationality'         => $v['nationality'] ?? null,
+                'affiliation_type'    => $v['affiliation_type'] ?? null,
             ]);
 
             EngineerProfile::create([
@@ -141,6 +154,8 @@ class EngineerController extends Controller
                 'desired_unit_price_min' => $v['desired_unit_price_min'] ?? null,
                 'desired_unit_price_max' => $v['desired_unit_price_max'] ?? null,
                 'available_from'         => $v['available_from'] ?? null,
+                'availability_status'    => $v['availability_status'] ?? 'available',
+                'past_client_count'      => $v['past_client_count'] ?? null,
                 'work_style'             => $v['work_style'] ?? null,
                 'preferred_location'     => $v['preferred_location'] ?? null,
                 'self_introduction'      => $v['self_introduction'] ?? null,
@@ -181,9 +196,14 @@ class EngineerController extends Controller
             'phone'                   => 'nullable|string|max:50',
             'affiliation'             => 'nullable|string|max:100',
             'affiliation_contact'     => 'nullable|string|max:100',
+            'age'                     => 'nullable|integer|min:18|max:80',
+            'nationality'             => 'nullable|string|max:100',
+            'affiliation_type'        => 'nullable|in:self,bp',
             'desired_unit_price_min'  => 'nullable|numeric|min:0',
             'desired_unit_price_max'  => 'nullable|numeric|min:0',
             'available_from'          => 'nullable|date',
+            'availability_status'     => 'nullable|in:available,working,scheduled',
+            'past_client_count'       => 'nullable|integer|min:0',
             'work_style'              => 'nullable|in:remote,office,hybrid',
             'preferred_location'      => 'nullable|string|max:100',
             'self_introduction'       => 'nullable|string',
@@ -197,19 +217,25 @@ class EngineerController extends Controller
         ]);
 
         DB::transaction(function () use ($v, $engineer, $tenantId) {
-            $engineer->update(array_filter([
+            $engineerFields = array_filter([
                 'name'                => $v['name'] ?? null,
                 'name_kana'           => $v['name_kana'] ?? null,
                 'email'               => $v['email'] ?? null,
                 'phone'               => $v['phone'] ?? null,
                 'affiliation'         => $v['affiliation'] ?? null,
                 'affiliation_contact' => $v['affiliation_contact'] ?? null,
-            ], fn($val) => $val !== null));
+                'age'                 => $v['age'] ?? null,
+                'nationality'         => $v['nationality'] ?? null,
+                'affiliation_type'    => $v['affiliation_type'] ?? null,
+            ], fn($val) => $val !== null);
+            $engineer->update($engineerFields);
 
             $profileFields = array_filter([
                 'desired_unit_price_min' => $v['desired_unit_price_min'] ?? null,
                 'desired_unit_price_max' => $v['desired_unit_price_max'] ?? null,
                 'available_from'         => $v['available_from'] ?? null,
+                'availability_status'    => $v['availability_status'] ?? null,
+                'past_client_count'      => $v['past_client_count'] ?? null,
                 'work_style'             => $v['work_style'] ?? null,
                 'preferred_location'     => $v['preferred_location'] ?? null,
                 'self_introduction'      => $v['self_introduction'] ?? null,
