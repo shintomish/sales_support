@@ -4,14 +4,17 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\ProjectMailSource;
+use App\Services\ProjectMailMatchingService;
 use App\Services\ProjectMailScoringService;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 
 class ProjectMailController extends Controller
 {
     public function __construct(
-        private ProjectMailScoringService $scoringService,
+        private ProjectMailScoringService  $scoringService,
+        private ProjectMailMatchingService $matchingService,
     ) {}
 
     // 一覧
@@ -147,6 +150,40 @@ class ProjectMailController extends Controller
         return response()->json([
             'message' => "{$count}件の抽出情報を更新しました",
             'count'   => $count,
+        ]);
+    }
+
+    /**
+     * 案件メールに対するマッチング技術者一覧
+     * GET /v1/project-mails/{id}/matched-engineers
+     */
+    public function matchedEngineers(int $id): JsonResponse
+    {
+        $tenantId = auth()->user()->tenant_id;
+        $mail = ProjectMailSource::where('tenant_id', $tenantId)->findOrFail($id);
+
+        $results = $this->matchingService->matchEngineers($mail, 20);
+
+        return response()->json([
+            'data' => $results->map(fn($r) => [
+                'engineer_id'      => $r['engineer']->id,
+                'engineer_name'    => $r['engineer']->name,
+                'affiliation'      => $r['engineer']->affiliation,
+                'affiliation_type' => $r['engineer']->affiliation_type,
+                'age'              => $r['engineer']->age,
+                'score'            => $r['score'],
+                'breakdown'        => $r['breakdown'],
+                'reasons'          => $r['reasons'],
+                'availability_status'    => $r['engineer']->profile?->availability_status,
+                'available_from'         => $r['engineer']->profile?->available_from,
+                'work_style'             => $r['engineer']->profile?->work_style,
+                'desired_unit_price_min' => $r['engineer']->profile?->desired_unit_price_min,
+                'desired_unit_price_max' => $r['engineer']->profile?->desired_unit_price_max,
+                'skills' => $r['engineer']->engineerSkills->map(fn($es) => [
+                    'name'             => $es->skill?->name,
+                    'experience_years' => $es->experience_years,
+                ])->values(),
+            ]),
         ]);
     }
 }

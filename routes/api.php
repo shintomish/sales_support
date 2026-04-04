@@ -125,7 +125,8 @@ Route::prefix('v1')->middleware(['supabase.auth'])->group(function () {
         Route::get('/{id}',          [ProjectMailController::class, 'show']);
         Route::patch('/{id}',        [ProjectMailController::class, 'update']);
         Route::patch('/{id}/status', [ProjectMailController::class, 'updateStatus']);
-        Route::post('/{id}/rescore', [ProjectMailController::class, 'rescore']);
+        Route::post('/{id}/rescore',              [ProjectMailController::class, 'rescore']);
+        Route::get('/{id}/matched-engineers',     [ProjectMailController::class, 'matchedEngineers']);
     });
 
     // ── マッチング機能 ───────────────────────────────────
