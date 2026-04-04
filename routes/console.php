@@ -33,3 +33,17 @@ Schedule::call(function () {
     ->onFailure(function () {
         \Illuminate\Support\Facades\Log::error('[Schedule] classify-emails 失敗');
     });
+
+// ── 案件メールスコアリング（15分毎）
+Schedule::call(function () {
+    $count = app(\App\Services\ProjectMailScoringService::class)->scorePending();
+    if ($count > 0) {
+        \Illuminate\Support\Facades\Log::info("[Schedule] 案件スコアリング完了: {$count}件");
+    }
+})
+    ->everyFifteenMinutes()
+    ->name('score-project-mails')
+    ->withoutOverlapping()
+    ->onFailure(function () {
+        \Illuminate\Support\Facades\Log::error('[Schedule] score-project-mails 失敗');
+    });

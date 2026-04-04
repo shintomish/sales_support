@@ -21,6 +21,9 @@ class Engineer extends Model
         'phone',
         'affiliation',
         'affiliation_contact',
+        'age',
+        'nationality',
+        'affiliation_type',
     ];
 
     public function profile(): HasOne
