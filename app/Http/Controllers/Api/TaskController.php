@@ -13,8 +13,10 @@ class TaskController extends Controller
     public function index(Request $request)
     {
         $today = Carbon::today();
+        $userFilter = $this->resolveUserFilter($request);
 
         $tasks = Task::with(['customer', 'deal', 'user'])
+            ->when($userFilter,            fn($q, $id) => $q->where('user_id', $id))
             ->when($request->search, fn($q, $s) =>
                 $q->where('title', 'like', "%{$s}%")
                 ->orWhereHas('customer', fn($q) =>

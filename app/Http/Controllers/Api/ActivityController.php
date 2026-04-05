@@ -11,7 +11,10 @@ class ActivityController extends Controller
 {
     public function index(Request $request)
     {
+        $userFilter = $this->resolveUserFilter($request);
+
         $activities = Activity::with(['customer', 'contact', 'deal'])
+            ->when($userFilter,            fn($q, $id) => $q->where('user_id', $id))
             ->when($request->search, fn($q, $s) =>
                 $q->where('subject', 'like', "%{$s}%")
                 ->orWhere('content', 'like', "%{$s}%")

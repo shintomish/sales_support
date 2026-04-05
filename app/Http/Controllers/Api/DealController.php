@@ -11,8 +11,11 @@ class DealController extends Controller
 {
     public function index(Request $request)
     {
+        $userFilter = $this->resolveUserFilter($request);
+
         $deals = Deal::with(['customer', 'contact'])
             ->where('deal_type', 'general')
+            ->when($userFilter,            fn($q, $id) => $q->where('user_id', $id))
             ->when($request->search, fn($q, $s) =>
                 $q->where('title', 'like', "%{$s}%")
                 ->orWhereHas('customer', fn($q) =>

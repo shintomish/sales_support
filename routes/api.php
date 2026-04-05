@@ -17,6 +17,7 @@ use App\Http\Controllers\Api\PublicProjectController;
 use App\Http\Controllers\Api\ApplicationController;
 use App\Http\Controllers\Api\MatchingController;
 use App\Http\Controllers\Api\ProjectMailController;
+use App\Http\Controllers\Api\UserController;
 
 // ── 認証不要 ────────────────────────────────────────
 Route::prefix('v1')->group(function () {
@@ -31,6 +32,7 @@ Route::prefix('v1')->group(function () {
 Route::prefix('v1')->middleware(['supabase.auth'])->group(function () {
     Route::post('logout', [AuthController::class, 'logout']);
     Route::get('me', [AuthController::class, 'me']);
+    Route::get('users', [UserController::class, 'index']);
     Route::get('dashboard', [DashboardController::class, 'index']);
     Route::get('notifications', [NotificationController::class, 'index']);
 

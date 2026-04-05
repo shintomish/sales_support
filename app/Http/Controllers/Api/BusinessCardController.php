@@ -19,9 +19,12 @@ use Google\Cloud\Vision\V1\BatchAnnotateImagesRequest;
 
 class BusinessCardController extends Controller
 {
-    public function index()
+    public function index(\Illuminate\Http\Request $request)
     {
+        $userFilter = $this->resolveUserFilter($request);
+
         $cards = BusinessCard::with(['customer', 'contact'])
+            ->when($userFilter, fn($q, $id) => $q->where('user_id', $id))
             ->orderBy('created_at', 'desc')
             ->paginate(20);
 

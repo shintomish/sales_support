@@ -81,10 +81,15 @@ class SesContractController extends Controller
     public function index(Request $request): JsonResponse
     {
         $tenantId = auth()->user()->tenant_id;
+        $userFilter = $this->resolveUserFilter($request);
+
         $query = Deal::with(['sesContract', 'contact', 'customer', 'latestWorkRecord'])
             ->where('deals.tenant_id', $tenantId)
             ->where('deals.deal_type', 'ses')
             ->whereNull('deals.deleted_at');
+        if ($userFilter) {
+            $query->where('deals.user_id', $userFilter);
+        }
         if ($search = $request->get('search')) {
             $query->where(function ($q) use ($search) {
                 $q->where('deals.title', 'ilike', "%{$search}%")
