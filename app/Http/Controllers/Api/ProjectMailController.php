@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\ProjectMailSource;
+use App\Services\ClaudeService;
 use App\Services\ProjectMailMatchingService;
 use App\Services\ProjectMailScoringService;
 use Illuminate\Http\JsonResponse;
@@ -15,6 +16,7 @@ class ProjectMailController extends Controller
     public function __construct(
         private ProjectMailScoringService  $scoringService,
         private ProjectMailMatchingService $matchingService,
+        private ClaudeService              $claudeService,
     ) {}
 
     // 一覧
@@ -151,6 +153,56 @@ class ProjectMailController extends Controller
             'message' => "{$count}件の抽出情報を更新しました",
             'count'   => $count,
         ]);
+    }
+
+    /**
+     * 提案メール草稿を生成
+     * POST /v1/project-mails/{id}/generate-proposal
+     */
+    public function generateProposal(Request $request, int $id): JsonResponse
+    {
+        $tenantId = auth()->user()->tenant_id;
+        $mail     = ProjectMailSource::with('email')->where('tenant_id', $tenantId)->findOrFail($id);
+
+        $v = $request->validate(['engineer_id' => 'required|integer']);
+
+        $engineer = \App\Models\Engineer::with(['profile', 'engineerSkills.skill'])
+            ->where('tenant_id', $tenantId)
+            ->findOrFail($v['engineer_id']);
+
+        $mailData = [
+            'title'           => $mail->title,
+            'email_subject'   => $mail->email?->subject,
+            'from_address'    => $mail->email?->from_address,
+            'from_name'       => $mail->email?->from_name,
+            'sales_contact'   => $mail->sales_contact,
+            'required_skills' => $mail->required_skills ?? [],
+            'work_location'   => $mail->work_location,
+            'unit_price_min'  => $mail->unit_price_min,
+            'unit_price_max'  => $mail->unit_price_max,
+        ];
+
+        $engineerData = [
+            'name'                    => $engineer->name,
+            'age'                     => $engineer->age,
+            'affiliation'             => $engineer->affiliation,
+            'availability_status'     => $engineer->profile?->availability_status,
+            'available_from'          => $engineer->profile?->available_from,
+            'desired_unit_price_min'  => $engineer->profile?->desired_unit_price_min,
+            'desired_unit_price_max'  => $engineer->profile?->desired_unit_price_max,
+            'skills' => $engineer->engineerSkills->map(fn($es) => [
+                'name'             => $es->skill?->name,
+                'experience_years' => $es->experience_years,
+            ])->values()->toArray(),
+        ];
+
+        try {
+            $draft = $this->claudeService->generateProposal($mailData, $engineerData);
+            return response()->json($draft);
+        } catch (\Exception $e) {
+            Log::error("generateProposal failed mail_id={$id}: " . $e->getMessage());
+            return response()->json(['message' => 'メール生成に失敗しました'], 500);
+        }
     }
 
     /**

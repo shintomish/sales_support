@@ -127,6 +127,7 @@ Route::prefix('v1')->middleware(['supabase.auth'])->group(function () {
         Route::patch('/{id}/status', [ProjectMailController::class, 'updateStatus']);
         Route::post('/{id}/rescore',              [ProjectMailController::class, 'rescore']);
         Route::get('/{id}/matched-engineers',     [ProjectMailController::class, 'matchedEngineers']);
+        Route::post('/{id}/generate-proposal',    [ProjectMailController::class, 'generateProposal']);
     });
 
     // ── マッチング機能 ───────────────────────────────────

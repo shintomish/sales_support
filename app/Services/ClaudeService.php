@@ -15,6 +15,104 @@ class ClaudeService
     }
 
     /**
+     * 提案メール草稿を生成
+     */
+    public function generateProposal(array $mail, array $engineer): array
+    {
+        $prompt = $this->buildProposalPrompt($mail, $engineer);
+
+        $response = Http::withHeaders([
+            'anthropic-version' => '2023-06-01',
+            'x-api-key'         => $this->apiKey,
+            'content-type'      => 'application/json',
+        ])->timeout(30)->post($this->apiUrl, [
+            'model'      => 'claude-haiku-4-5-20251001',
+            'max_tokens' => 1024,
+            'messages'   => [['role' => 'user', 'content' => $prompt]],
+        ]);
+
+        if ($response->failed()) {
+            throw new \Exception('Claude API error: ' . $response->body());
+        }
+
+        $text = $response->json('content.0.text', '');
+
+        // subject / body を分割して返す
+        if (preg_match('/【件名】\s*(.+?)(?:\n|$)/u', $text, $sm)) {
+            $subject = trim($sm[1]);
+        } else {
+            $subject = 'Re: ' . ($mail['email_subject'] ?? '案件のご紹介');
+        }
+        $body = preg_replace('/^.*?【本文】\s*/su', '', $text);
+
+        return [
+            'subject'    => $subject,
+            'body'       => trim($body),
+            'to_address' => $mail['from_address'] ?? '',
+            'to_name'    => $mail['from_name']    ?? '',
+        ];
+    }
+
+    private function buildProposalPrompt(array $mail, array $engineer): string
+    {
+        $skills = collect($engineer['skills'] ?? [])
+            ->map(fn($s) => $s['name'] . ($s['experience_years'] ? "（{$s['experience_years']}年）" : ''))
+            ->implode('、');
+
+        $price = '';
+        if (!empty($engineer['desired_unit_price_min'])) {
+            $price = $engineer['desired_unit_price_min'] . '〜' . ($engineer['desired_unit_price_max'] ?? '?') . '万円/月';
+        }
+
+        $availability = match($engineer['availability_status'] ?? '') {
+            'available'   => '即日稼働可能',
+            'scheduled'   => '稼働予定（' . ($engineer['available_from'] ?? '') . '〜）',
+            'working'     => '現在稼働中・' . ($engineer['available_from'] ?? '要相談') . '〜',
+            default       => '要相談',
+        };
+
+        $mailTitle    = $mail['title']         ?? $mail['email_subject'] ?? '案件';
+        $mailSkills   = implode('、', $mail['required_skills'] ?? []);
+        $mailLocation = $mail['work_location'] ?? '';
+        $mailPrice    = '';
+        if (!empty($mail['unit_price_min'])) {
+            $mailPrice = $mail['unit_price_min'] . '〜' . ($mail['unit_price_max'] ?? '?') . '万円';
+        }
+        $toName       = $mail['sales_contact'] ?? $mail['from_name'] ?? 'ご担当者';
+
+        return <<<PROMPT
+あなたはSES企業の営業担当です。以下の案件に対して、技術者を提案する返信メールを日本語で作成してください。
+
+## 案件情報
+- タイトル: {$mailTitle}
+- 必須スキル: {$mailSkills}
+- 勤務地: {$mailLocation}
+- 単価: {$mailPrice}
+
+## 提案する技術者
+- 氏名: {$engineer['name']}
+- 年齢: {$engineer['age']}歳
+- スキル: {$skills}
+- 稼働: {$availability}
+- 希望単価: {$price}
+- 所属: {$engineer['affiliation']}
+
+## 指示
+- 宛先の名前「{$toName}様」から始める
+- 簡潔かつ丁寧なビジネスメール
+- 技術者のアピールポイントを自然に盛り込む
+- 面談打診で締める
+- 250〜350文字程度
+- 以下の形式で出力すること:
+
+【件名】Re: {$mailTitle}
+
+【本文】
+（ここにメール本文）
+PROMPT;
+    }
+
+    /**
      * 名刺OCRテキストから構造化データを抽出
      */
     public function extractBusinessCardInfo(string $ocrText): array
