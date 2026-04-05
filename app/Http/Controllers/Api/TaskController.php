@@ -34,13 +34,17 @@ class TaskController extends Controller
                     default   => $q,
                 };
             })
+            ->when($request->get('sort_by') === 'assignee', fn($q) =>
+                $q->leftJoin('users as sort_users', 'tasks.user_id', '=', 'sort_users.id')->select('tasks.*')
+            )
             ->when($request->get('sort_by'), fn($q) => $q->orderBy(
                 ...$this->resolveSort($request, [
-                    'title'    => 'title',
-                    'due_date' => 'due_date',
-                    'status'   => 'status',
-                    'priority' => 'priority',
-                ], 'due_date', 'asc')
+                    'title'    => 'tasks.title',
+                    'due_date' => 'tasks.due_date',
+                    'status'   => 'tasks.status',
+                    'priority' => 'tasks.priority',
+                    'assignee' => 'sort_users.name',
+                ], 'tasks.due_date', 'asc')
             ), fn($q) => $q
                 ->orderByRaw("CASE status WHEN '未着手' THEN 1 WHEN '進行中' THEN 2 WHEN '完了' THEN 3 ELSE 4 END")
                 ->orderByRaw("CASE priority WHEN '高' THEN 1 WHEN '中' THEN 2 WHEN '低' THEN 3 ELSE 4 END")

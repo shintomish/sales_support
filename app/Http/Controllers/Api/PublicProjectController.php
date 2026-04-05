@@ -90,7 +90,12 @@ class PublicProjectController extends Controller
             $query->whereHas('requiredSkills', fn($q) => $q->where('skill_id', $skillId));
         }
 
-        $paginated = $query->orderByDesc('published_at')->paginate($request->get('per_page', 20));
+        $paginated = $query->orderBy(...$this->resolveSort($request, [
+            'title'          => 'title',
+            'status'         => 'status',
+            'unit_price_min' => 'unit_price_min',
+            'work_style'     => 'work_style',
+        ], 'published_at', 'desc'))->paginate($request->get('per_page', 20));
 
         return response()->json([
             'data' => $paginated->map(fn(PublicProject $p) => $this->formatProject($p, $userId)),

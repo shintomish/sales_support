@@ -79,7 +79,16 @@ class EngineerController extends Controller
             $query->whereHas('profile', fn($q) => $q->where('available_from', '<=', now()->toDateString()));
         }
 
-        $paginated = $query->orderBy('name')->paginate($request->get('per_page', 30));
+        // 稼働可能日ソート用に engineer_profiles を JOIN
+        if ($request->get('sort_by') === 'available_from') {
+            $query->leftJoin('engineer_profiles', 'engineers.id', '=', 'engineer_profiles.engineer_id')
+                  ->select('engineers.*');
+        }
+        $paginated = $query->orderBy(...$this->resolveSort($request, [
+            'name'         => 'engineers.name',
+            'affiliation'  => 'engineers.affiliation',
+            'available_from' => 'engineer_profiles.available_from',
+        ], 'engineers.name', 'asc'))->paginate($request->get('per_page', 30));
 
         return response()->json([
             'data' => $paginated->map(fn(Engineer $e) => $this->formatEngineer($e)),

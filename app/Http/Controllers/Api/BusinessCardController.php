@@ -26,9 +26,9 @@ class BusinessCardController extends Controller
         $cards = BusinessCard::with(['customer', 'contact'])
             ->when($userFilter, fn($q, $id) => $q->where('user_id', $id))
             ->orderBy(...$this->resolveSort($request, [
-                'created_at'  => 'created_at',
-                'company'     => 'company',
-                'name'        => 'name',
+                'created_at'   => 'created_at',
+                'company_name' => 'company_name',
+                'person_name'  => 'person_name',
             ], 'created_at', 'desc'))
             ->paginate(20);
 
