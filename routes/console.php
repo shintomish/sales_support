@@ -49,6 +49,18 @@ Schedule::call(function () {
         Log::error('[Schedule] score-project-mails 失敗');
     });
 
+// ── メールクリーンアップ（毎日 3:00）
+Schedule::command('emails:cleanup')
+    ->dailyAt('03:00')
+    ->name('cleanup-emails')
+    ->withoutOverlapping()
+    ->onSuccess(function () {
+        Log::info('[Schedule] メールクリーンアップ 完了');
+    })
+    ->onFailure(function () {
+        Log::error('[Schedule] メールクリーンアップ 失敗');
+    });
+
 // ── 分類済みメールをGmailゴミ箱に移動（毎日 2:00）
 Schedule::command('gmail:trash-classified')
     ->dailyAt('02:00')
