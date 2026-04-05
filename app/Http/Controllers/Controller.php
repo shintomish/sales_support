@@ -32,4 +32,21 @@ abstract class Controller
         // tenant_admin / super_admin: フィルタなし
         return null;
     }
+
+    /**
+     * ソートパラメータを解決する。
+     *
+     * @param  array<string,string> $allowedColumns  フロント側キー => DBカラム名
+     * @return array{0:string, 1:string}  [$column, $direction]
+     */
+    protected function resolveSort(Request $request, array $allowedColumns, string $default, string $defaultOrder = 'asc'): array
+    {
+        $sortBy    = $request->get('sort_by');
+        $sortOrder = $request->get('sort_order') === 'desc' ? 'desc' : 'asc';
+
+        if ($sortBy && isset($allowedColumns[$sortBy])) {
+            return [$allowedColumns[$sortBy], $sortOrder];
+        }
+        return [$default, $defaultOrder];
+    }
 }

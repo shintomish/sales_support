@@ -34,8 +34,17 @@ class TaskController extends Controller
                     default   => $q,
                 };
             })
-            ->orderByRaw("CASE status WHEN '未着手' THEN 1 WHEN '進行中' THEN 2 WHEN '完了' THEN 3 ELSE 4 END")
-            ->orderByRaw("CASE priority WHEN '高' THEN 1 WHEN '中' THEN 2 WHEN '低' THEN 3 ELSE 4 END")
+            ->when($request->get('sort_by'), fn($q) => $q->orderBy(
+                ...$this->resolveSort($request, [
+                    'title'    => 'title',
+                    'due_date' => 'due_date',
+                    'status'   => 'status',
+                    'priority' => 'priority',
+                ], 'due_date', 'asc')
+            ), fn($q) => $q
+                ->orderByRaw("CASE status WHEN '未着手' THEN 1 WHEN '進行中' THEN 2 WHEN '完了' THEN 3 ELSE 4 END")
+                ->orderByRaw("CASE priority WHEN '高' THEN 1 WHEN '中' THEN 2 WHEN '低' THEN 3 ELSE 4 END")
+            )
             ->paginate(20);
         return TaskResource::collection($tasks);
     }

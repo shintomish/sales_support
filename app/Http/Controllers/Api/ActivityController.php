@@ -26,7 +26,12 @@ class ActivityController extends Controller
             ->when($request->customer_id, fn($q, $id) => $q->where('customer_id', $id))
             ->when($request->date_from,   fn($q, $d) => $q->where('activity_date', '>=', $d))
             ->when($request->date_to,     fn($q, $d) => $q->where('activity_date', '<=', $d))
-            ->orderBy('activity_date', 'desc')
+            ->orderBy(...$this->resolveSort($request, [
+                'activity_date' => 'activity_date',
+                'type'          => 'type',
+                'subject'       => 'subject',
+                'created_at'    => 'created_at',
+            ], 'activity_date', 'desc'))
             ->paginate(20);
         return ActivityResource::collection($activities);
     }

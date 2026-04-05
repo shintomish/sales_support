@@ -102,10 +102,20 @@ class SesContractController extends Controller
         if ($status = $request->get('status')) {
             $query->where('deals.status', $status);
         }
-        $query->leftJoin('ses_contracts', 'deals.id', '=', 'ses_contracts.deal_id')
-              ->orderByRaw('CASE WHEN ses_contracts.contract_period_end IS NULL THEN 1 ELSE 0 END')
-              ->orderBy('ses_contracts.contract_period_end', 'asc')
-              ->select('deals.*');
+        $query->leftJoin('ses_contracts', 'deals.id', '=', 'ses_contracts.deal_id');
+        if ($request->get('sort_by')) {
+            [$sortCol, $sortDir] = $this->resolveSort($request, [
+                'project_number'      => 'deals.project_number',
+                'contract_period_end' => 'ses_contracts.contract_period_end',
+                'income_amount'       => 'ses_contracts.income_amount',
+                'status'              => 'deals.status',
+            ], 'ses_contracts.contract_period_end', 'asc');
+            $query->orderBy($sortCol, $sortDir);
+        } else {
+            $query->orderByRaw('CASE WHEN ses_contracts.contract_period_end IS NULL THEN 1 ELSE 0 END')
+                  ->orderBy('ses_contracts.contract_period_end', 'asc');
+        }
+        $query->select('deals.*');
         $paginated = $query->paginate($request->get('per_page', 50));
         $items = $paginated->map(fn(Deal $deal) => $this->formatDeal($deal));
         return response()->json([
