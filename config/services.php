@@ -41,6 +41,8 @@ return [
 
     'google_vision' => [
         'credentials' => env('GOOGLE_APPLICATION_CREDENTIALS', storage_path('credentials/google-vision.json')),
+        'project_id'  => env('GOOGLE_CLOUD_PROJECT_ID'),
+        'secret_name' => env('GOOGLE_SECRET_NAME', 'vision-api-credentials'),
     ],
 
 

@@ -8,6 +8,7 @@ use App\Http\Resources\BusinessCardResource;
 use App\Services\SupabaseStorageService;
 use App\Services\ClaudeService;
 use App\Services\BusinessCardRegistrationService;
+use App\Services\GoogleCredentialService;
 use Illuminate\Http\Request;
 use Google\Cloud\Vision\V1\Client\ImageAnnotatorClient;
 use Google\Cloud\Vision\V1\Image;
@@ -62,8 +63,7 @@ class BusinessCardController extends Controller
                 $imageContent = file_get_contents($imageFile->getRealPath());
 
                 // 2. Google Cloud Vision API で OCR 実行
-                $credentialsPath = config('services.google_vision.credentials');
-                $credentialsJson = json_decode(file_get_contents($credentialsPath), true);
+                $credentialsJson = app(GoogleCredentialService::class)->getCredentials();
                 $vision = new ImageAnnotatorClient([
                     'credentials' => $credentialsJson,
                 ]);
