@@ -127,24 +127,24 @@ class DealImportService
             $rows = $this->loadRows($filePath);
             $this->total = count($rows);
 
-            DB::transaction(function () use ($rows) {
-                foreach ($rows as $rowIndex => $row) {
-                    try {
+            foreach ($rows as $rowIndex => $row) {
+                try {
+                    DB::transaction(function () use ($row, $rowIndex) {
                         $this->processRow($row, $rowIndex + 1);
-                    } catch (\Throwable $e) {
-                        $projectNumber = $row[0] ?? "行{$rowIndex}";
-                        $this->errors[] = [
-                            'row'            => $rowIndex + 1,
-                            'project_number' => $projectNumber,
-                            'reason'         => $e->getMessage(),
-                        ];
-                        Log::warning("DealImport row error", [
-                            'row'    => $rowIndex + 1,
-                            'error'  => $e->getMessage(),
-                        ]);
-                    }
+                    });
+                } catch (\Throwable $e) {
+                    $projectNumber = $row[0] ?? "行{$rowIndex}";
+                    $this->errors[] = [
+                        'row'            => $rowIndex + 1,
+                        'project_number' => $projectNumber,
+                        'reason'         => mb_convert_encoding($e->getMessage(), 'UTF-8', 'auto'),
+                    ];
+                    Log::warning("DealImport row error", [
+                        'row'    => $rowIndex + 1,
+                        'error'  => $e->getMessage(),
+                    ]);
                 }
-            });
+            }
 
             $log->markCompleted([
                 'total_rows'     => $this->total,
@@ -426,6 +426,10 @@ class DealImportService
     {
         if ($value === null) {
             return null;
+        }
+        // 無効なUTF-8バイト列を除去
+        if (!mb_check_encoding($value, 'UTF-8')) {
+            $value = mb_convert_encoding($value, 'UTF-8', 'auto');
         }
         // 全角スペースを除去
         $value = str_replace("\u{3000}", '', trim($value));
