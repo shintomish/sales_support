@@ -5,8 +5,10 @@ namespace App\Services;
 use App\Models\Contact;
 use App\Models\Customer;
 use App\Models\Deal;
+use App\Models\DealAssignee;
 use App\Models\DealImportLog;
 use App\Models\SesContract;
+use App\Models\User;
 use App\Models\WorkRecord;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -341,7 +343,10 @@ class DealImportService
             ]
         );
 
-        // ── 5. WorkRecord の upsert（勤務表・請求書情報）────
+        // ── 5. DealAssignees の同期（自社担当者 姓 → user_id）──
+        $this->syncAssignees($deal, $this->cleanString($row[3] ?? ''));
+
+        // ── 6. WorkRecord の upsert（勤務表・請求書情報）────
         // 契約期間終了月を year_month として使用。なければ現在月
         $contractEnd = $this->toDate($row[36] ?? null);
         $yearMonth   = $contractEnd
@@ -364,6 +369,49 @@ class DealImportService
                     'notes'                   => $notes,
                 ]
             );
+        }
+    }
+
+    /**
+     * sales_person（例: "榎本・松村"）を解析し deal_assignees を同期する
+     * - 区切り文字: 全角中点「・」または半角スラッシュ「/」
+     * - 各姓で users.name を前方一致検索（同テナント内）
+     */
+    private function syncAssignees(Deal $deal, ?string $salesPerson): void
+    {
+        if (empty($salesPerson)) {
+            return;
+        }
+
+        // 区切り文字で分割（・ / ／）
+        $names = preg_split('/[・\/／]/', $salesPerson);
+        $userIds = [];
+
+        foreach ($names as $name) {
+            $name = trim($name);
+            if (empty($name)) continue;
+
+            $user = User::where('tenant_id', $this->tenantId)
+                ->where('name', 'like', "{$name}%")
+                ->first();
+
+            if ($user) {
+                $userIds[] = $user->id;
+            }
+        }
+
+        if (empty($userIds)) {
+            return;
+        }
+
+        // 既存を削除して再挿入（sync）
+        DealAssignee::where('deal_id', $deal->id)->delete();
+        foreach ($userIds as $userId) {
+            DealAssignee::create([
+                'deal_id'   => $deal->id,
+                'user_id'   => $userId,
+                'tenant_id' => $this->tenantId,
+            ]);
         }
     }
 

@@ -34,6 +34,7 @@ class SesContractController extends Controller
             'affiliation'                  => $deal->affiliation,
             'affiliation_contact'          => $deal->affiliation_contact,
             'sales_person'                 => $deal->sales_person,
+            'assignees'                    => $deal->assignees->map(fn($u) => ['id' => $u->id, 'name' => $u->name])->values(),
             'email'                        => $c?->email,
             'phone'                        => $c?->phone,
             'customer_name'                => $cu?->company_name,
@@ -83,12 +84,13 @@ class SesContractController extends Controller
         $tenantId = auth()->user()->tenant_id;
         $userFilter = $this->resolveUserFilter($request);
 
-        $query = Deal::with(['sesContract', 'contact', 'customer', 'latestWorkRecord'])
+        $query = Deal::with(['sesContract', 'contact', 'customer', 'latestWorkRecord', 'assignees'])
             ->where('deals.tenant_id', $tenantId)
             ->where('deals.deal_type', 'ses')
             ->whereNull('deals.deleted_at');
         if ($userFilter) {
-            $query->where('deals.user_id', $userFilter);
+            // deal_assignees 経由でフィルタ（複数担当対応）
+            $query->whereHas('assignees', fn($q) => $q->where('users.id', $userFilter));
         }
         if ($search = $request->get('search')) {
             $query->where(function ($q) use ($search) {

@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use App\Traits\BelongsToTenant;
@@ -65,6 +66,13 @@ class Deal extends Model
     public function latestWorkRecord(): HasOne
     {
         return $this->hasOne(WorkRecord::class)->latestOfMany('year_month');
+    }
+
+    /** 自社担当者（多対多） */
+    public function assignees(): BelongsToMany
+    {
+        return $this->belongsToMany(User::class, 'deal_assignees')
+            ->withTimestamps();
     }
 
     // ── スコープ ──────────────────────────────────────
