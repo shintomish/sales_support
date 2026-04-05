@@ -80,8 +80,9 @@ class EngineerController extends Controller
         }
 
         // 稼働可能日ソート: サブクエリで取得（JOIN は tenant_id 曖昧エラーになるため）
+        // addSelect() は $columns=null 時に * を失うため、先に engineers.* を明示する
         if ($request->get('sort_by') === 'available_from') {
-            $query->addSelect(DB::raw(
+            $query->select('engineers.*', DB::raw(
                 '(SELECT available_from FROM engineer_profiles WHERE engineer_profiles.engineer_id = engineers.id LIMIT 1) AS profile_available_from'
             ));
         }
