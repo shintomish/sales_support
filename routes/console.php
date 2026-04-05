@@ -49,6 +49,18 @@ Schedule::call(function () {
         Log::error('[Schedule] score-project-mails 失敗');
     });
 
+// ── 分類済みメールをGmailゴミ箱に移動（毎日 2:00）
+Schedule::command('gmail:trash-classified')
+    ->dailyAt('02:00')
+    ->name('trash-classified-emails')
+    ->withoutOverlapping()
+    ->onSuccess(function () {
+        Log::info('[Schedule] 分類済みメールのゴミ箱移動 完了');
+    })
+    ->onFailure(function () {
+        Log::error('[Schedule] 分類済みメールのゴミ箱移動 失敗');
+    });
+
 // ── Vision API キーローテーション（90日毎 / 毎月1日 0:00）
 Schedule::command('vision:rotate-key')
     ->monthly()

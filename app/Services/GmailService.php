@@ -31,7 +31,7 @@ class GmailService
             'client_id'     => $this->clientId,
             'redirect_uri'  => $this->redirectUri,
             'response_type' => 'code',
-            'scope'         => 'https://www.googleapis.com/auth/gmail.readonly email profile',
+            'scope'         => 'https://www.googleapis.com/auth/gmail.modify email profile',
             'access_type'   => 'offline',
             'prompt'        => 'consent',
             'state'         => $userId,  // ← 追加
@@ -257,5 +257,21 @@ $receivedAt = isset($data['internalDate']) ? Carbon::createFromTimestampMs((int)
             ->post("{$this->apiBase}/users/me/messages/{$gmailMessageId}/modify", [
                 'removeLabelIds' => ['UNREAD'],
             ]);
+    }
+
+    // メールをゴミ箱に移動
+    public function trashEmail(GmailToken $gmailToken, string $gmailMessageId): bool
+    {
+        $accessToken = $this->getValidAccessToken($gmailToken);
+
+        $response = Http::withToken($accessToken)
+            ->post("{$this->apiBase}/users/me/messages/{$gmailMessageId}/trash");
+
+        if ($response->failed()) {
+            Log::warning("[GmailService] ゴミ箱移動失敗 messageId={$gmailMessageId}: " . $response->body());
+            return false;
+        }
+
+        return true;
     }
 }

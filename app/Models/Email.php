@@ -27,6 +27,7 @@ class Email extends Model
         'category',
         'extracted_data',
         'classified_at',
+        'gmail_trashed_at',
         'registered_at',
         'registered_engineer_id',
         'registered_project_id',
@@ -38,8 +39,9 @@ class Email extends Model
         'received_at'    => 'datetime',
         'is_read'        => 'boolean',
         'extracted_data' => 'array',
-        'classified_at'  => 'datetime',
-        'registered_at'  => 'datetime',
+        'classified_at'   => 'datetime',
+        'gmail_trashed_at'=> 'datetime',
+        'registered_at'   => 'datetime',
     ];
 
     public function projectMailSource()
