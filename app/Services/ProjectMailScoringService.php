@@ -137,6 +137,14 @@ class ProjectMailScoringService
                     $pms->update(['score' => 0, 'score_reasons' => ['excluded'], 'status' => 'excluded']);
                 } else {
                     [$score, $reasons] = $this->calcScore($text);
+                    $domainData = $this->domainBonus($from, $pms->tenant_id);
+                    if ($domainData['bonus'] !== 0) {
+                        $score    += $domainData['bonus'];
+                        $sign      = $domainData['bonus'] > 0 ? '+' : '';
+                        $pct       = round($domainData['rate'] * 100);
+                        $reasons[] = "domain:{$domainData['domain']}:{$sign}{$domainData['bonus']}({$pct}%/{$domainData['sample']}件)";
+                    }
+                    $score     = max(0, min(100, $score));
                     $extracted = $this->extract($email);
                     $status = match(true) {
                         $score >= self::SCORE_OK     => 'new',
@@ -202,9 +210,64 @@ class ProjectMailScoringService
 
         // ② スコアリング（max 85点）
         [$score, $reasons] = $this->calcScore($text);
+
+        // ③ ドメイン学習補正（蓄積データが5件以上のドメインに適用）
+        $domainData = $this->domainBonus($from, $email->tenant_id);
+        if ($domainData['bonus'] !== 0) {
+            $score += $domainData['bonus'];
+            $sign   = $domainData['bonus'] > 0 ? '+' : '';
+            $pct    = round($domainData['rate'] * 100);
+            $reasons[] = "domain:{$domainData['domain']}:{$sign}{$domainData['bonus']}({$pct}%/{$domainData['sample']}件)";
+        }
+
+        $score     = max(0, min(100, $score));
         $extracted = $this->extract($email);
 
         return $this->save($email, $score, $reasons, 'rule', $extracted);
+    }
+
+    /**
+     * ドメイン学習補正値を返す
+     * 蓄積データから BP会社ドメインごとの案件率を算出し +20/-20 を返す
+     */
+    public function domainBonus(string $fromAddress, int $tenantId): array
+    {
+        $empty = ['bonus' => 0, 'rate' => 0.0, 'sample' => 0, 'domain' => ''];
+
+        if (!$fromAddress) return $empty;
+
+        // ドメイン抽出
+        if (!preg_match('/@([\w.\-]+)$/i', $fromAddress, $m)) return $empty;
+        $domain = strtolower($m[1]);
+
+        // フォームサービス等は除外（実送信者と無関係なドメイン）
+        $skipDomains = ['smoothcontact.com', 'gmail.com', 'yahoo.co.jp', 'hotmail.com'];
+        if (in_array($domain, $skipDomains, true)) return $empty;
+
+        // 判断済みレコードのみ集計（review = 未判断は除外）
+        $rows = ProjectMailSource::where('tenant_id', $tenantId)
+            ->whereNotIn('status', ['review'])
+            ->whereHas('email', fn($q) => $q->where('from_address', 'like', '%@' . $domain))
+            ->selectRaw("
+                COUNT(*) as total,
+                SUM(CASE WHEN status != 'excluded' THEN 1 ELSE 0 END) as project_count
+            ")
+            ->first();
+
+        $total        = (int) ($rows->total ?? 0);
+        $projectCount = (int) ($rows->project_count ?? 0);
+
+        // 最低5件のサンプルが必要
+        if ($total < 5) return array_merge($empty, ['domain' => $domain, 'sample' => $total]);
+
+        $rate  = $projectCount / $total;
+        $bonus = match(true) {
+            $rate >= 0.8 => 20,
+            $rate <= 0.2 => -20,
+            default      => 0,
+        };
+
+        return ['bonus' => $bonus, 'rate' => $rate, 'sample' => $total, 'domain' => $domain];
     }
 
     // ── 抽出（正規表現）──────────────────────────────────
