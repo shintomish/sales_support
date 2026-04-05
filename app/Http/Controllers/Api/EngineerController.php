@@ -79,15 +79,16 @@ class EngineerController extends Controller
             $query->whereHas('profile', fn($q) => $q->where('available_from', '<=', now()->toDateString()));
         }
 
-        // 稼働可能日ソート用に engineer_profiles を JOIN
+        // 稼働可能日ソート: サブクエリで取得（JOIN は tenant_id 曖昧エラーになるため）
         if ($request->get('sort_by') === 'available_from') {
-            $query->leftJoin('engineer_profiles', 'engineers.id', '=', 'engineer_profiles.engineer_id')
-                  ->select('engineers.*');
+            $query->addSelect(DB::raw(
+                '(SELECT available_from FROM engineer_profiles WHERE engineer_profiles.engineer_id = engineers.id LIMIT 1) AS profile_available_from'
+            ));
         }
         $paginated = $query->orderBy(...$this->resolveSort($request, [
-            'name'         => 'engineers.name',
-            'affiliation'  => 'engineers.affiliation',
-            'available_from' => 'engineer_profiles.available_from',
+            'name'            => 'engineers.name',
+            'affiliation'     => 'engineers.affiliation',
+            'available_from'  => 'profile_available_from',
         ], 'engineers.name', 'asc'))->paginate($request->get('per_page', 30));
 
         return response()->json([
