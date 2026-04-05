@@ -6,6 +6,7 @@ use Illuminate\Console\Command;
 use Google\Cloud\SecretManager\V1\Client\SecretManagerServiceClient;
 use Google\Cloud\SecretManager\V1\CreateSecretRequest;
 use Google\Cloud\SecretManager\V1\AddSecretVersionRequest;
+use Google\Cloud\SecretManager\V1\GetSecretRequest;
 use Google\Cloud\SecretManager\V1\Secret;
 use Google\Cloud\SecretManager\V1\Replication;
 use Google\Cloud\SecretManager\V1\Replication\Automatic;
@@ -57,7 +58,7 @@ class InitVisionSecret extends Command
         $versionName = null;
 
         try {
-            $client->getSecret($fullName);
+            $client->getSecret((new GetSecretRequest())->setName($fullName));
             $this->line('既存シークレットにバージョンを追加します...');
         } catch (\Google\ApiCore\ApiException $e) {
             if ($e->getStatus() === 'NOT_FOUND') {
