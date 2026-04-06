@@ -30,7 +30,7 @@ class EngineerController extends Controller
             'profile' => $p ? [
                 'desired_unit_price_min' => $p->desired_unit_price_min,
                 'desired_unit_price_max' => $p->desired_unit_price_max,
-                'available_from'         => $p->available_from,
+                'available_from'         => $p->available_from?->format('Y-m-d'),
                 'availability_status'    => $p->availability_status,
                 'past_client_count'      => $p->past_client_count,
                 'work_style'             => $p->work_style,
@@ -145,6 +145,8 @@ class EngineerController extends Controller
             'skills.*.proficiency_level' => 'nullable|integer|between:1,5',
         ]);
 
+        \Log::info('[EngineerStore] skills received', ['count' => count($v['skills'] ?? []), 'skills' => $v['skills'] ?? []]);
+
         $engineer = DB::transaction(function () use ($v, $tenantId) {
             $engineer = Engineer::create([
                 'tenant_id'           => $tenantId,
@@ -226,6 +228,8 @@ class EngineerController extends Controller
             'skills.*.experience_years' => 'nullable|numeric|min:0|max:50',
             'skills.*.proficiency_level' => 'nullable|integer|between:1,5',
         ]);
+
+        \Log::info('[EngineerUpdate] skills received', ['engineer_id' => $engineer->id, 'has_skills_key' => array_key_exists('skills', $v), 'count' => count($v['skills'] ?? [])]);
 
         DB::transaction(function () use ($v, $engineer, $tenantId) {
             $engineerFields = array_filter([
