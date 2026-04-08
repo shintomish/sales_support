@@ -138,9 +138,10 @@ Route::prefix('v1')->middleware(['supabase.auth'])->group(function () {
         Route::get('/',              [EngineerMailController::class, 'index']);
         Route::post('/score-all',    [EngineerMailController::class, 'scoreAll']);
         Route::post('/rescore-all',  [EngineerMailController::class, 'rescoreAll']);
-        Route::get('/{id}',          [EngineerMailController::class, 'show']);
-        Route::put('/{id}',          [EngineerMailController::class, 'update']);
-        Route::put('/{id}/status',   [EngineerMailController::class, 'updateStatus']);
+        Route::get('/{id}',                           [EngineerMailController::class, 'show']);
+        Route::get('/{id}/attachment/{attachmentId}', [EngineerMailController::class, 'downloadAttachment']);
+        Route::put('/{id}',                           [EngineerMailController::class, 'update']);
+        Route::put('/{id}/status',                    [EngineerMailController::class, 'updateStatus']);
     });
 
     // ── マッチング機能 ───────────────────────────────────

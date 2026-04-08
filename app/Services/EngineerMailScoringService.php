@@ -297,8 +297,8 @@ class EngineerMailScoringService
                     }
                 }
             } catch (\Throwable $e) {
-                // パース失敗は想定内（パスワード保護・破損ファイル等）→ debugレベルで記録
-                Log::debug("[EngineerMailScoring] 添付解析スキップ email_id={$email->id}: " . $e->getMessage());
+                // パース失敗は想定内（パスワード保護・破損ファイル等・Claude API障害）→ warningレベルで記録
+                Log::warning("[EngineerMailScoring] 添付解析スキップ email_id={$email->id}: " . $e->getMessage());
             }
         }
 

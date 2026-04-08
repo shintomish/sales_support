@@ -3,10 +3,16 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\EmailAttachment;
 use App\Models\EngineerMailSource;
+use App\Models\GmailToken;
 use App\Services\EngineerMailScoringService;
+use App\Services\GmailService;
+use App\Services\SupabaseStorageService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\Response;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
 class EngineerMailController extends Controller
@@ -90,6 +96,79 @@ class EngineerMailController extends Controller
         $ems->update($v);
 
         return response()->json($ems->fresh());
+    }
+
+    // 添付ファイルダウンロード
+    public function downloadAttachment(int $id, int $attachmentId): Response
+    {
+        $ems = EngineerMailSource::with('email')->findOrFail($id);
+        $att = EmailAttachment::where('id', $attachmentId)
+            ->where('email_id', $ems->email_id)
+            ->firstOrFail();
+
+        $filename = $att->filename ?: 'attachment';
+        $mimeType = $att->mime_type ?: 'application/octet-stream';
+
+        // Storage保存済み → Supabaseからservice_roleキーで取得してストリーム
+        if ($att->storage_path) {
+            $supabaseUrl = config('services.supabase.url');
+            $serviceKey  = config('services.supabase.service_role_key');
+            $bucket      = config('services.supabase.bucket');
+
+            // storage_pathからbucket以降のパスを抽出
+            $pattern = "/storage\/v1\/object\/public\/{$bucket}\//";
+            $path    = preg_replace($pattern, '', parse_url($att->storage_path, PHP_URL_PATH));
+
+            $response = Http::withHeaders([
+                'Authorization' => "Bearer {$serviceKey}",
+            ])->get("{$supabaseUrl}/storage/v1/object/{$bucket}/{$path}");
+
+            if ($response->successful()) {
+                return response($response->body(), 200, [
+                    'Content-Type'        => $mimeType,
+                    'Content-Disposition' => 'attachment; filename="' . rawurlencode($filename) . '"',
+                ]);
+            }
+        }
+
+        // storage_pathなし or Storage取得失敗 → Gmail APIから取得
+        $gmailToken = GmailToken::where('tenant_id', $ems->email->tenant_id)->first();
+        if (!$gmailToken || !$ems->email->gmail_message_id || !$att->gmail_attachment_id) {
+            abort(404, '添付ファイルを取得できませんでした');
+        }
+
+        $gmailService = app(GmailService::class);
+        $rawData      = $gmailService->fetchAttachmentData(
+            $gmailToken,
+            $ems->email->gmail_message_id,
+            $att->gmail_attachment_id
+        );
+
+        if (!$rawData) {
+            abort(404, '添付ファイルを取得できませんでした');
+        }
+
+        $binary = base64_decode(str_replace(['-', '_'], ['+', '/'], $rawData));
+
+        // Storageに保存（次回以降のために）
+        if (empty($att->storage_path)) {
+            try {
+                $ext      = strtolower(pathinfo($filename, PATHINFO_EXTENSION));
+                $base     = preg_replace('/[^\w\-\.]/u', '_', pathinfo($filename, PATHINFO_FILENAME));
+                $base     = preg_replace('/[^\x00-\x7F]/u', '', $base) ?: substr(md5($filename), 0, 8);
+                $path     = "attachments/{$ems->email->tenant_id}/{$ems->email_id}/{$base}.{$ext}";
+                $storage  = app(SupabaseStorageService::class);
+                $url      = $storage->uploadBinary($binary, $path, $mimeType);
+                $att->update(['storage_path' => $url]);
+            } catch (\Throwable $e) {
+                Log::debug("[EngineerMailController] 添付Storage保存失敗 att_id={$att->id}: " . $e->getMessage());
+            }
+        }
+
+        return response($binary, 200, [
+            'Content-Type'        => $mimeType,
+            'Content-Disposition' => 'attachment; filename="' . rawurlencode($filename) . '"',
+        ]);
     }
 
     // 未処理メールを手動で一括スコアリング（1回50件ずつ処理）
