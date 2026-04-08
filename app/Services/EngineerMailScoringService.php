@@ -470,8 +470,14 @@ class EngineerMailScoringService
 
     private function extractName(string $text): ?string
     {
-        // 優先: ■氏名■ 形式（次行に値）→ NA(32歳/女性) から括弧前を取得
+        // 優先1: ■氏名■ 形式（次行に値）→ NA(32歳/女性) から括弧前を取得
         if (preg_match('/■氏名■\s*\n\s*([^\n（(]{1,20})/u', $text, $m)) {
+            $name = trim(preg_replace('/[（(].*/u', '', $m[1]));
+            if ($name !== '') return $name;
+        }
+
+        // 優先2: ■氏　名：AS(女性/24歳) 形式（同行、全角スペースあり）
+        if (preg_match('/■氏[　\s]*名[：:]\s*([^\n（(]{1,15})/u', $text, $m)) {
             $name = trim(preg_replace('/[（(].*/u', '', $m[1]));
             if ($name !== '') return $name;
         }
@@ -512,8 +518,14 @@ class EngineerMailScoringService
 
     private function extractAvailableFrom(string $text): ?string
     {
-        // 優先: ■稼働日■ 形式
+        // 優先1: ■稼働日■ / ■稼働■ 形式（次行に値）
         if (preg_match('/■(?:稼働日|稼働開始|稼働)[■\s]*\n\s*([^\n]{1,20})/u', $text, $m)) {
+            $val = trim($m[1]);
+            if ($val !== '') return $val;
+        }
+
+        // 優先2: ■稼　動：1月開始 形式（同行、全角スペースあり）
+        if (preg_match('/■稼[　\s]*動[：:　\s]*([^\n]{1,20})/u', $text, $m)) {
             $val = trim($m[1]);
             if ($val !== '') return $val;
         }
