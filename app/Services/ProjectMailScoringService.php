@@ -470,10 +470,13 @@ class ProjectMailScoringService
 
     private function extractSkills(string $text): array
     {
+        // URL内の文字列をスキル名と誤検出しないよう除去（例: cc.php → PHP と誤認）
+        $textWithoutUrls = preg_replace(self::URL_PATTERN, '', $text) ?? $text;
+
         $found = [];
         $allSkills = array_merge(self::TECH_LANG, self::TECH_INFRA, self::TECH_DB);
         foreach ($allSkills as $skill) {
-            if (mb_stripos($text, $skill) !== false) {
+            if (mb_stripos($textWithoutUrls, $skill) !== false) {
                 $found[] = $skill;
             }
         }
