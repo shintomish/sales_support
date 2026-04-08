@@ -28,6 +28,8 @@ git push origin main
 ssh root@v133-18-42-139.vir.kagoya.net
 cd /var/www/sales_support
 git pull origin main
+docker exec sales_support_app composer install --no-dev --optimize-autoloader
+docker exec sales_support_app chown -R www-data:www-data /var/www/storage/
 docker exec sales_support_app php artisan migrate --force
 docker exec sales_support_app php artisan config:clear
 docker exec sales_support_app php artisan cache:clear
