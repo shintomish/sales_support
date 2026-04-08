@@ -79,6 +79,17 @@ class EngineerMailScoringService
     // ── 公開メソッド ──────────────────────────────────────
 
     /**
+     * 未処理メールの件数を返す
+     */
+    public function pendingCount(): int
+    {
+        $processedIds = EngineerMailSource::pluck('email_id')->all();
+        return Email::where('category', 'engineer')
+            ->whereNotIn('id', $processedIds)
+            ->count();
+    }
+
+    /**
      * 未処理の技術者メールを一括スコアリング
      */
     public function scorePending(?int $limit = null): int

@@ -92,13 +92,18 @@ class EngineerMailController extends Controller
         return response()->json($ems->fresh());
     }
 
-    // 未処理メールを手動で一括スコアリング
+    // 未処理メールを手動で一括スコアリング（1回50件ずつ処理）
     public function scoreAll(): JsonResponse
     {
-        $count = $this->scoringService->scorePending();
+        set_time_limit(120);
+        $batchSize = 50;
+        $count     = $this->scoringService->scorePending($batchSize);
+        $remaining = $this->scoringService->pendingCount();
+
         return response()->json([
-            'message' => "{$count}件をスコアリングしました",
-            'count'   => $count,
+            'message'   => "{$count}件をスコアリングしました",
+            'count'     => $count,
+            'remaining' => $remaining,
         ]);
     }
 
