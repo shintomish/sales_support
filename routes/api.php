@@ -17,6 +17,7 @@ use App\Http\Controllers\Api\PublicProjectController;
 use App\Http\Controllers\Api\ApplicationController;
 use App\Http\Controllers\Api\MatchingController;
 use App\Http\Controllers\Api\ProjectMailController;
+use App\Http\Controllers\Api\EngineerMailController;
 use App\Http\Controllers\Api\UserController;
 
 // ── 認証不要 ────────────────────────────────────────
@@ -130,6 +131,16 @@ Route::prefix('v1')->middleware(['supabase.auth'])->group(function () {
         Route::post('/{id}/rescore',              [ProjectMailController::class, 'rescore']);
         Route::get('/{id}/matched-engineers',     [ProjectMailController::class, 'matchedEngineers']);
         Route::post('/{id}/generate-proposal',    [ProjectMailController::class, 'generateProposal']);
+    });
+
+    // ── 技術者メール（スコアリング済み）──────────────────
+    Route::prefix('engineer-mails')->group(function () {
+        Route::get('/',              [EngineerMailController::class, 'index']);
+        Route::post('/score-all',    [EngineerMailController::class, 'scoreAll']);
+        Route::post('/rescore-all',  [EngineerMailController::class, 'rescoreAll']);
+        Route::get('/{id}',          [EngineerMailController::class, 'show']);
+        Route::put('/{id}',          [EngineerMailController::class, 'update']);
+        Route::put('/{id}/status',   [EngineerMailController::class, 'updateStatus']);
     });
 
     // ── マッチング機能 ───────────────────────────────────
