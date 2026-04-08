@@ -133,7 +133,8 @@ class EngineerMailScoringService
 
                     [$score, $reasons] = $this->calcScore($text, $email);
                     $score     = max(0, min(100, $score));
-                    $extracted = $this->extract($email);
+                    // rescoreAll では添付解析をスキップ（タイムアウト防止）
+                    $extracted = $this->extract($email, false);
                     $status = match(true) {
                         $score >= self::SCORE_OK     => 'new',
                         $score >= self::SCORE_REVIEW => 'review',
@@ -249,7 +250,10 @@ class EngineerMailScoringService
         return [$score, $reasons];
     }
 
-    private function extract(Email $email): array
+    /**
+     * @param bool $withAttachment 添付ファイルをClaudeで解析するか（rescoreAll時はfalse）
+     */
+    private function extract(Email $email, bool $withAttachment = true): array
     {
         $subject = $email->subject ?? '';
         $body    = $email->body_text ?? strip_tags($email->body_html ?? '');
@@ -269,7 +273,8 @@ class EngineerMailScoringService
         ];
 
         // 添付ファイルがある場合はClaudeで解析してマージ（Claude優先）
-        if ($result['has_attachment']) {
+        // rescoreAll時はスキップ（Gmail API呼び出しが多すぎてタイムアウトするため）
+        if ($withAttachment && $result['has_attachment']) {
             try {
                 $claudeData = $this->extractFromAttachments($email);
                 if ($claudeData) {
