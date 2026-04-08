@@ -285,7 +285,8 @@ class EngineerMailScoringService
                     }
                 }
             } catch (\Throwable $e) {
-                Log::warning("[EngineerMailScoring] 添付解析失敗 email_id={$email->id}: " . $e->getMessage());
+                // パース失敗は想定内（パスワード保護・破損ファイル等）→ debugレベルで記録
+                Log::debug("[EngineerMailScoring] 添付解析スキップ email_id={$email->id}: " . $e->getMessage());
             }
         }
 
@@ -301,13 +302,15 @@ class EngineerMailScoringService
         if ($attachments->isEmpty()) return null;
 
         // スキルシート対象の拡張子のみ（MIME type は信頼せず拡張子で判定）
-        // application/octet-stream は除外（画像・ZIPなど何でもあり）
+        // zip / 画像 / 動画 等は除外
         $supportedExts = ['pdf', 'xlsx', 'xls', 'docx', 'doc'];
+        $skipExts      = ['zip', 'gz', 'tar', 'jpg', 'jpeg', 'png', 'gif', 'mp4', 'mov', 'avi', 'csv', 'txt'];
 
         // 対象添付ファイルを選択（最初の1件）
         $target = null;
         foreach ($attachments as $att) {
             $ext = strtolower(pathinfo($att->filename, PATHINFO_EXTENSION));
+            if (in_array($ext, $skipExts, true)) continue;
             if (in_array($ext, $supportedExts, true)) {
                 $target = $att;
                 break;
