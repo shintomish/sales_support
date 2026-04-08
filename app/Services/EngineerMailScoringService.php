@@ -534,25 +534,41 @@ class EngineerMailScoringService
 
     private function extractNearestStation(string $text): ?string
     {
-        // 優先: ■最寄■ 形式（駅名がそのまま書かれている）
+        // 優先: ■最寄■ / ■最寄り■ / ■最寄駅■ 形式（次行に値）
         if (preg_match('/■最寄[り駅]?■\s*\n\s*([^\n]{1,20})/u', $text, $m)) {
-            $station = trim($m[1]);
+            $station = $this->cleanStation(trim($m[1]));
             if ($station !== '') return $station;
         }
 
         $patterns = [
-            '/(?:最寄[り]?駅|最寄駅|居住地|在住)[：:　\s]*([^\n]{2,20})/u',
+            // 最寄駅：xxx / 最寄り駅：xxx / 最寄：xxx（駅 任意）
+            '/最寄[り]?駅?[：:　\s]+([^\n]{2,20})/u',
+            // 居住地：xxx / 在住：xxx
+            '/(?:居住地|在住)[：:　\s]*([^\n]{2,20})/u',
+            // xxx駅 (フォールバック)
             '/([^\s]{2,8}駅)/u',
         ];
         foreach ($patterns as $pattern) {
             if (preg_match($pattern, $text, $m)) {
-                $station = trim($m[1]);
-                // 路線名プレフィックスを除去（例: JR山手線渋谷駅 → 渋谷駅）
-                $station = preg_replace('/^(?:JR|東急|京急|小田急|東武|西武|京王|メトロ|地下鉄|都営)[^\s]*\s*/u', '', $station);
-                if (mb_strlen($station) <= 15) return $station;
+                $station = $this->cleanStation(trim($m[1]));
+                if ($station !== '' && mb_strlen($station) <= 15) return $station;
             }
         }
         return null;
+    }
+
+    /**
+     * 駅名の不要プレフィックス除去
+     */
+    private function cleanStation(string $station): string
+    {
+        // 路線名プレフィックスを除去（例: JR山手線渋谷駅 → 渋谷駅）
+        $station = preg_replace('/^(?:JR|東急|京急|小田急|東武|西武|京王|メトロ|地下鉄|都営)\S*\s*/u', '', $station) ?? $station;
+        // 「寄：」「り：」「駅：」などのゴミプレフィックスを除去
+        $station = preg_replace('/^[りり寄駅][：:]\s*/u', '', $station) ?? $station;
+        // 括弧以降を除去（例: 渋谷駅（JR） → 渋谷駅）
+        $station = preg_replace('/[（(].*/u', '', $station) ?? $station;
+        return trim($station);
     }
 
     private function extractSkills(string $text): array
