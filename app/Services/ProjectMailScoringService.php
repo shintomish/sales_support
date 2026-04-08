@@ -576,6 +576,9 @@ class ProjectMailScoringService
 
     private function extractStartDate(string $text): ?string
     {
+        // URLを除去してから判定（トラッキングURLの数字列を誤検出しない）
+        $text = preg_replace(self::URL_PATTERN, '', $text) ?? $text;
+
         if (preg_match('/(?:即日|即時|即スタート)/u', $text)) {
             return '即日';
         }
@@ -583,7 +586,8 @@ class ProjectMailScoringService
         if (preg_match('/(\d{4})\s*年\s*(\d{1,2})\s*月/u', $text, $m)) {
             return "{$m[1]}-{$m[2]}";
         }
-        if (preg_match('/(\d{4})[\/\-](\d{1,2})/u', $text, $m)) {
+        // 年として妥当な範囲（2020〜2035）のみ許容
+        if (preg_match('/(\d{4})[\/\-](\d{1,2})/u', $text, $m) && (int)$m[1] >= 2020 && (int)$m[1] <= 2035) {
             return "{$m[1]}-{$m[2]}";
         }
         if (preg_match('/(\d{1,2})\s*月(?:[上中下]旬|初め|末)?(?:[〜～~]|から|より)/u', $text, $m)) {
