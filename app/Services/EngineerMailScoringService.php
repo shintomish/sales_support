@@ -575,11 +575,21 @@ class EngineerMailScoringService
     {
         $found = [];
         foreach (self::TECH_STACK as $tech) {
-            if (mb_stripos($text, $tech) !== false) {
+            if ($this->skillFound($text, $tech)) {
                 $found[] = $tech;
             }
         }
         return array_values(array_unique($found));
+    }
+
+    /**
+     * スキルキーワードが「単語として」テキスト内に存在するか判定
+     * 前後が英数字の場合は除外（MongoDB内の"go"等を誤検出しない）
+     */
+    private function skillFound(string $text, string $skill): bool
+    {
+        $escaped = preg_quote($skill, '/');
+        return (bool) preg_match('/(?<![a-zA-Z0-9\/\.])' . $escaped . '(?![a-zA-Z0-9\/\.])/iu', $text);
     }
 
     private function save(Email $email, int $score, array $reasons, string $engine, array $extracted): EngineerMailSource
