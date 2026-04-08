@@ -401,5 +401,5 @@ Java／Spring／AWS
 
 ### 9.6 案件マーケット連携（保留）
 
-「案件確定」→`public_projects`自動連携、「提案する」→`project_mail_proposals`保存は**保留**。  
+「案件確定」→`public_projects`自動連携、「提案する」→`project_mail_proposals`保存は**保留**。
 連携フローについて社内営業への説明・同意取得を経て設計確定予定。

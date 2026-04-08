@@ -593,7 +593,10 @@ class ProjectMailScoringService
         }
         // 都道府県パターン
         if (preg_match('/([東西南北]?(?:東京|大阪|名古屋|横浜|福岡|仙台|札幌|神奈川|埼玉|千葉)[^\n\r　]{0,20})/u', $text, $m)) {
-            return trim($m[1]);
+            $loc = trim($m[1]);
+            // 役職・部署名が混入した場合は除去（例: 「東京支社 リーダー」→「東京支社」）
+            $loc = preg_replace('/[\s　]+(?:リーダー|マネージャー|支社長|部長|課長|社長|主任|係長|代表|取締役|担当者?|グループ長|チーフ|ディレクター).*/u', '', $loc);
+            return $loc ?: null;
         }
         return null;
     }
