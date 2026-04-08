@@ -111,11 +111,14 @@ class EngineerMailScoringService
      */
     public function rescoreAll(?int $limit = null): int
     {
+        ini_set('memory_limit', '512M');
+
+        // 大量処理のため chunk で分割して処理（メモリ節約）
         $query = EngineerMailSource::with(['email.attachments'])->whereNotNull('email_id');
         if ($limit !== null) $query->limit($limit);
 
         $count = 0;
-        foreach ($query->get() as $ems) {
+        foreach ($query->cursor() as $ems) {
             if (!$ems->email) continue;
             try {
                 $email   = $ems->email;
@@ -147,6 +150,8 @@ class EngineerMailScoringService
             } catch (\Throwable $e) {
                 Log::error("[EngineerMailRescore] ems_id={$ems->id} 失敗: " . $e->getMessage());
             }
+            // メモリ解放
+            gc_collect_cycles();
         }
         return $count;
     }
@@ -290,23 +295,15 @@ class EngineerMailScoringService
         $attachments = $email->attachments ?? collect();
         if ($attachments->isEmpty()) return null;
 
-        // スキルシート対象のMIMEタイプ・拡張子
-        $supportedMimes = [
-            'application/pdf',
-            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-            'application/vnd.ms-excel',
-            'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-            'application/msword',
-            'application/octet-stream',
-        ];
+        // スキルシート対象の拡張子のみ（MIME type は信頼せず拡張子で判定）
+        // application/octet-stream は除外（画像・ZIPなど何でもあり）
         $supportedExts = ['pdf', 'xlsx', 'xls', 'docx', 'doc'];
 
         // 対象添付ファイルを選択（最初の1件）
         $target = null;
         foreach ($attachments as $att) {
-            $ext  = strtolower(pathinfo($att->filename, PATHINFO_EXTENSION));
-            $mime = strtolower($att->mime_type ?? '');
-            if (in_array($ext, $supportedExts, true) || in_array($mime, $supportedMimes, true)) {
+            $ext = strtolower(pathinfo($att->filename, PATHINFO_EXTENSION));
+            if (in_array($ext, $supportedExts, true)) {
                 $target = $att;
                 break;
             }
@@ -329,12 +326,14 @@ class EngineerMailScoringService
 
         // base64url → バイナリ
         $binary = base64_decode(str_replace(['-', '_'], ['+', '/'], $rawData));
+        unset($rawData); // 即座に解放
         if (!$binary) return null;
 
         // 一時ファイルに書き込んでテキスト抽出
         $ext     = strtolower(pathinfo($target->filename, PATHINFO_EXTENSION));
         $tmpPath = tempnam(sys_get_temp_dir(), 'ems_') . '.' . $ext;
         file_put_contents($tmpPath, $binary);
+        unset($binary); // 即座に解放
 
         try {
             $text = $this->extractTextFromTempFile($tmpPath, $ext);
@@ -347,6 +346,7 @@ class EngineerMailScoringService
         // Claude で解析
         $claude    = app(ClaudeService::class);
         $extracted = $claude->extractSkillSheetInfo(mb_substr($text, 0, 8000));
+        unset($text);
 
         // Claude の結果を engineer_mail_sources フィールドにマッピング
         return $this->mapClaudeResult($extracted);
