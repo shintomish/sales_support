@@ -4,6 +4,9 @@ namespace App\Services;
 
 use App\Models\Email;
 use App\Models\EngineerMailSource;
+use App\Models\GmailToken;
+use PhpOffice\PhpSpreadsheet\IOFactory as SpreadsheetIOFactory;
+use PhpOffice\PhpWord\IOFactory as WordIOFactory;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -251,13 +254,209 @@ class EngineerMailScoringService
         $body    = iconv('UTF-8', 'UTF-8//IGNORE', $body)    ?: '';
         $text    = $subject . "\n" . $body;
 
-        return [
+        $result = [
             'name'             => $this->extractName($text),
             'affiliation_type' => $this->extractAffiliationType($text),
             'available_from'   => $this->extractAvailableFrom($text),
             'nearest_station'  => $this->extractNearestStation($text),
             'skills'           => $this->extractSkills($text),
             'has_attachment'   => $email->attachments && $email->attachments->isNotEmpty(),
+        ];
+
+        // 添付ファイルがある場合はClaudeで解析してマージ（Claude優先）
+        if ($result['has_attachment']) {
+            try {
+                $claudeData = $this->extractFromAttachments($email);
+                if ($claudeData) {
+                    foreach ($claudeData as $key => $val) {
+                        if ($val !== null && $val !== '' && $val !== []) {
+                            $result[$key] = $val;
+                        }
+                    }
+                }
+            } catch (\Throwable $e) {
+                Log::warning("[EngineerMailScoring] 添付解析失敗 email_id={$email->id}: " . $e->getMessage());
+            }
+        }
+
+        return $result;
+    }
+
+    /**
+     * 添付ファイルをGmail APIから取得してClaudeで解析
+     */
+    private function extractFromAttachments(Email $email): ?array
+    {
+        $attachments = $email->attachments ?? collect();
+        if ($attachments->isEmpty()) return null;
+
+        // スキルシート対象のMIMEタイプ・拡張子
+        $supportedMimes = [
+            'application/pdf',
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'application/vnd.ms-excel',
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            'application/msword',
+            'application/octet-stream',
+        ];
+        $supportedExts = ['pdf', 'xlsx', 'xls', 'docx', 'doc'];
+
+        // 対象添付ファイルを選択（最初の1件）
+        $target = null;
+        foreach ($attachments as $att) {
+            $ext  = strtolower(pathinfo($att->filename, PATHINFO_EXTENSION));
+            $mime = strtolower($att->mime_type ?? '');
+            if (in_array($ext, $supportedExts, true) || in_array($mime, $supportedMimes, true)) {
+                $target = $att;
+                break;
+            }
+        }
+        if (!$target) return null;
+
+        // GmailToken を tenant_id から取得
+        $gmailToken = GmailToken::where('tenant_id', $email->tenant_id)->first();
+        if (!$gmailToken) return null;
+
+        // Gmail API から添付データ取得（base64url encoded）
+        $gmailService = app(GmailService::class);
+        $rawData = $gmailService->fetchAttachmentData(
+            $gmailToken,
+            $email->gmail_message_id,
+            $target->gmail_attachment_id
+        );
+
+        if (!$rawData) return null;
+
+        // base64url → バイナリ
+        $binary = base64_decode(str_replace(['-', '_'], ['+', '/'], $rawData));
+        if (!$binary) return null;
+
+        // 一時ファイルに書き込んでテキスト抽出
+        $ext     = strtolower(pathinfo($target->filename, PATHINFO_EXTENSION));
+        $tmpPath = tempnam(sys_get_temp_dir(), 'ems_') . '.' . $ext;
+        file_put_contents($tmpPath, $binary);
+
+        try {
+            $text = $this->extractTextFromTempFile($tmpPath, $ext);
+        } finally {
+            @unlink($tmpPath);
+        }
+
+        if (empty(trim($text))) return null;
+
+        // Claude で解析
+        $claude    = app(ClaudeService::class);
+        $extracted = $claude->extractSkillSheetInfo(mb_substr($text, 0, 8000));
+
+        // Claude の結果を engineer_mail_sources フィールドにマッピング
+        return $this->mapClaudeResult($extracted);
+    }
+
+    /**
+     * 一時ファイルからテキスト抽出（PDF / Excel / Word）
+     */
+    private function extractTextFromTempFile(string $path, string $ext): string
+    {
+        if ($ext === 'pdf') {
+            $parser = new \Smalot\PdfParser\Parser();
+            return $parser->parseFile($path)->getText();
+        }
+
+        if (in_array($ext, ['xlsx', 'xls'], true)) {
+            $spreadsheet = SpreadsheetIOFactory::load($path);
+            $text = '';
+            foreach (array_slice($spreadsheet->getAllSheets(), 0, 2) as $sheet) {
+                $text .= '=== ' . $sheet->getTitle() . " ===\n";
+                foreach ($sheet->getRowIterator() as $row) {
+                    $cells = [];
+                    $iter  = $row->getCellIterator();
+                    $iter->setIterateOnlyExistingCells(true);
+                    foreach ($iter as $cell) {
+                        $val = trim($cell->getFormattedValue());
+                        if ($val !== '') $cells[] = $val;
+                    }
+                    if (!empty($cells)) $text .= implode("\t", $cells) . "\n";
+                }
+            }
+            return $text;
+        }
+
+        if (in_array($ext, ['docx', 'doc'], true)) {
+            $phpWord = WordIOFactory::load($path);
+            $text    = '';
+            foreach ($phpWord->getSections() as $section) {
+                foreach ($section->getElements() as $element) {
+                    $text .= $this->extractWordElementText($element);
+                }
+            }
+            return $text;
+        }
+
+        return '';
+    }
+
+    private function extractWordElementText(object $element): string
+    {
+        if ($element instanceof \PhpOffice\PhpWord\Element\TextRun
+            || $element instanceof \PhpOffice\PhpWord\Element\Paragraph) {
+            $text = '';
+            foreach ($element->getElements() as $child) {
+                $text .= $this->extractWordElementText($child);
+            }
+            return $text . "\n";
+        }
+        if ($element instanceof \PhpOffice\PhpWord\Element\Text) {
+            return $element->getText();
+        }
+        if ($element instanceof \PhpOffice\PhpWord\Element\Table) {
+            $text = '';
+            foreach ($element->getRows() as $row) {
+                foreach ($row->getCells() as $cell) {
+                    foreach ($cell->getElements() as $el) {
+                        $text .= $this->extractWordElementText($el) . "\t";
+                    }
+                }
+                $text .= "\n";
+            }
+            return $text;
+        }
+        return '';
+    }
+
+    /**
+     * Claude の extractSkillSheetInfo 結果を EngineerMailSource フィールドに変換
+     */
+    private function mapClaudeResult(array $data): array
+    {
+        // affiliation_type: Claudeの英語値→日本語表示値
+        $affiliationMap = [
+            'self'       => '自社正社員',
+            'first_sub'  => '一社先正社員',
+            'bp'         => 'BP',
+            'bp_member'  => 'BP要員',
+            'contract'   => '契約社員',
+            'freelance'  => '個人事業主',
+            'joining'    => '入社予定',
+            'hiring'     => '採用予定',
+        ];
+
+        $affiliationType = null;
+        if (!empty($data['affiliation_type'])) {
+            $affiliationType = $affiliationMap[$data['affiliation_type']] ?? null;
+        }
+
+        // skills: [{name, experience_years}] → [name, name, ...]
+        $skills = [];
+        foreach ($data['skills'] ?? [] as $s) {
+            if (!empty($s['name'])) $skills[] = $s['name'];
+        }
+
+        return [
+            'name'             => $data['name']             ?? null,
+            'affiliation_type' => $affiliationType,
+            'available_from'   => $data['available_from']   ?? null,
+            'nearest_station'  => $data['nearest_station']  ?? null,
+            'skills'           => $skills ?: null,
         ];
     }
 
