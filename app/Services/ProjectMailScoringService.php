@@ -15,6 +15,8 @@ use Illuminate\Support\Facades\Log;
  */
 class ProjectMailScoringService
 {
+    private const URL_PATTERN = '/https?:\/\/[^\s\x{3000}"\'<>「」【】）\)]+/u';
+
     // ── ① 除外ワード ──────────────────────────────────────
 
     private const EXCLUDE_SUBJECT = [
