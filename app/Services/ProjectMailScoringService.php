@@ -584,7 +584,10 @@ class ProjectMailScoringService
 
     private function extractLocation(string $text): ?string
     {
-        // 「勤務地：〇〇」「場所：〇〇」「最寄駅：〇〇」
+        // 「【場所】〇〇」「勤務地：〇〇」「場所：〇〇」「最寄駅：〇〇」
+        if (preg_match('/【(?:勤務地|就業場所|作業場所|場所)】\s*([^\n\r　]{2,30})/u', $text, $m)) {
+            return trim($m[1]);
+        }
         if (preg_match('/(?:勤務地|就業場所|作業場所|場所)\s*[：:]\s*([^\n\r　]{2,30})/u', $text, $m)) {
             return trim($m[1]);
         }
