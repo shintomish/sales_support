@@ -125,7 +125,7 @@ class EngineerController extends Controller
             'affiliation_contact'     => 'nullable|string|max:100',
             'age'                     => 'nullable|integer|min:18|max:80',
             'nationality'             => 'nullable|string|max:100',
-            'affiliation_type'        => 'nullable|in:self,bp',
+            'affiliation_type'        => 'nullable|in:self,first_sub,bp,bp_member,contract,freelance,joining,hiring',
             // プロフィール
             'desired_unit_price_min'  => 'nullable|numeric|min:0',
             'desired_unit_price_max'  => 'nullable|numeric|min:0',
@@ -211,7 +211,7 @@ class EngineerController extends Controller
             'affiliation_contact'     => 'nullable|string|max:100',
             'age'                     => 'nullable|integer|min:18|max:80',
             'nationality'             => 'nullable|string|max:100',
-            'affiliation_type'        => 'nullable|in:self,bp',
+            'affiliation_type'        => 'nullable|in:self,first_sub,bp,bp_member,contract,freelance,joining,hiring',
             'desired_unit_price_min'  => 'nullable|numeric|min:0',
             'desired_unit_price_max'  => 'nullable|numeric|min:0',
             'available_from'          => 'nullable|date',
