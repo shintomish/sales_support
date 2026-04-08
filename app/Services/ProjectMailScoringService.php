@@ -395,6 +395,26 @@ class ProjectMailScoringService
             return [mb_substr($name, 0, 100), null];
         }
 
+        // カタカナ会社名 + 漢字人名（スペースなし）
+        // 例: "ルートゼロ高原" → ["ルートゼロ", "高原"]
+        if (preg_match('/^([\p{Katakana}ー－\-・ａ-ｚＡ-Ｚa-zA-Z0-9]{3,})([\p{Han}]{2,4})$/u', $name, $m)) {
+            $company = trim($m[1]);
+            $person  = trim($m[2]);
+            if ($this->looksLikePersonName($person)) {
+                return [$company, $person];
+            }
+        }
+
+        // 前置会社名 + 漢字人名（スペースなし）
+        // 例: "株式会社テック田中" → ["株式会社テック", "田中"]
+        if (preg_match('/^((?:株式|有限|合同|一般社団|一般財団)会社[\p{Han}\p{Hiragana}\p{Katakana}ー－\-・\w]+?)([\p{Han}]{2,4})$/u', $name, $m)) {
+            $company = trim($m[1]);
+            $person  = trim($m[2]);
+            if ($this->looksLikePersonName($person) && mb_strlen($company) >= 4) {
+                return [$company, $person];
+            }
+        }
+
         // 人名のみ
         if ($this->looksLikePersonName($name)) {
             return [null, $name];
