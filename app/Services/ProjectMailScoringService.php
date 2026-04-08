@@ -317,18 +317,31 @@ class ProjectMailScoringService
 
         // ② 本文から「〇〇会社の〇〇と申します」パターン（会社名のみ取得、人名は不要）
         // 例: 「株式会社キャリアビートの渡辺翼空と申します」→「株式会社キャリアビート」
+        // ※\p{Hiragana}を除外: "の"が含まれると「〇〇会社の〇〇」まで貪欲マッチしてしまうため
         if (preg_match(
-            '/((?:株式|有限|合同|一般社団|一般財団)会社[\p{Han}\p{Hiragana}\p{Katakana}ー－\-・\w]+)(?:の[\p{Han}\p{Hiragana}\p{Katakana}ー\w]{1,20})?(?:と申し|でございます|営業部|の者)/u',
+            '/((?:株式|有限|合同|一般社団|一般財団)会社[\p{Han}\p{Katakana}\-・a-zA-Z0-9]+)(?:の[\p{Han}\p{Hiragana}\p{Katakana}ー\w]{1,20})?(?:と申し|でございます|営業部|の者)/u',
             $body, $m
         )) {
             return mb_substr(trim($m[1]), 0, 100);
         }
         // 後置パターン: 「〇〇株式会社の〇〇と申します」
         if (preg_match(
-            '/([\p{Han}\p{Hiragana}\p{Katakana}ー－\-・\w]+(?:株式|有限|合同)会社)(?:の[\p{Han}\p{Hiragana}\p{Katakana}ー\w]{1,20})?(?:と申し|でございます|営業部|の者)/u',
+            '/([\p{Han}\p{Katakana}\-・a-zA-Z0-9]+(?:株式|有限|合同)会社)(?:の[\p{Han}\p{Hiragana}\p{Katakana}ー\w]{1,20})?(?:と申し|でございます|営業部|の者)/u',
             $body, $m
         )) {
             return mb_substr(trim($m[1]), 0, 100);
+        }
+
+        // ②-b: 署名ブロック内の独立した会社名行（セパレータ***の後）
+        // 例: "*-*-*-*\n株式会社ルートゼロ\n高原斗亜" → "株式会社ルートゼロ"
+        // ルートゼロ高原のように本文に"株式会社"が現れず署名のみにある場合をカバー
+        if (preg_match('/[\*＊\-]{4,}[\r\n]+([\s\S]{0,600})/u', $body, $sigBlock)) {
+            if (preg_match(
+                '/^\s*((?:株式|有限|合同|一般社団|一般財団)会社[\p{Han}\p{Katakana}\-・a-zA-Z0-9]{1,30})\s*[\r\n]/mu',
+                $sigBlock[1], $m2
+            )) {
+                return mb_substr(trim($m2[1]), 0, 100);
+            }
         }
 
         // ③ 明示ラベル（クライアント：, エンド：, 常駐先：等）
@@ -372,14 +385,14 @@ class ProjectMailScoringService
         $name = trim($fromName);
 
         // 前置会社名 + スペース + 候補
-        if (preg_match('/^((?:株式|有限|合同|一般社団|一般財団)会社[\p{Han}\p{Hiragana}\p{Katakana}ー－\-・\w]*)[\s　]+(.{2,20})$/u', $name, $m)) {
+        if (preg_match('/^((?:株式|有限|合同|一般社団|一般財団)会社[\p{Han}\p{Hiragana}\p{Katakana}\-・a-zA-Z0-9]*)[\s　]+(.{2,20})$/u', $name, $m)) {
             $company = trim($m[1]);
             $person  = trim($m[2]);
             return [$company, $this->looksLikePersonName($person) ? $person : null];
         }
 
         // 後置会社名 + スペース + 候補
-        if (preg_match('/^([\p{Han}\p{Hiragana}\p{Katakana}ー－\-・\w]+(?:株式|有限|合同)会社)[\s　]+(.{2,20})$/u', $name, $m)) {
+        if (preg_match('/^([\p{Han}\p{Hiragana}\p{Katakana}\-・a-zA-Z0-9]+(?:株式|有限|合同)会社)[\s　]+(.{2,20})$/u', $name, $m)) {
             $company = trim($m[1]);
             $person  = trim($m[2]);
             return [$company, $this->looksLikePersonName($person) ? $person : null];
@@ -397,7 +410,7 @@ class ProjectMailScoringService
 
         // カタカナ会社名 + 漢字人名（スペースなし）
         // 例: "ルートゼロ高原" → ["ルートゼロ", "高原"]
-        if (preg_match('/^([\p{Katakana}ー－\-・ａ-ｚＡ-Ｚa-zA-Z0-9]{3,})([\p{Han}]{2,4})$/u', $name, $m)) {
+        if (preg_match('/^([\p{Katakana}\-・ａ-ｚＡ-Ｚa-zA-Z0-9]{3,})([\p{Han}]{2,4})$/u', $name, $m)) {
             $company = trim($m[1]);
             $person  = trim($m[2]);
             if ($this->looksLikePersonName($person)) {
@@ -407,7 +420,7 @@ class ProjectMailScoringService
 
         // 前置会社名 + 漢字人名（スペースなし）
         // 例: "株式会社テック田中" → ["株式会社テック", "田中"]
-        if (preg_match('/^((?:株式|有限|合同|一般社団|一般財団)会社[\p{Han}\p{Hiragana}\p{Katakana}ー－\-・\w]+?)([\p{Han}]{2,4})$/u', $name, $m)) {
+        if (preg_match('/^((?:株式|有限|合同|一般社団|一般財団)会社[\p{Han}\p{Hiragana}\p{Katakana}\-・a-zA-Z0-9]+?)([\p{Han}]{2,4})$/u', $name, $m)) {
             $company = trim($m[1]);
             $person  = trim($m[2]);
             if ($this->looksLikePersonName($person) && mb_strlen($company) >= 4) {
@@ -448,6 +461,41 @@ class ProjectMailScoringService
         if (preg_match('/(?:担当者?|ご担当|連絡先担当|営業担当)\s*[：:]\s*([^\n\r　]{2,50})/u', $body, $m)) {
             return mb_substr(trim($m[1]), 0, 100);
         }
+
+        // 署名ブロックから人名を抽出
+        // パターン: [***区切り] → 会社名行 → [部署行(省略可)] → 人名行(ふりがな省略可)
+        // 例: "*-*-*\n株式会社ルートゼロ\n高原斗亜(たかはらとあ)" → "高原斗亜"
+        // 例: "*-*-*\n株式会社ルートゼロ\n営業企画部...\n榎本 勝也" → "榎本 勝也"
+        if (preg_match('/[\*＊\-]{4,}[\r\n]+/u', $body, $sepMatch, PREG_OFFSET_CAPTURE)) {
+            $sigStart = $sepMatch[0][1] + strlen($sepMatch[0][0]);
+            $sigText  = substr($body, $sigStart, 800); // バイトオフセット → substr を使う
+            $sigLines = preg_split('/\r?\n/', $sigText);
+            $foundCompany = false;
+            $deptSkipped  = false;
+            foreach ($sigLines as $line) {
+                $line = trim($line);
+                if ($line === '') continue;
+                if (!$foundCompany && preg_match('/(?:株式|有限|合同|一般社団|一般財団)会社/u', $line)) {
+                    $foundCompany = true;
+                    continue;
+                }
+                if ($foundCompany) {
+                    // 部署・役職行はスキップ（最大1行）
+                    if (!$deptSkipped && preg_match('/(?:部|課|リーダー|マネージャー|事業|部門|支社|本社)/u', $line)) {
+                        $deptSkipped = true;
+                        continue;
+                    }
+                    // ふりがな（括弧内）を除去して人名チェック
+                    $clean = preg_replace('/\([^)]{2,20}\)|（[^）]{2,20}）/', '', $line);
+                    $clean = trim($clean);
+                    if ($this->looksLikePersonName($clean)) {
+                        return $clean;
+                    }
+                    break;
+                }
+            }
+        }
+
         return null;
     }
 
