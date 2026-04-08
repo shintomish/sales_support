@@ -3,7 +3,6 @@
 namespace App\Services;
 
 use Illuminate\Http\UploadedFile;
-use Illuminate\Support\Str;
 
 class SupabaseStorageService
 {
@@ -20,11 +19,28 @@ class SupabaseStorageService
 
     /**
      * UploadedFile を Supabase Storage にアップロードして公開URLを返す
+     *
+     * @param string|null $baseName 指定した場合、ファイル名のベース部分として使用（空白除去済み）
      */
-    public function upload(UploadedFile $file, string $folder = 'default'): string
+    public function upload(UploadedFile $file, string $folder = 'default', ?string $baseName = null): string
     {
-        $ext      = $file->getClientOriginalExtension();
-        $filename = $folder . '/' . time() . '_' . Str::random(12) . '.' . $ext;
+        $ext       = $file->getClientOriginalExtension();
+        $timestamp = now()->format('Ymd_His');
+
+        $rawName = $baseName ?? pathinfo($file->getClientOriginalName(), PATHINFO_FILENAME);
+
+        // 空白除去 → 記号をアンダースコアに変換 → 非ASCII文字を除去
+        $safeName = str_replace([' ', '　'], '', $rawName);
+        $safeName = preg_replace('/[^\w\-\.]/u', '_', $safeName);   // 記号→_
+        $safeName = preg_replace('/[^\x00-\x7F]/u', '', $safeName); // 非ASCIIを除去
+        $safeName = preg_replace('/_+/', '_', trim($safeName, '_')); // 連続_を整理
+
+        // 非ASCII文字のみで構成されていた場合（日本語名など）→ ハッシュで代替
+        if ($safeName === '') {
+            $safeName = substr(md5($rawName), 0, 8);
+        }
+
+        $filename = $folder . '/' . $safeName . '_' . $timestamp . '.' . $ext;
         $endpoint = "{$this->url}/storage/v1/object/{$this->bucket}/{$filename}";
 
         $response = \Http::withHeaders([

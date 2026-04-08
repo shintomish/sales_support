@@ -139,6 +139,7 @@ Route::prefix('v1')->middleware(['supabase.auth'])->group(function () {
     Route::post('matching/skills', [MatchingController::class, 'storeSkill']);
 
     // 技術者 CRUD
+    Route::post('engineers/parse-skill-sheet', [EngineerController::class, 'parseSkillSheet']);
     Route::get('engineers',       [EngineerController::class, 'index']);
     Route::post('engineers',      [EngineerController::class, 'store']);
     Route::get('engineers/{id}',  [EngineerController::class, 'show']);

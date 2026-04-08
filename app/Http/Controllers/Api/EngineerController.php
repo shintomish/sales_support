@@ -7,9 +7,13 @@ use App\Models\Engineer;
 use App\Models\EngineerProfile;
 use App\Models\EngineerSkill;
 use App\Models\Skill;
+use App\Services\ClaudeService;
+use App\Services\SupabaseStorageService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use PhpOffice\PhpSpreadsheet\IOFactory as SpreadsheetIOFactory;
+use PhpOffice\PhpWord\IOFactory as WordIOFactory;
 
 class EngineerController extends Controller
 {
@@ -25,7 +29,9 @@ class EngineerController extends Controller
             'affiliation'             => $e->affiliation,
             'affiliation_contact'     => $e->affiliation_contact,
             'age'                     => $e->age,
+            'gender'                  => $e->gender,
             'nationality'             => $e->nationality,
+            'nearest_station'         => $e->nearest_station,
             'affiliation_type'        => $e->affiliation_type,
             'profile' => $p ? [
                 'desired_unit_price_min' => $p->desired_unit_price_min,
@@ -124,7 +130,9 @@ class EngineerController extends Controller
             'affiliation'             => 'nullable|string|max:100',
             'affiliation_contact'     => 'nullable|string|max:100',
             'age'                     => 'nullable|integer|min:18|max:80',
+            'gender'                  => 'nullable|in:male,female,other,unanswered',
             'nationality'             => 'nullable|string|max:100',
+            'nearest_station'         => 'nullable|string|max:100',
             'affiliation_type'        => 'nullable|in:self,first_sub,bp,bp_member,contract,freelance,joining,hiring',
             // プロフィール
             'desired_unit_price_min'  => 'nullable|numeric|min:0',
@@ -137,6 +145,7 @@ class EngineerController extends Controller
             'self_introduction'       => 'nullable|string',
             'github_url'              => 'nullable|url|max:200',
             'portfolio_url'           => 'nullable|url|max:200',
+            'resume_file_path'        => 'nullable|string|max:500',
             'is_public'               => 'nullable|boolean',
             // スキル
             'skills'                  => 'nullable|array',
@@ -157,7 +166,9 @@ class EngineerController extends Controller
                 'affiliation'         => $v['affiliation'] ?? null,
                 'affiliation_contact' => $v['affiliation_contact'] ?? null,
                 'age'                 => $v['age'] ?? null,
+                'gender'              => $v['gender'] ?? null,
                 'nationality'         => $v['nationality'] ?? null,
+                'nearest_station'     => $v['nearest_station'] ?? null,
                 'affiliation_type'    => $v['affiliation_type'] ?? null,
             ]);
 
@@ -174,6 +185,7 @@ class EngineerController extends Controller
                 'self_introduction'      => $v['self_introduction'] ?? null,
                 'github_url'             => $v['github_url'] ?? null,
                 'portfolio_url'          => $v['portfolio_url'] ?? null,
+                'resume_file_path'       => $v['resume_file_path'] ?? null,
                 'is_public'              => $v['is_public'] ?? false,
             ]);
 
@@ -210,7 +222,9 @@ class EngineerController extends Controller
             'affiliation'             => 'nullable|string|max:100',
             'affiliation_contact'     => 'nullable|string|max:100',
             'age'                     => 'nullable|integer|min:18|max:80',
+            'gender'                  => 'nullable|in:male,female,other,unanswered',
             'nationality'             => 'nullable|string|max:100',
+            'nearest_station'         => 'nullable|string|max:100',
             'affiliation_type'        => 'nullable|in:self,first_sub,bp,bp_member,contract,freelance,joining,hiring',
             'desired_unit_price_min'  => 'nullable|numeric|min:0',
             'desired_unit_price_max'  => 'nullable|numeric|min:0',
@@ -222,6 +236,7 @@ class EngineerController extends Controller
             'self_introduction'       => 'nullable|string',
             'github_url'              => 'nullable|url|max:200',
             'portfolio_url'           => 'nullable|url|max:200',
+            'resume_file_path'        => 'nullable|string|max:500',
             'is_public'               => 'nullable|boolean',
             'skills'                  => 'nullable|array',
             'skills.*.skill_id'       => 'required_with:skills|integer|exists:skills,id',
@@ -240,7 +255,9 @@ class EngineerController extends Controller
                 'affiliation'         => $v['affiliation'] ?? null,
                 'affiliation_contact' => $v['affiliation_contact'] ?? null,
                 'age'                 => $v['age'] ?? null,
+                'gender'              => $v['gender'] ?? null,
                 'nationality'         => $v['nationality'] ?? null,
+                'nearest_station'     => $v['nearest_station'] ?? null,
                 'affiliation_type'    => $v['affiliation_type'] ?? null,
             ], fn($val) => $val !== null);
             $engineer->update($engineerFields);
@@ -256,6 +273,7 @@ class EngineerController extends Controller
                 'self_introduction'      => $v['self_introduction'] ?? null,
                 'github_url'             => $v['github_url'] ?? null,
                 'portfolio_url'          => $v['portfolio_url'] ?? null,
+                'resume_file_path'       => $v['resume_file_path'] ?? null,
                 'is_public'              => isset($v['is_public']) ? $v['is_public'] : null,
             ], fn($val) => $val !== null);
 
@@ -292,5 +310,136 @@ class EngineerController extends Controller
         Engineer::where('tenant_id', $tenantId)->findOrFail($id)->delete();
 
         return response()->json(null, 204);
+    }
+
+    /**
+     * スキルシートをアップロードしてClaude APIで解析する
+     * POST /api/v1/engineers/parse-skill-sheet
+     */
+    public function parseSkillSheet(Request $request): JsonResponse
+    {
+        $request->validate([
+            'file' => 'required|file|max:10240|mimes:pdf,xlsx,xls,docx,doc',
+        ]);
+
+        $file = $request->file('file');
+
+        // テキスト抽出
+        $text = $this->extractTextFromFile($file);
+        if (empty(trim($text))) {
+            return response()->json(['message' => 'ファイルからテキストを抽出できませんでした'], 422);
+        }
+
+        // Supabase Storage に保存
+        $storage = app(SupabaseStorageService::class);
+        $fileUrl = $storage->upload($file, 'skill-sheets');
+
+        // Claude API で解析
+        $claude    = app(ClaudeService::class);
+        $extracted = $claude->extractSkillSheetInfo(mb_substr($text, 0, 8000));
+
+        // スキル名 → skill_id 解決（なければ新規作成）
+        $skills = [];
+        foreach ($extracted['skills'] ?? [] as $s) {
+            if (empty($s['name'])) continue;
+            $skill = Skill::firstOrCreate(
+                ['name' => $s['name']],
+                ['category' => 'other']
+            );
+            $skills[] = [
+                'skill_id'          => $skill->id,
+                'skill_name'        => $skill->name,
+                'category'          => $skill->category,
+                'experience_years'  => $s['experience_years'] ?? 0,
+                'proficiency_level' => 3,
+            ];
+        }
+
+        unset($extracted['skills']);
+
+        return response()->json([
+            'extracted' => $extracted,
+            'skills'    => $skills,
+            'file_url'  => $fileUrl,
+        ]);
+    }
+
+    private function extractTextFromFile(\Illuminate\Http\UploadedFile $file): string
+    {
+        $ext = strtolower($file->getClientOriginalExtension());
+
+        if ($ext === 'pdf') {
+            $parser = new \Smalot\PdfParser\Parser();
+            $pdf    = $parser->parseFile($file->getPathname());
+            return $pdf->getText();
+        }
+
+        if (in_array($ext, ['xlsx', 'xls'])) {
+            $spreadsheet = SpreadsheetIOFactory::load($file->getPathname());
+            $text = '';
+            // 最初の2シートまで抽出（基本情報シートを優先）
+            foreach (array_slice($spreadsheet->getAllSheets(), 0, 2) as $sheet) {
+                $text .= '=== ' . $sheet->getTitle() . " ===\n";
+                foreach ($sheet->getRowIterator() as $row) {
+                    $rowCells = [];
+                    $cellIter = $row->getCellIterator();
+                    $cellIter->setIterateOnlyExistingCells(true);
+                    foreach ($cellIter as $cell) {
+                        $val = trim($cell->getFormattedValue());
+                        if ($val !== '') $rowCells[] = $val;
+                    }
+                    if (!empty($rowCells)) $text .= implode("\t", $rowCells) . "\n";
+                }
+            }
+            return $text;
+        }
+
+        if (in_array($ext, ['docx', 'doc'])) {
+            $phpWord = WordIOFactory::load($file->getPathname());
+            $text = '';
+            foreach ($phpWord->getSections() as $section) {
+                $text .= $this->extractWordSectionText($section);
+            }
+            return $text;
+        }
+
+        return '';
+    }
+
+    private function extractWordSectionText(\PhpOffice\PhpWord\Element\Section $section): string
+    {
+        $text = '';
+        foreach ($section->getElements() as $element) {
+            $text .= $this->extractWordElementText($element);
+        }
+        return $text;
+    }
+
+    private function extractWordElementText(object $element): string
+    {
+        if ($element instanceof \PhpOffice\PhpWord\Element\TextRun
+            || $element instanceof \PhpOffice\PhpWord\Element\Paragraph) {
+            $text = '';
+            foreach ($element->getElements() as $child) {
+                $text .= $this->extractWordElementText($child);
+            }
+            return $text . "\n";
+        }
+        if ($element instanceof \PhpOffice\PhpWord\Element\Text) {
+            return $element->getText();
+        }
+        if ($element instanceof \PhpOffice\PhpWord\Element\Table) {
+            $text = '';
+            foreach ($element->getRows() as $row) {
+                foreach ($row->getCells() as $cell) {
+                    foreach ($cell->getElements() as $cellElement) {
+                        $text .= $this->extractWordElementText($cellElement) . ' ';
+                    }
+                }
+                $text .= "\n";
+            }
+            return $text;
+        }
+        return '';
     }
 }

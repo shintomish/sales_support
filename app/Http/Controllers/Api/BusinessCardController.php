@@ -65,11 +65,9 @@ class BusinessCardController extends Controller
 
             foreach ($request->file('images') as $imageFile) {
 
-                // 1. LaravelサーバーからSupabase Storageにアップロード
-                $imageUrl     = $supabase->upload($imageFile, 'cards');
                 $imageContent = file_get_contents($imageFile->getRealPath());
 
-                // 2. Google Cloud Vision API で OCR 実行
+                // 1. Google Cloud Vision API で OCR 実行
                 $credentialsJson = app(GoogleCredentialService::class)->getCredentials();
                 $vision = new ImageAnnotatorClient([
                     'credentials' => $credentialsJson,
@@ -92,9 +90,14 @@ class BusinessCardController extends Controller
 
                 $ocrText = $texts[0]->getDescription();
 
-                // 3. Claude API で情報抽出
+                // 2. Claude API で情報抽出
                 $claudeService = new ClaudeService();
                 $extractedData = $claudeService->extractBusinessCardInfo($ocrText);
+
+                // 3. 氏名をファイル名に使ってSupabase Storageにアップロード
+                $personName = $extractedData['person_name'] ?? null;
+                $baseName   = $personName ? str_replace([' ', '　'], '', $personName) : null;
+                $imageUrl   = $supabase->upload($imageFile, 'cards', $baseName);
 
                 // 4. 名刺データとして保存（image_path に Supabase 公開 URL を格納）
                 $card = BusinessCard::create([

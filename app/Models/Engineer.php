@@ -22,7 +22,9 @@ class Engineer extends Model
         'affiliation',
         'affiliation_contact',
         'age',
+        'gender',
         'nationality',
+        'nearest_station',
         'affiliation_type',
     ];
 

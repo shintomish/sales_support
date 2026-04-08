@@ -176,6 +176,91 @@ JSONのみを返してください。説明文は不要です。
 PROMPT;
     }
 
+    /**
+     * スキルシートテキストから技術者情報を抽出
+     */
+    public function extractSkillSheetInfo(string $text): array
+    {
+        $prompt = <<<PROMPT
+以下はSESエンジニアのスキルシート（Excel/PDF/Word）から抽出したテキストです。
+スキルシートは表形式で、「ラベル名 値」が同一行または隣接セルに並ぶ形式です。
+
+テキスト:
+{$text}
+
+以下のJSON形式で返してください。情報が無い場合はnullを設定してください：
+
+{
+  "name": "氏名またはイニシャル（例: 山田太郎 / S.N / A.S）",
+  "name_kana": "フリガナ（カタカナ）",
+  "age": 年齢（整数。「28歳」「満36歳」なども数値のみ抽出。nullも可）,
+  "gender": "性別（male/female/other/unanswered のいずれか、または null）",
+  "email": "メールアドレス",
+  "phone": "電話番号",
+  "nearest_station": "最寄駅（路線名は除き駅名のみ。例: 姪浜駅 / 羽生駅 / 錦糸町駅）",
+  "affiliation": "所属会社名",
+  "affiliation_type": "所属区分（self/first_sub/bp/bp_member/contract/freelance/joining/hiring のいずれか、または null）",
+  "nationality": "国籍（例: 日本、中国）",
+  "available_from": "稼働可能日（YYYY-MM-DD形式、または null）",
+  "preferred_location": "希望勤務地",
+  "desired_unit_price_min": 希望単価下限（万円/月、整数またはnull）,
+  "desired_unit_price_max": 希望単価上限（万円/月、整数またはnull）,
+  "work_style": "希望勤務形態（remote/hybrid/office のいずれか、または null）",
+  "self_introduction": "自己PR・経歴サマリー（300文字以内）",
+  "skills": [
+    {"name": "スキル名", "experience_years": 経験年数（数値またはnull）}
+  ]
+}
+
+## 抽出ルール
+
+### 性別（gender）の変換
+- 「男」「男性」→ "male"
+- 「女」「女性」→ "female"
+- 「その他」→ "other"
+- 不明・回答なし → null
+
+### 最寄駅（nearest_station）
+- 「地下鉄空港線　姪浜駅」→ "姪浜駅"
+- 「東武伊勢崎線　羽生駅」→ "羽生駅"
+- 「JR総武線　錦糸町駅」→ "錦糸町駅"
+- 「八王子 駅」→ "八王子駅"
+- 路線名・会社名を除き、駅名のみを抽出する
+
+### 氏名（name）
+- フルネームがなくイニシャル表記の場合はそのまま記録（例: S.N / A.S / SA）
+- 「氏名」「イニシャル」ラベルの後の値を使う
+
+### スキル（skills）
+- 言語・FW・DB・インフラなどすべてのスキルを列挙
+- 経験年数は「1年7ヶ月」→ 1.5、「0年9ヶ月」→ 0.75 のように小数で返す
+- 重複は除く
+
+### 稼働可能日（available_from）
+- 「稼働」「稼働日」「稼働開始」ラベルの後の値を使う
+- 「2026.4」→ "2026-04-01"、「即日」→ 今日の日付
+
+JSONのみを返してください。説明文は不要です。
+PROMPT;
+
+        $response = Http::withHeaders([
+            'anthropic-version' => '2023-06-01',
+            'x-api-key'         => $this->apiKey,
+            'content-type'      => 'application/json',
+        ])->timeout(60)->post($this->apiUrl, [
+            'model'      => 'claude-sonnet-4-20250514',
+            'max_tokens' => 2048,
+            'messages'   => [['role' => 'user', 'content' => $prompt]],
+        ]);
+
+        if ($response->failed()) {
+            throw new \Exception('Claude API error: ' . $response->body());
+        }
+
+        $content = $response->json('content.0.text', '');
+        return $this->parseResponse($content);
+    }
+
     private function parseResponse(string $content): array
     {
         // JSONを抽出（```json ... ``` のような形式に対応）
