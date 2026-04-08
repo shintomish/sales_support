@@ -61,6 +61,26 @@ class SupabaseStorageService
     }
 
     /**
+     * バイナリデータを Supabase Storage にアップロードして公開URLを返す
+     */
+    public function uploadBinary(string $binary, string $filename, string $mimeType): string
+    {
+        $endpoint = "{$this->url}/storage/v1/object/{$this->bucket}/{$filename}";
+
+        $response = \Http::withHeaders([
+            'Authorization' => "Bearer {$this->serviceRoleKey}",
+            'Content-Type'  => $mimeType,
+            'x-upsert'      => 'true',
+        ])->withBody($binary, $mimeType)->post($endpoint);
+
+        if ($response->failed()) {
+            throw new \Exception('Supabase Storage upload failed: ' . $response->body());
+        }
+
+        return "{$this->url}/storage/v1/object/public/{$this->bucket}/{$filename}";
+    }
+
+    /**
      * Supabase Storage からファイルを削除する
      */
     public function delete(string $publicUrl): void

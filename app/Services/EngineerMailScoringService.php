@@ -8,6 +8,7 @@ use App\Models\GmailToken;
 use PhpOffice\PhpSpreadsheet\IOFactory as SpreadsheetIOFactory;
 use PhpOffice\PhpWord\IOFactory as WordIOFactory;
 use Illuminate\Support\Facades\Log;
+use App\Services\SupabaseStorageService;
 
 /**
  * 技術者メール判定・スコアリング＋正規表現抽出サービス
@@ -341,6 +342,22 @@ class EngineerMailScoringService
         $ext     = strtolower(pathinfo($target->filename, PATHINFO_EXTENSION));
         $tmpPath = tempnam(sys_get_temp_dir(), 'ems_') . '.' . $ext;
         file_put_contents($tmpPath, $binary);
+
+        // Supabase Storage に永続保存（storage_path が未設定の場合のみ）
+        if (empty($target->storage_path)) {
+            try {
+                $safeName   = preg_replace('/[^\w\-\.]/u', '_', pathinfo($target->filename, PATHINFO_FILENAME));
+                $safeName   = preg_replace('/[^\x00-\x7F]/u', '', $safeName) ?: substr(md5($target->filename), 0, 8);
+                $mimeType   = $target->mime_type ?: 'application/octet-stream';
+                $storagePath = "attachments/{$email->tenant_id}/{$email->id}/{$safeName}.{$ext}";
+                $storage    = app(SupabaseStorageService::class);
+                $publicUrl  = $storage->uploadBinary($binary, $storagePath, $mimeType);
+                $target->update(['storage_path' => $publicUrl]);
+            } catch (\Throwable $e) {
+                Log::debug("[EngineerMailScoring] 添付Storageアップロード失敗 email_id={$email->id}: " . $e->getMessage());
+            }
+        }
+
         unset($binary); // 即座に解放
 
         try {
