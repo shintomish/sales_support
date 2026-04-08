@@ -280,6 +280,12 @@ class ProjectMailScoringService
         $body     = $email->body_text ?? strip_tags($email->body_html ?? '');
         $fromName = $email->from_name ?? '';
         $fromAddr = $email->from_address ?? '';
+
+        // 無効なUTF-8バイト列を除去（一部メールに不正バイトが含まれDB insertエラーを防ぐ）
+        $subject  = iconv('UTF-8', 'UTF-8//IGNORE', $subject)  ?: '';
+        $body     = iconv('UTF-8', 'UTF-8//IGNORE', $body)     ?: '';
+        $fromName = iconv('UTF-8', 'UTF-8//IGNORE', $fromName) ?: '';
+        $fromAddr = iconv('UTF-8', 'UTF-8//IGNORE', $fromAddr) ?: '';
         $text     = $subject . "\n" . $body;
 
         $isSmoothContact = str_contains($fromAddr, 'smoothcontact');
