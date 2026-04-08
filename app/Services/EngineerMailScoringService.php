@@ -63,7 +63,7 @@ class EngineerMailScoringService
 
     private const AFFILIATION_MAP = [
         '自社正社員'   => ['自社正社員', '自社社員', 'プロパー'],
-        '一社先正社員' => ['一社先', '一社下', '一次下請け'],
+        '一社先正社員' => ['1社先', '一社先', '一社下', '1次', '一次下請け', '一次請け'],
         'BP'           => ['BP', 'ビジネスパートナー'],
         'BP要員'       => ['BP要員'],
         '契約社員'     => ['契約社員'],
@@ -263,24 +263,36 @@ class EngineerMailScoringService
 
     private function extractName(string $text): ?string
     {
-        $patterns = [
-            '/(?:氏名|名前|お名前|担当者)[：:　\s]*([^\s\n　]{2,10})/u',
-            '/(?:技術者名|エンジニア名)[：:　\s]*([^\s\n　]{2,10})/u',
-        ];
-        foreach ($patterns as $pattern) {
-            if (preg_match($pattern, $text, $m)) {
-                $name = trim($m[1]);
-                // 記号・数字のみは除外
-                if (preg_match('/^[^\d\W]+$/u', $name)) {
-                    return $name;
-                }
-            }
+        // 優先: ■氏名■ 形式（次行に値）→ NA(32歳/女性) から括弧前を取得
+        if (preg_match('/■氏名■\s*\n\s*([^\n（(]{1,20})/u', $text, $m)) {
+            $name = trim(preg_replace('/[（(].*/u', '', $m[1]));
+            if ($name !== '') return $name;
         }
+
+        // 次点: 氏名：XXX 形式（担当者：は除外）
+        if (preg_match('/(?:氏名|技術者名|エンジニア名|名前)[：:　\s]*([^\s\n　]{2,10})/u', $text, $m)) {
+            $name = trim($m[1]);
+            // 括弧があれば除去 (例: NA(32歳) → NA)
+            $name = preg_replace('/[（(].*/u', '', $name);
+            if ($name !== '') return $name;
+        }
+
         return null;
     }
 
     private function extractAffiliationType(string $text): ?string
     {
+        // 優先: ■所属■ 形式
+        if (preg_match('/■所属■\s*\n\s*([^\n]{1,30})/u', $text, $m)) {
+            $val = trim($m[1]);
+            foreach (self::AFFILIATION_MAP as $type => $keywords) {
+                foreach ($keywords as $kw) {
+                    if (mb_strpos($val, $kw) !== false) return $type;
+                }
+            }
+        }
+
+        // 次点: テキスト全体から検索
         foreach (self::AFFILIATION_MAP as $type => $keywords) {
             foreach ($keywords as $kw) {
                 if (mb_strpos($text, $kw) !== false) {
@@ -293,6 +305,12 @@ class EngineerMailScoringService
 
     private function extractAvailableFrom(string $text): ?string
     {
+        // 優先: ■稼働日■ 形式
+        if (preg_match('/■(?:稼働日|稼働開始|稼働)[■\s]*\n\s*([^\n]{1,20})/u', $text, $m)) {
+            $val = trim($m[1]);
+            if ($val !== '') return $val;
+        }
+
         $patterns = [
             '/(?:稼働開始|稼働可能日?|稼働予定|参画時期|参画可能|開始時期)[：:　\s]*([^\n]{2,20})/u',
             '/(?:即日|即稼働|即対応)/u',
@@ -309,6 +327,12 @@ class EngineerMailScoringService
 
     private function extractNearestStation(string $text): ?string
     {
+        // 優先: ■最寄■ 形式（駅名がそのまま書かれている）
+        if (preg_match('/■最寄[り駅]?■\s*\n\s*([^\n]{1,20})/u', $text, $m)) {
+            $station = trim($m[1]);
+            if ($station !== '') return $station;
+        }
+
         $patterns = [
             '/(?:最寄[り]?駅|最寄駅|居住地|在住)[：:　\s]*([^\n]{2,20})/u',
             '/([^\s]{2,8}駅)/u',
