@@ -40,6 +40,6 @@ curl_output.txt
 output.txt
 .env.production.backup
 .skills/
-.claude/
+.claude/settings.local.json
 .agents/
 skills-lock.json
