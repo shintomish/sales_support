@@ -476,11 +476,22 @@ class ProjectMailScoringService
         $found = [];
         $allSkills = array_merge(self::TECH_LANG, self::TECH_INFRA, self::TECH_DB);
         foreach ($allSkills as $skill) {
-            if (mb_stripos($textWithoutUrls, $skill) !== false) {
+            if ($this->skillFound($textWithoutUrls, $skill)) {
                 $found[] = $skill;
             }
         }
         return array_values(array_unique($found));
+    }
+
+    /**
+     * スキルキーワードが「単語として」テキスト内に存在するか判定
+     * 前後が英数字・スラッシュ・ドットの場合は除外（パス断片・英単語の一部を誤検出しない）
+     * 例: "go" in ".go.jp" → false / "Go" in "Go言語" → true
+     */
+    private function skillFound(string $text, string $skill): bool
+    {
+        $escaped = preg_quote($skill, '/');
+        return (bool) preg_match('/(?<![a-zA-Z0-9\/\.])' . $escaped . '(?![a-zA-Z0-9\/\.])/iu', $text);
     }
 
     private function extractProcess(string $text): array
@@ -637,6 +648,7 @@ class ProjectMailScoringService
     private function calcScore(string $text): array
     {
         $score = 0; $reasons = [];
+        $textWithoutUrls = preg_replace(self::URL_PATTERN, '', $text) ?? $text;
 
         // [A] 案件確度A: 明示的案件紹介ワード (+15, max 1回)
         foreach (self::PROJECT_A as $kw) {
@@ -655,17 +667,17 @@ class ProjectMailScoringService
         // [C] 技術スタック (max 20)
         $techScore = 0; $langCount = 0;
         foreach (self::TECH_LANG as $kw) {
-            if (mb_stripos($text, $kw) !== false) {
+            if ($this->skillFound($textWithoutUrls, $kw)) {
                 $langCount++;
                 if ($langCount === 1) { $techScore += 10; $reasons[] = "lang:{$kw}"; }
                 elseif ($langCount === 2) { $techScore += 5;  $reasons[] = "lang2:{$kw}"; break; }
             }
         }
         foreach (self::TECH_INFRA as $kw) {
-            if (mb_stripos($text, $kw) !== false) { $techScore += 5; $reasons[] = "infra:{$kw}"; break; }
+            if ($this->skillFound($textWithoutUrls, $kw)) { $techScore += 5; $reasons[] = "infra:{$kw}"; break; }
         }
         foreach (self::TECH_DB as $kw) {
-            if (mb_stripos($text, $kw) !== false) { $techScore += 3; $reasons[] = "db:{$kw}"; break; }
+            if ($this->skillFound($textWithoutUrls, $kw)) { $techScore += 3; $reasons[] = "db:{$kw}"; break; }
         }
         $score += min($techScore, 20);
 
