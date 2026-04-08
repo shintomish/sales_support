@@ -282,9 +282,12 @@ class ProjectMailScoringService
 
         $isSmoothContact = str_contains($fromAddr, 'smoothcontact');
 
+        // from_name を会社名・担当者名に分離する
+        [$fromCompany, $fromPerson] = $this->parseFromName($fromName);
+
         return [
-            'customer_name'    => $this->extractCustomerName($body, $fromName, $fromAddr),
-            'sales_contact'    => $this->extractSalesContact($body, $isSmoothContact),
+            'customer_name'    => $this->extractCustomerName($body, $fromName, $fromAddr, $fromCompany),
+            'sales_contact'    => $this->extractSalesContact($body, $isSmoothContact) ?? $fromPerson,
             'phone'            => $this->extractPhone($body, $isSmoothContact),
             'title'            => $this->extractTitle($subject, $body),
             'required_skills'  => $this->extractSkills($text),
@@ -303,7 +306,7 @@ class ProjectMailScoringService
 
     // ── 各抽出ロジック ─────────────────────────────────────
 
-    private function extractCustomerName(string $body, string $fromName, string $fromAddr): ?string
+    private function extractCustomerName(string $body, string $fromName, string $fromAddr, ?string $fromCompany = null): ?string
     {
         // ① SmoothContact フォーム形式: 「[ 御社名 ] Cynet株式会社」
         if (preg_match('/\[[ 　]*御社名[ 　]*\][ 　\t]*([^\n\r\[]{2,80})/u', $body, $m)) {
@@ -326,7 +329,7 @@ class ProjectMailScoringService
             return mb_substr(trim($m[1]), 0, 100);
         }
 
-        // ② 明示ラベル（クライアント：, エンド：, 常駐先：等）
+        // ③ 明示ラベル（クライアント：, エンド：, 常駐先：等）
         if (preg_match(
             '/(?:クライアント|エンド(?:先|クライアント)?|常駐先|顧客|発注元|取引先|企業名)\s*[：:]\s*([^\n\r　]{2,50})/u',
             $body, $m
@@ -334,26 +337,77 @@ class ProjectMailScoringService
             return mb_substr(trim($m[1]), 0, 100);
         }
 
-        // ③ from_name に会社名が含まれる場合
+        // ④ from_name を parseFromName で分離した会社名を使う（人名は sales_contact へ）
+        if ($fromCompany !== null) {
+            return mb_substr($fromCompany, 0, 100);
+        }
+
+        // ⑤ parseFromName が判断できなかった場合のフォールバック
         if ($fromName) {
-            if (preg_match('/((?:株式|有限|合同)会社[\p{Han}\p{Hiragana}\p{Katakana}ー－\-・\w]+)/u', $fromName, $m)) {
-                return mb_substr(trim($m[1]), 0, 100);
-            }
-            if (preg_match('/([\p{Han}\p{Hiragana}\p{Katakana}ー－\-・\w]+(?:株式|有限|合同)会社)/u', $fromName, $m)) {
-                return mb_substr(trim($m[1]), 0, 100);
-            }
             $name = trim($fromName);
-            if (mb_strlen($name) >= 4 && !preg_match('/^[\p{Han}\p{Hiragana}\p{Katakana}ー]{2,5}$/u', $name)) {
+            if (mb_strlen($name) >= 4 && !preg_match('/^[\p{Han}\p{Hiragana}\p{Katakana}ー\s]{2,6}$/u', $name)) {
                 return mb_substr($name, 0, 100);
             }
         }
 
-        // ④ ドメインから推測
+        // ⑥ ドメインから推測
         if ($fromAddr && preg_match('/@([\w\-]+)\.(?:co\.jp|com|jp)/i', $fromAddr, $m)) {
             return $m[1];
         }
 
         return null;
+    }
+
+    /**
+     * from_name を [会社名, 担当者名] に分離する
+     * 例: "株式会社テック 田中太郎" → ["株式会社テック", "田中太郎"]
+     * 例: "テック株式会社" → ["テック株式会社", null]
+     * 例: "田中太郎" → [null, "田中太郎"]
+     */
+    private function parseFromName(string $fromName): array
+    {
+        if (!$fromName) return [null, null];
+        $name = trim($fromName);
+
+        // 前置会社名 + スペース + 候補
+        if (preg_match('/^((?:株式|有限|合同|一般社団|一般財団)会社[\p{Han}\p{Hiragana}\p{Katakana}ー－\-・\w]*)[\s　]+(.{2,20})$/u', $name, $m)) {
+            $company = trim($m[1]);
+            $person  = trim($m[2]);
+            return [$company, $this->looksLikePersonName($person) ? $person : null];
+        }
+
+        // 後置会社名 + スペース + 候補
+        if (preg_match('/^([\p{Han}\p{Hiragana}\p{Katakana}ー－\-・\w]+(?:株式|有限|合同)会社)[\s　]+(.{2,20})$/u', $name, $m)) {
+            $company = trim($m[1]);
+            $person  = trim($m[2]);
+            return [$company, $this->looksLikePersonName($person) ? $person : null];
+        }
+
+        // 前置会社名のみ
+        if (preg_match('/^(?:株式|有限|合同|一般社団|一般財団)会社/u', $name)) {
+            return [mb_substr($name, 0, 100), null];
+        }
+
+        // 後置会社名のみ
+        if (preg_match('/(?:株式|有限|合同)会社$/u', $name)) {
+            return [mb_substr($name, 0, 100), null];
+        }
+
+        // 人名のみ
+        if ($this->looksLikePersonName($name)) {
+            return [null, $name];
+        }
+
+        return [null, null];
+    }
+
+    private function looksLikePersonName(string $str): bool
+    {
+        $str = trim($str);
+        // 2〜15文字の日本語名（漢字・かな・スペース区切りも許容）
+        return (bool) preg_match('/^[\p{Han}\p{Hiragana}\p{Katakana}ー\s]{2,15}$/u', $str)
+            && mb_strlen(str_replace(' ', '', $str)) >= 2
+            && mb_strlen($str) <= 15;
     }
 
     private function extractSalesContact(string $body, bool $isSmoothContact): ?string
