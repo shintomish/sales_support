@@ -334,19 +334,14 @@ class EngineerMailScoringService
         $gmailToken = GmailToken::where('tenant_id', $email->tenant_id)->first();
         if (!$gmailToken) return null;
 
-        // Gmail API から添付データ取得（base64url encoded）
+        // Gmail API から添付データ取得（fetchAttachmentData内でbase64デコード済みバイナリを返す）
         $gmailService = app(GmailService::class);
-        $rawData = $gmailService->fetchAttachmentData(
+        $binary = $gmailService->fetchAttachmentData(
             $gmailToken,
             $email->gmail_message_id,
             $target->gmail_attachment_id
         );
 
-        if (!$rawData) return null;
-
-        // base64url → バイナリ
-        $binary = base64_decode(str_replace(['-', '_'], ['+', '/'], $rawData));
-        unset($rawData); // 即座に解放
         if (!$binary) return null;
 
         // 一時ファイルに書き込んでテキスト抽出

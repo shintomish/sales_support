@@ -98,6 +98,18 @@ class EngineerMailController extends Controller
         return response()->json($ems->fresh());
     }
 
+    // 添付ファイルのmagic bytesチェック（壊れたファイルを検出）
+    private function isValidFileBinary(string $binary, string $ext): bool
+    {
+        if (strlen($binary) < 8) return false;
+        return match($ext) {
+            'pdf'         => str_starts_with($binary, '%PDF'),
+            'xlsx', 'docx' => str_starts_with($binary, "PK\x03\x04"),
+            'xls', 'doc'  => str_starts_with($binary, "\xD0\xCF\x11\xE0"),
+            default       => true,
+        };
+    }
+
     // 添付ファイルダウンロード
     public function downloadAttachment(int $id, int $attachmentId): Response
     {
@@ -108,61 +120,60 @@ class EngineerMailController extends Controller
 
         $filename = $att->filename ?: 'attachment';
         $mimeType = $att->mime_type ?: 'application/octet-stream';
+        $ext      = strtolower(pathinfo($filename, PATHINFO_EXTENSION));
 
-        // Storage保存済み → Supabaseからservice_roleキーで取得してストリーム
+        // Storage保存済み → Supabaseから取得してmagic bytes検証
         if ($att->storage_path) {
             $supabaseUrl = config('services.supabase.url');
             $serviceKey  = config('services.supabase.service_role_key');
             $bucket      = config('services.supabase.bucket');
 
-            // storage_pathからbucket以降のパスを抽出
-            $pattern = "/storage\/v1\/object\/public\/{$bucket}\//";
-            $path    = preg_replace($pattern, '', parse_url($att->storage_path, PHP_URL_PATH));
-
-            $response = Http::withHeaders([
-                'Authorization' => "Bearer {$serviceKey}",
-            ])->get("{$supabaseUrl}/storage/v1/object/{$bucket}/{$path}");
+            $pattern  = "/storage\/v1\/object\/public\/{$bucket}\//";
+            $path     = preg_replace($pattern, '', parse_url($att->storage_path, PHP_URL_PATH));
+            $response = Http::withHeaders(['Authorization' => "Bearer {$serviceKey}"])
+                ->get("{$supabaseUrl}/storage/v1/object/{$bucket}/{$path}");
 
             if ($response->successful()) {
-                return response($response->body(), 200, [
-                    'Content-Type'        => $mimeType,
-                    'Content-Disposition' => 'attachment; filename="' . rawurlencode($filename) . '"',
-                ]);
+                $binary = $response->body();
+                if ($this->isValidFileBinary($binary, $ext)) {
+                    return response($binary, 200, [
+                        'Content-Type'        => $mimeType,
+                        'Content-Disposition' => 'attachment; filename="' . rawurlencode($filename) . '"',
+                    ]);
+                }
+                // magic bytes 不正（二重デコードバグによる破損ファイル）→ Gmail APIから再取得
+                Log::warning("[EngineerMailController] Storage上のファイルが破損、Gmail APIから再取得 att_id={$att->id}");
             }
         }
 
-        // storage_pathなし or Storage取得失敗 → Gmail APIから取得
+        // storage_pathなし or 破損検出 → Gmail APIから取得
         $gmailToken = GmailToken::where('tenant_id', $ems->email->tenant_id)->first();
         if (!$gmailToken || !$ems->email->gmail_message_id || !$att->gmail_attachment_id) {
             abort(404, '添付ファイルを取得できませんでした');
         }
 
         $gmailService = app(GmailService::class);
-        $rawData      = $gmailService->fetchAttachmentData(
+        // fetchAttachmentData() はbase64デコード済みバイナリを返す（二重デコード不要）
+        $binary = $gmailService->fetchAttachmentData(
             $gmailToken,
             $ems->email->gmail_message_id,
             $att->gmail_attachment_id
         );
 
-        if (!$rawData) {
+        if (!$binary) {
             abort(404, '添付ファイルを取得できませんでした');
         }
 
-        $binary = base64_decode(str_replace(['-', '_'], ['+', '/'], $rawData));
-
-        // Storageに保存（次回以降のために）
-        if (empty($att->storage_path)) {
-            try {
-                $ext      = strtolower(pathinfo($filename, PATHINFO_EXTENSION));
-                $base     = preg_replace('/[^\w\-\.]/u', '_', pathinfo($filename, PATHINFO_FILENAME));
-                $base     = preg_replace('/[^\x00-\x7F]/u', '', $base) ?: substr(md5($filename), 0, 8);
-                $path     = "attachments/{$ems->email->tenant_id}/{$ems->email_id}/{$base}.{$ext}";
-                $storage  = app(SupabaseStorageService::class);
-                $url      = $storage->uploadBinary($binary, $path, $mimeType);
-                $att->update(['storage_path' => $url]);
-            } catch (\Throwable $e) {
-                Log::debug("[EngineerMailController] 添付Storage保存失敗 att_id={$att->id}: " . $e->getMessage());
-            }
+        // Storageに正しいバイナリで上書き保存
+        try {
+            $base        = preg_replace('/[^\w\-\.]/u', '_', pathinfo($filename, PATHINFO_FILENAME));
+            $base        = preg_replace('/[^\x00-\x7F]/u', '', $base) ?: substr(md5($filename), 0, 8);
+            $storagePath = "attachments/{$ems->email->tenant_id}/{$ems->email_id}/{$base}.{$ext}";
+            $storage     = app(SupabaseStorageService::class);
+            $url         = $storage->uploadBinary($binary, $storagePath, $mimeType);
+            $att->update(['storage_path' => $url]);
+        } catch (\Throwable $e) {
+            Log::debug("[EngineerMailController] 添付Storage保存失敗 att_id={$att->id}: " . $e->getMessage());
         }
 
         return response($binary, 200, [
