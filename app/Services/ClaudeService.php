@@ -49,7 +49,7 @@ class ClaudeService
             'subject'    => $subject,
             'body'       => trim($body),
             'to_address' => $mail['from_address'] ?? '',
-            'to_name'    => $mail['from_name']    ?? '',
+            'to_name'    => $mail['sales_contact'] ?? $mail['from_name'] ?? '',
         ];
     }
 
