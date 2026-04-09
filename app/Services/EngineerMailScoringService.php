@@ -500,13 +500,13 @@ class EngineerMailScoringService
         }
 
         // 優先2: ■氏　名：AS(女性/24歳) 形式（同行、全角スペースあり）
-        if (preg_match('/■氏[　\s]*名[：:]\s*([^\n（(]{1,15})/u', $text, $m)) {
+        if (preg_match('/■氏[　\s]*名[：:]\s*([^■\n（(]{1,15})/u', $text, $m)) {
             $name = trim(preg_replace('/[（(].*/u', '', $m[1]));
             if ($name !== '') return $name;
         }
 
         // 次点: 氏名：XXX 形式（担当者：は除外）
-        if (preg_match('/(?:氏名|技術者名|エンジニア名|名前)[：:　\s]*([^\s\n　]{2,10})/u', $text, $m)) {
+        if (preg_match('/(?:氏名|技術者名|エンジニア名|名前)[：:　\s]*([^\s\n　■]{2,10})/u', $text, $m)) {
             $name = trim($m[1]);
             // 括弧があれば除去 (例: NA(32歳) → NA)
             $name = preg_replace('/[（(].*/u', '', $name);
@@ -548,13 +548,13 @@ class EngineerMailScoringService
         }
 
         // 優先2: ■稼　動：1月開始 形式（同行、全角スペースあり）
-        if (preg_match('/■稼[　\s]*動[：:　\s]*([^\n]{1,20})/u', $text, $m)) {
+        if (preg_match('/■稼[　\s]*動[：:　\s]*([^■\n]{1,20})/u', $text, $m)) {
             $val = trim($m[1]);
             if ($val !== '') return $val;
         }
 
         $patterns = [
-            '/(?:稼働開始|稼働可能日?|稼働予定|参画時期|参画可能|開始時期)[：:　\s]*([^\n]{2,20})/u',
+            '/(?:稼働開始|稼働可能日?|稼働予定|参画時期|参画可能|開始時期)[：:　\s]*([^■\n]{2,20})/u',
             '/(?:即日|即稼働|即対応)/u',
         ];
         foreach ($patterns as $i => $pattern) {
@@ -577,11 +577,11 @@ class EngineerMailScoringService
 
         $patterns = [
             // 最寄駅：xxx / 最寄り駅：xxx / 最寄：xxx（駅 任意）
-            '/最寄[り]?駅?[：:　\s]+([^\n]{2,20})/u',
+            '/最寄[り]?駅?[：:　\s]+([^■\n]{2,20})/u',
             // 居住地：xxx / 在住：xxx
-            '/(?:居住地|在住)[：:　\s]*([^\n]{2,20})/u',
-            // xxx駅 (フォールバック)
-            '/([^\s]{2,8}駅)/u',
+            '/(?:居住地|在住)[：:　\s]*([^■\n]{2,20})/u',
+            // xxx駅 (フォールバック：■を含まないもののみ)
+            '/([^■\s]{2,8}駅)/u',
         ];
         foreach ($patterns as $pattern) {
             if (preg_match($pattern, $text, $m)) {
