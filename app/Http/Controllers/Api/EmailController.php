@@ -44,11 +44,15 @@ class EmailController extends Controller
     public function show(int $id)
     {
         $email = Email::findOrFail($id);
-        // 既読にする
+        // 既読にする（Gmailトークン失効時もDB更新は行う）
         if (!$email->is_read) {
             $token = GmailToken::where('tenant_id', auth()->user()->tenant_id)->first();
             if ($token) {
-                $this->gmailService->markAsRead($token, $email->gmail_message_id);
+                try {
+                    $this->gmailService->markAsRead($token, $email->gmail_message_id);
+                } catch (\Exception $e) {
+                    \Illuminate\Support\Facades\Log::warning("markAsRead失敗（トークン失効の可能性）: " . $e->getMessage());
+                }
             }
             $email->update(['is_read' => true]);
         }
