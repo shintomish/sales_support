@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Mail\ProposalMail;
 use App\Models\ProjectMailSource;
 use App\Services\ClaudeService;
 use App\Services\ProjectMailMatchingService;
@@ -10,6 +11,7 @@ use App\Services\ProjectMailScoringService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Mail;
 
 class ProjectMailController extends Controller
 {
@@ -203,6 +205,70 @@ class ProjectMailController extends Controller
             Log::error("generateProposal failed mail_id={$id}: " . $e->getMessage());
             return response()->json(['message' => 'メール生成に失敗しました'], 500);
         }
+    }
+
+    /**
+     * 提案メール送信
+     * POST /v1/project-mails/{id}/send-proposal
+     */
+    public function sendProposal(Request $request, int $id): JsonResponse
+    {
+        $tenantId = auth()->user()->tenant_id;
+        ProjectMailSource::where('tenant_id', $tenantId)->findOrFail($id);
+
+        $v = $request->validate([
+            'to'      => 'required|email',
+            'subject' => 'required|string|max:500',
+            'body'    => 'required|string',
+        ]);
+
+        try {
+            Mail::to($v['to'])->send(new ProposalMail($v['subject'], $v['body']));
+            Log::info("提案メール送信 project_mail_id={$id} to={$v['to']}");
+            return response()->json(['message' => '送信しました']);
+        } catch (\Exception $e) {
+            Log::error("提案メール送信失敗 project_mail_id={$id}: " . $e->getMessage());
+            return response()->json(['message' => 'メール送信に失敗しました'], 500);
+        }
+    }
+
+    /**
+     * 一斉配信
+     * POST /v1/project-mails/{id}/send-bulk
+     */
+    public function sendBulk(Request $request, int $id): JsonResponse
+    {
+        $tenantId = auth()->user()->tenant_id;
+        ProjectMailSource::where('tenant_id', $tenantId)->findOrFail($id);
+
+        $v = $request->validate([
+            'recipients'         => 'required|array|min:1|max:100',
+            'recipients.*.to'   => 'required|email',
+            'recipients.*.name' => 'nullable|string|max:200',
+            'subject'            => 'required|string|max:500',
+            'body'               => 'required|string',
+        ]);
+
+        $sent   = 0;
+        $failed = [];
+
+        foreach ($v['recipients'] as $recipient) {
+            try {
+                Mail::to($recipient['to'])->send(new ProposalMail($v['subject'], $v['body']));
+                $sent++;
+            } catch (\Exception $e) {
+                Log::error("一斉配信失敗 project_mail_id={$id} to={$recipient['to']}: " . $e->getMessage());
+                $failed[] = $recipient['to'];
+            }
+        }
+
+        Log::info("一斉配信完了 project_mail_id={$id} sent={$sent} failed=" . count($failed));
+
+        return response()->json([
+            'message' => "{$sent}件送信しました",
+            'sent'    => $sent,
+            'failed'  => $failed,
+        ]);
     }
 
     /**

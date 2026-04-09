@@ -131,6 +131,8 @@ Route::prefix('v1')->middleware(['supabase.auth'])->group(function () {
         Route::post('/{id}/rescore',              [ProjectMailController::class, 'rescore']);
         Route::get('/{id}/matched-engineers',     [ProjectMailController::class, 'matchedEngineers']);
         Route::post('/{id}/generate-proposal',    [ProjectMailController::class, 'generateProposal']);
+        Route::post('/{id}/send-proposal',        [ProjectMailController::class, 'sendProposal']);
+        Route::post('/{id}/send-bulk',            [ProjectMailController::class, 'sendBulk']);
     });
 
     // ── 技術者メール（スコアリング済み）──────────────────
