@@ -41,6 +41,7 @@ class EmailBodyTemplateController extends Controller
             'position'   => 'nullable|string|max:100',
             'email'      => 'nullable|email|max:200',
             'mobile'     => 'nullable|string|max:50',
+            'body_text'  => 'nullable|string',
         ]);
 
         $template = EmailBodyTemplate::updateOrCreate(
