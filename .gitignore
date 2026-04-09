@@ -36,6 +36,7 @@ docker/
 storage/credentials/google-vision.json
 
 tmp/
+*_tmp.html
 curl_output.txt
 output.txt
 .env.production.backup
