@@ -14,7 +14,7 @@ class ProposalMail extends Mailable
     use Queueable, SerializesModels;
 
     public function __construct(
-        public readonly string $subject,
+        public readonly string $mailSubject,
         public readonly string $body,
         public readonly string $senderName = '',
         public readonly string $senderEmail = '',
@@ -27,7 +27,7 @@ class ProposalMail extends Mailable
                 $this->senderEmail ?: config('mail.from.address'),
                 $this->senderName  ?: config('mail.from.name'),
             ),
-            subject: $this->subject,
+            subject: $this->mailSubject,
         );
     }
 
