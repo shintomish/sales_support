@@ -223,10 +223,11 @@ class ProjectMailController extends Controller
             'body'    => 'required|string',
         ]);
 
-        $userId     = auth()->id();
-        $senderName = auth()->user()->name ?? '';
+        $userId      = auth()->id();
+        $senderName  = auth()->user()->name  ?? '';
+        $senderEmail = auth()->user()->email ?? '';
         try {
-            Mail::to($v['to'])->send(new ProposalMail($v['subject'], $v['body'], $senderName));
+            Mail::to($v['to'])->send(new ProposalMail($v['subject'], $v['body'], $senderName, $senderEmail));
             MailSendHistory::create([
                 'tenant_id'       => $tenantId,
                 'project_mail_id' => $id,
@@ -273,14 +274,15 @@ class ProjectMailController extends Controller
             'body'               => 'required|string',
         ]);
 
-        $sent       = 0;
-        $failed     = [];
-        $userId     = auth()->id();
-        $senderName = auth()->user()->name ?? '';
+        $sent        = 0;
+        $failed      = [];
+        $userId      = auth()->id();
+        $senderName  = auth()->user()->name  ?? '';
+        $senderEmail = auth()->user()->email ?? '';
 
         foreach ($v['recipients'] as $recipient) {
             try {
-                Mail::to($recipient['to'])->send(new ProposalMail($v['subject'], $v['body'], $senderName));
+                Mail::to($recipient['to'])->send(new ProposalMail($v['subject'], $v['body'], $senderName, $senderEmail));
                 MailSendHistory::create([
                     'tenant_id'       => $tenantId,
                     'project_mail_id' => $id,
