@@ -335,12 +335,13 @@ class ProjectMailController extends Controller
 
         return response()->json([
             'data' => $results->map(fn($r) => [
-                'engineer_id'      => $r['engineer']->id,
-                'engineer_name'    => $r['engineer']->name,
-                'email'            => $r['engineer']->email,
-                'affiliation'      => $r['engineer']->affiliation,
-                'affiliation_type' => $r['engineer']->affiliation_type,
-                'age'              => $r['engineer']->age,
+                'engineer_id'         => $r['engineer']->id,
+                'engineer_name'       => $r['engineer']->name,
+                'email'               => $r['engineer']->email,
+                'affiliation'         => $r['engineer']->affiliation,
+                'affiliation_contact' => $r['engineer']->affiliation_contact,
+                'affiliation_type'    => $r['engineer']->affiliation_type,
+                'age'                 => $r['engineer']->age,
                 'score'            => $r['score'],
                 'breakdown'        => $r['breakdown'],
                 'reasons'          => $r['reasons'],
