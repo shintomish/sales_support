@@ -197,13 +197,19 @@ class EngineerMailController extends Controller
         ]);
     }
 
-    // 既存レコードを全件再スコアリング＋再抽出
+    // 既存レコードを全件再スコアリング＋再抽出（500件バッチ）
     public function rescoreAll(): JsonResponse
     {
-        $count = $this->scoringService->rescoreAll();
+        set_time_limit(300);
+        $batchSize = 500;
+        $total     = EngineerMailSource::whereNotNull('email_id')->count();
+        $count     = $this->scoringService->rescoreAll($batchSize);
+        $remaining = max(0, $total - $count);
+
         return response()->json([
-            'message' => "{$count}件を再スコアリングしました",
-            'count'   => $count,
+            'message'   => "{$count}件を再スコアリングしました",
+            'count'     => $count,
+            'remaining' => $remaining,
         ]);
     }
 }
