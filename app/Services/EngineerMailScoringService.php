@@ -46,13 +46,33 @@ class EngineerMailScoringService
 
     // [C] 技術スタック (+3/件 max 20)
     private const TECH_STACK = [
-        'Java', 'Spring', 'SpringBoot', 'PHP', 'Laravel',
-        'Python', 'Django', 'Flask', 'C#', '.NET',
-        'JavaScript', 'TypeScript', 'React', 'Vue', 'Angular',
-        'Ruby', 'Rails', 'Go', 'Golang', 'Swift', 'Kotlin',
-        'AWS', 'EC2', 'RDS', 'S3', 'Lambda',
-        'Azure', 'GCP', 'Docker', 'Kubernetes', 'Linux',
+        // 言語（モダン）
+        'Java', 'PHP', 'Python', 'C#', 'Ruby', 'Go', 'Golang',
+        'Swift', 'Kotlin', 'TypeScript', 'JavaScript', 'Scala', 'Rust',
+        'Dart', 'Perl', 'C++',
+        // 言語（レガシー）
+        'COBOL', 'VBA', 'VB.NET', 'PL/SQL', 'PL/I', 'JCL', 'RPG',
+        // FW・ライブラリ
+        'Spring', 'SpringBoot', 'Laravel', 'Django', 'Flask', 'FastAPI',
+        'Rails', 'React', 'Vue', 'Angular', 'Next.js', 'Nuxt.js',
+        'NestJS', 'Express', 'Struts', 'MyBatis', 'Hibernate', 'Gin', '.NET',
+        // モバイル
+        'Flutter', 'React Native', 'Swift', 'Kotlin', 'Xcode',
+        // クラウド（AWS）
+        'AWS', 'EC2', 'RDS', 'S3', 'Lambda', 'ECS', 'EKS', 'Fargate',
+        'CloudFront', 'DynamoDB', 'SQS', 'SNS', 'CloudFormation',
+        // クラウド（その他）
+        'Azure', 'GCP',
+        // インフラ・DevOps
+        'Docker', 'Kubernetes', 'Linux', 'Terraform', 'Ansible', 'Jenkins',
+        'GitHub Actions', 'GitLab CI', 'Nginx', 'Apache', 'Prometheus', 'Grafana',
+        // DB
         'MySQL', 'PostgreSQL', 'Oracle', 'SQLServer', 'MongoDB', 'Redis',
+        'Elasticsearch', 'Firebase', 'BigQuery', 'DynamoDB', 'SQLite',
+        // ツール
+        'GitHub', 'GitLab', 'Bitbucket', 'Jira', 'Confluence',
+        // メインフレーム
+        'z/OS', 'CICS', 'AS/400',
     ];
 
     // [D] 所属区分ワード (+10)
