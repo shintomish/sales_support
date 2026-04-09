@@ -21,6 +21,7 @@ class Engineer extends Model
         'phone',
         'affiliation',
         'affiliation_contact',
+        'affiliation_email',
         'age',
         'gender',
         'nationality',
