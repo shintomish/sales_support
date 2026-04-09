@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Mail\ProposalMail;
+use App\Models\MailSendHistory;
 use App\Models\ProjectMailSource;
 use App\Services\ClaudeService;
 use App\Services\ProjectMailMatchingService;
@@ -222,11 +223,33 @@ class ProjectMailController extends Controller
             'body'    => 'required|string',
         ]);
 
+        $userId = auth()->id();
         try {
             Mail::to($v['to'])->send(new ProposalMail($v['subject'], $v['body']));
+            MailSendHistory::create([
+                'tenant_id'       => $tenantId,
+                'project_mail_id' => $id,
+                'send_type'       => 'proposal',
+                'to_address'      => $v['to'],
+                'subject'         => $v['subject'],
+                'body'            => $v['body'],
+                'status'          => 'sent',
+                'sent_by'         => $userId,
+            ]);
             Log::info("提案メール送信 project_mail_id={$id} to={$v['to']}");
             return response()->json(['message' => '送信しました']);
         } catch (\Exception $e) {
+            MailSendHistory::create([
+                'tenant_id'       => $tenantId,
+                'project_mail_id' => $id,
+                'send_type'       => 'proposal',
+                'to_address'      => $v['to'],
+                'subject'         => $v['subject'],
+                'body'            => $v['body'],
+                'status'          => 'failed',
+                'error_message'   => $e->getMessage(),
+                'sent_by'         => $userId,
+            ]);
             Log::error("提案メール送信失敗 project_mail_id={$id}: " . $e->getMessage());
             return response()->json(['message' => 'メール送信に失敗しました'], 500);
         }
@@ -251,12 +274,36 @@ class ProjectMailController extends Controller
 
         $sent   = 0;
         $failed = [];
+        $userId = auth()->id();
 
         foreach ($v['recipients'] as $recipient) {
             try {
                 Mail::to($recipient['to'])->send(new ProposalMail($v['subject'], $v['body']));
+                MailSendHistory::create([
+                    'tenant_id'       => $tenantId,
+                    'project_mail_id' => $id,
+                    'send_type'       => 'bulk',
+                    'to_address'      => $recipient['to'],
+                    'to_name'         => $recipient['name'] ?? null,
+                    'subject'         => $v['subject'],
+                    'body'            => $v['body'],
+                    'status'          => 'sent',
+                    'sent_by'         => $userId,
+                ]);
                 $sent++;
             } catch (\Exception $e) {
+                MailSendHistory::create([
+                    'tenant_id'       => $tenantId,
+                    'project_mail_id' => $id,
+                    'send_type'       => 'bulk',
+                    'to_address'      => $recipient['to'],
+                    'to_name'         => $recipient['name'] ?? null,
+                    'subject'         => $v['subject'],
+                    'body'            => $v['body'],
+                    'status'          => 'failed',
+                    'error_message'   => $e->getMessage(),
+                    'sent_by'         => $userId,
+                ]);
                 Log::error("一斉配信失敗 project_mail_id={$id} to={$recipient['to']}: " . $e->getMessage());
                 $failed[] = $recipient['to'];
             }
