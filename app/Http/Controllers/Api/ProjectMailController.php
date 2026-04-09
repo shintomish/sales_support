@@ -223,9 +223,10 @@ class ProjectMailController extends Controller
             'body'    => 'required|string',
         ]);
 
-        $userId = auth()->id();
+        $userId     = auth()->id();
+        $senderName = auth()->user()->name ?? '';
         try {
-            Mail::to($v['to'])->send(new ProposalMail($v['subject'], $v['body']));
+            Mail::to($v['to'])->send(new ProposalMail($v['subject'], $v['body'], $senderName));
             MailSendHistory::create([
                 'tenant_id'       => $tenantId,
                 'project_mail_id' => $id,
@@ -272,13 +273,14 @@ class ProjectMailController extends Controller
             'body'               => 'required|string',
         ]);
 
-        $sent   = 0;
-        $failed = [];
-        $userId = auth()->id();
+        $sent       = 0;
+        $failed     = [];
+        $userId     = auth()->id();
+        $senderName = auth()->user()->name ?? '';
 
         foreach ($v['recipients'] as $recipient) {
             try {
-                Mail::to($recipient['to'])->send(new ProposalMail($v['subject'], $v['body']));
+                Mail::to($recipient['to'])->send(new ProposalMail($v['subject'], $v['body'], $senderName));
                 MailSendHistory::create([
                     'tenant_id'       => $tenantId,
                     'project_mail_id' => $id,

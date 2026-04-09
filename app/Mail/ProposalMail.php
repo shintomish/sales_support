@@ -4,6 +4,7 @@ namespace App\Mail;
 
 use Illuminate\Bus\Queueable;
 use Illuminate\Mail\Mailable;
+use Illuminate\Mail\Mailables\Address;
 use Illuminate\Mail\Mailables\Content;
 use Illuminate\Mail\Mailables\Envelope;
 use Illuminate\Queue\SerializesModels;
@@ -15,11 +16,15 @@ class ProposalMail extends Mailable
     public function __construct(
         public readonly string $subject,
         public readonly string $body,
+        public readonly string $senderName = '',
     ) {}
 
     public function envelope(): Envelope
     {
-        return new Envelope(subject: $this->subject);
+        return new Envelope(
+            from: new Address(config('mail.from.address'), $this->senderName ?: config('mail.from.name')),
+            subject: $this->subject,
+        );
     }
 
     public function content(): Content
