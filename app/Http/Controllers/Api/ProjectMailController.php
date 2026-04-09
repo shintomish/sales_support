@@ -337,6 +337,7 @@ class ProjectMailController extends Controller
             'data' => $results->map(fn($r) => [
                 'engineer_id'      => $r['engineer']->id,
                 'engineer_name'    => $r['engineer']->name,
+                'email'            => $r['engineer']->email,
                 'affiliation'      => $r['engineer']->affiliation,
                 'affiliation_type' => $r['engineer']->affiliation_type,
                 'age'              => $r['engineer']->age,
