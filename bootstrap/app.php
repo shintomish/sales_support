@@ -24,5 +24,9 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->appendToGroup('web', LogUserActivity::class);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
-        //
+        $exceptions->report(function (Throwable $e) {
+            if (app()->bound('sentry')) {
+                app('sentry')->captureException($e);
+            }
+        });
     })->create();
