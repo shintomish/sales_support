@@ -52,6 +52,7 @@ return new class extends Migration
             'applications',
         ];
 
+        if (DB::connection()->getDriverName() !== 'pgsql') return;
         foreach ($tables as $table) {
             DB::statement("ALTER TABLE \"{$table}\" ENABLE ROW LEVEL SECURITY");
         }
@@ -100,6 +101,7 @@ return new class extends Migration
             'applications',
         ];
 
+        if (DB::connection()->getDriverName() !== 'pgsql') return;
         foreach ($tables as $table) {
             DB::statement("ALTER TABLE \"{$table}\" DISABLE ROW LEVEL SECURITY");
         }
