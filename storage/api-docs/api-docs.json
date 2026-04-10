@@ -1,0 +1,2390 @@
+{
+    "openapi": "3.0.0",
+    "info": {
+        "title": "Sales Support API",
+        "description": "SES企業向け営業支援システム API",
+        "contact": {
+            "email": "admin@example.com"
+        },
+        "version": "1.0.0"
+    },
+    "servers": [
+        {
+            "url": "/",
+            "description": "ローカル開発環境"
+        }
+    ],
+    "paths": {
+        "/api/v1/activities": {
+            "get": {
+                "tags": [
+                    "Activities"
+                ],
+                "summary": "活動履歴一覧取得",
+                "operationId": "9d2aaca28896a8ed26f4994a358e35ff",
+                "parameters": [
+                    {
+                        "name": "search",
+                        "in": "query",
+                        "description": "件名・内容・会社名で検索",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "type",
+                        "in": "query",
+                        "description": "活動種別",
+                        "required": false,
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "訪問",
+                                "電話",
+                                "メール",
+                                "その他"
+                            ]
+                        }
+                    },
+                    {
+                        "name": "customer_id",
+                        "in": "query",
+                        "description": "顧客IDで絞り込み",
+                        "required": false,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    },
+                    {
+                        "name": "date_from",
+                        "in": "query",
+                        "description": "期間（開始）",
+                        "required": false,
+                        "schema": {
+                            "type": "string",
+                            "format": "date"
+                        }
+                    },
+                    {
+                        "name": "date_to",
+                        "in": "query",
+                        "description": "期間（終了）",
+                        "required": false,
+                        "schema": {
+                            "type": "string",
+                            "format": "date"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "成功"
+                    },
+                    "401": {
+                        "description": "認証エラー"
+                    }
+                },
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ]
+            },
+            "post": {
+                "tags": [
+                    "Activities"
+                ],
+                "summary": "活動履歴登録",
+                "operationId": "f4d5f498348c9c03d051739d6ce3c08c",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "required": [
+                                    "customer_id",
+                                    "type",
+                                    "subject",
+                                    "activity_date"
+                                ],
+                                "properties": {
+                                    "customer_id": {
+                                        "type": "string",
+                                        "format": "uuid"
+                                    },
+                                    "contact_id": {
+                                        "type": "string",
+                                        "format": "uuid"
+                                    },
+                                    "deal_id": {
+                                        "type": "string",
+                                        "format": "uuid"
+                                    },
+                                    "type": {
+                                        "type": "string",
+                                        "enum": [
+                                            "訪問",
+                                            "電話",
+                                            "メール",
+                                            "その他"
+                                        ]
+                                    },
+                                    "subject": {
+                                        "type": "string",
+                                        "example": "初回訪問"
+                                    },
+                                    "content": {
+                                        "type": "string",
+                                        "example": "新規案件の提案を行った"
+                                    },
+                                    "activity_date": {
+                                        "type": "string",
+                                        "format": "date",
+                                        "example": "2026-04-11"
+                                    }
+                                },
+                                "type": "object"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "登録成功"
+                    },
+                    "422": {
+                        "description": "バリデーションエラー"
+                    },
+                    "401": {
+                        "description": "認証エラー"
+                    }
+                },
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/api/v1/activities/{id}": {
+            "get": {
+                "tags": [
+                    "Activities"
+                ],
+                "summary": "活動履歴詳細取得",
+                "operationId": "0e9be61b28d7696af473efbe39af1f1c",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "description": "活動履歴ID",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "成功"
+                    },
+                    "404": {
+                        "description": "見つかりません"
+                    },
+                    "401": {
+                        "description": "認証エラー"
+                    }
+                },
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ]
+            },
+            "put": {
+                "tags": [
+                    "Activities"
+                ],
+                "summary": "活動履歴更新",
+                "operationId": "9ee79a30106f9939acf271a9ec4f5db2",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "description": "活動履歴ID",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "更新成功"
+                    },
+                    "422": {
+                        "description": "バリデーションエラー"
+                    },
+                    "401": {
+                        "description": "認証エラー"
+                    }
+                },
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ]
+            },
+            "delete": {
+                "tags": [
+                    "Activities"
+                ],
+                "summary": "活動履歴削除",
+                "operationId": "7a28eb2a3ace44556263bb274c3081cc",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "description": "活動履歴ID",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "削除成功"
+                    },
+                    "401": {
+                        "description": "認証エラー"
+                    }
+                },
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/api/v1/cards": {
+            "get": {
+                "tags": [
+                    "BusinessCards"
+                ],
+                "summary": "名刺一覧取得",
+                "operationId": "8cf23f8988ac1a3393482225444acf75",
+                "responses": {
+                    "200": {
+                        "description": "成功"
+                    },
+                    "401": {
+                        "description": "認証エラー"
+                    }
+                },
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ]
+            },
+            "post": {
+                "tags": [
+                    "BusinessCards"
+                ],
+                "summary": "名刺画像OCR解析・登録（Google Vision + Claude API）",
+                "operationId": "a769d795ae4ba73b0f25c5b2552b81f0",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "multipart/form-data": {
+                            "schema": {
+                                "properties": {
+                                    "images[]": {
+                                        "description": "JPEG/PNG画像（最大20枚・各10MB）",
+                                        "type": "array",
+                                        "items": {
+                                            "type": "string",
+                                            "format": "binary"
+                                        }
+                                    }
+                                },
+                                "type": "object"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "登録成功（顧客・担当者も自動登録）"
+                    },
+                    "422": {
+                        "description": "バリデーションエラー"
+                    },
+                    "500": {
+                        "description": "OCR処理失敗"
+                    },
+                    "401": {
+                        "description": "認証エラー"
+                    }
+                },
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/api/v1/cards/{id}": {
+            "get": {
+                "tags": [
+                    "BusinessCards"
+                ],
+                "summary": "名刺詳細取得",
+                "operationId": "285a648c51ca1005f19ba78a0363fa3e",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "description": "名刺ID",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "成功"
+                    },
+                    "404": {
+                        "description": "見つかりません"
+                    },
+                    "401": {
+                        "description": "認証エラー"
+                    }
+                },
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ]
+            },
+            "put": {
+                "tags": [
+                    "BusinessCards"
+                ],
+                "summary": "名刺情報更新",
+                "operationId": "123a17dfccefda477d296bca3ca5010f",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "description": "名刺ID",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "更新成功"
+                    },
+                    "422": {
+                        "description": "バリデーションエラー"
+                    },
+                    "401": {
+                        "description": "認証エラー"
+                    }
+                },
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ]
+            },
+            "delete": {
+                "tags": [
+                    "BusinessCards"
+                ],
+                "summary": "名刺削除（Supabase Storageからも削除）",
+                "operationId": "46554027ad9db59be9018fc18e6214a1",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "description": "名刺ID",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "削除成功"
+                    },
+                    "401": {
+                        "description": "認証エラー"
+                    }
+                },
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/api/v1/contacts": {
+            "get": {
+                "tags": [
+                    "Contacts"
+                ],
+                "summary": "担当者一覧取得",
+                "operationId": "b96f6b9663eca5d37c581f0cf15c471d",
+                "parameters": [
+                    {
+                        "name": "search",
+                        "in": "query",
+                        "description": "氏名・部署・役職・会社名で検索",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "customer_id",
+                        "in": "query",
+                        "description": "顧客IDで絞り込み",
+                        "required": false,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    },
+                    {
+                        "name": "page",
+                        "in": "query",
+                        "description": "ページ番号",
+                        "required": false,
+                        "schema": {
+                            "type": "integer",
+                            "default": 1
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "成功"
+                    },
+                    "401": {
+                        "description": "認証エラー"
+                    }
+                },
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ]
+            },
+            "post": {
+                "tags": [
+                    "Contacts"
+                ],
+                "summary": "担当者登録",
+                "operationId": "bf0b491f5df1cc8cdb0995ea168b9ccd",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "required": [
+                                    "customer_id",
+                                    "name"
+                                ],
+                                "properties": {
+                                    "customer_id": {
+                                        "type": "string",
+                                        "format": "uuid",
+                                        "example": "xxxx-xxxx"
+                                    },
+                                    "name": {
+                                        "type": "string",
+                                        "example": "山田 太郎"
+                                    },
+                                    "department": {
+                                        "type": "string",
+                                        "example": "営業部"
+                                    },
+                                    "position": {
+                                        "type": "string",
+                                        "example": "部長"
+                                    },
+                                    "email": {
+                                        "type": "string",
+                                        "example": "yamada@example.com"
+                                    },
+                                    "phone": {
+                                        "type": "string",
+                                        "example": "03-1234-5678"
+                                    },
+                                    "notes": {
+                                        "type": "string",
+                                        "example": "備考"
+                                    }
+                                },
+                                "type": "object"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "登録成功"
+                    },
+                    "422": {
+                        "description": "バリデーションエラー"
+                    },
+                    "401": {
+                        "description": "認証エラー"
+                    }
+                },
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/api/v1/contacts/{id}": {
+            "get": {
+                "tags": [
+                    "Contacts"
+                ],
+                "summary": "担当者詳細取得",
+                "operationId": "627b088f95647a22776924ddebefe7de",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "description": "担当者ID",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "成功"
+                    },
+                    "404": {
+                        "description": "担当者が見つかりません"
+                    },
+                    "401": {
+                        "description": "認証エラー"
+                    }
+                },
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ]
+            },
+            "put": {
+                "tags": [
+                    "Contacts"
+                ],
+                "summary": "担当者更新",
+                "operationId": "7f57e34a4cc2a52acf2c4355ee2b42d4",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "description": "担当者ID",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "required": [
+                                    "customer_id",
+                                    "name"
+                                ],
+                                "properties": {
+                                    "customer_id": {
+                                        "type": "string",
+                                        "format": "uuid"
+                                    },
+                                    "name": {
+                                        "type": "string",
+                                        "example": "山田 太郎"
+                                    },
+                                    "department": {
+                                        "type": "string",
+                                        "example": "営業部"
+                                    },
+                                    "position": {
+                                        "type": "string",
+                                        "example": "部長"
+                                    },
+                                    "email": {
+                                        "type": "string",
+                                        "example": "yamada@example.com"
+                                    },
+                                    "phone": {
+                                        "type": "string",
+                                        "example": "03-1234-5678"
+                                    },
+                                    "notes": {
+                                        "type": "string"
+                                    }
+                                },
+                                "type": "object"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "更新成功"
+                    },
+                    "422": {
+                        "description": "バリデーションエラー"
+                    },
+                    "401": {
+                        "description": "認証エラー"
+                    }
+                },
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ]
+            },
+            "delete": {
+                "tags": [
+                    "Contacts"
+                ],
+                "summary": "担当者削除",
+                "operationId": "36c5deaf97d3489715bbeb0d3f13fc03",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "description": "担当者ID",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "削除成功"
+                    },
+                    "404": {
+                        "description": "担当者が見つかりません"
+                    },
+                    "401": {
+                        "description": "認証エラー"
+                    }
+                },
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/api/v1/customers": {
+            "get": {
+                "tags": [
+                    "Customers"
+                ],
+                "summary": "顧客一覧取得",
+                "operationId": "fddf8e3800951c00bc5fbd50026d7e6a",
+                "parameters": [
+                    {
+                        "name": "search",
+                        "in": "query",
+                        "description": "会社名・業種で検索",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "industry",
+                        "in": "query",
+                        "description": "業種フィルター",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "page",
+                        "in": "query",
+                        "description": "ページ番号",
+                        "required": false,
+                        "schema": {
+                            "type": "integer",
+                            "default": 1
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "成功"
+                    },
+                    "401": {
+                        "description": "認証エラー"
+                    }
+                },
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ]
+            },
+            "post": {
+                "tags": [
+                    "Customers"
+                ],
+                "summary": "顧客登録",
+                "operationId": "59d57e1ee7b485895d41c89b775a8779",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "required": [
+                                    "company_name"
+                                ],
+                                "properties": {
+                                    "company_name": {
+                                        "type": "string",
+                                        "example": "株式会社サンプル"
+                                    },
+                                    "industry": {
+                                        "type": "string",
+                                        "example": "IT"
+                                    },
+                                    "phone": {
+                                        "type": "string",
+                                        "example": "03-1234-5678"
+                                    },
+                                    "address": {
+                                        "type": "string",
+                                        "example": "東京都千代田区1-1-1"
+                                    },
+                                    "employee_count": {
+                                        "type": "integer",
+                                        "example": 100
+                                    },
+                                    "website": {
+                                        "type": "string",
+                                        "example": "https://example.com"
+                                    },
+                                    "notes": {
+                                        "type": "string",
+                                        "example": "備考"
+                                    }
+                                },
+                                "type": "object"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "登録成功"
+                    },
+                    "422": {
+                        "description": "バリデーションエラー"
+                    },
+                    "401": {
+                        "description": "認証エラー"
+                    }
+                },
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/api/v1/customers/{id}": {
+            "get": {
+                "tags": [
+                    "Customers"
+                ],
+                "summary": "顧客詳細取得",
+                "operationId": "302154171cd888ac30d0cbd25d85aee6",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "description": "顧客ID",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "成功"
+                    },
+                    "404": {
+                        "description": "顧客が見つかりません"
+                    },
+                    "401": {
+                        "description": "認証エラー"
+                    }
+                },
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ]
+            },
+            "put": {
+                "tags": [
+                    "Customers"
+                ],
+                "summary": "顧客更新",
+                "operationId": "fa0dd09ce9530b138e12074e5b8950f2",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "description": "顧客ID",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "required": [
+                                    "company_name"
+                                ],
+                                "properties": {
+                                    "company_name": {
+                                        "type": "string",
+                                        "example": "株式会社サンプル"
+                                    },
+                                    "industry": {
+                                        "type": "string",
+                                        "example": "IT"
+                                    },
+                                    "phone": {
+                                        "type": "string",
+                                        "example": "03-1234-5678"
+                                    },
+                                    "address": {
+                                        "type": "string",
+                                        "example": "東京都千代田区1-1-1"
+                                    },
+                                    "employee_count": {
+                                        "type": "integer",
+                                        "example": 100
+                                    },
+                                    "website": {
+                                        "type": "string",
+                                        "example": "https://example.com"
+                                    },
+                                    "notes": {
+                                        "type": "string",
+                                        "example": "備考"
+                                    }
+                                },
+                                "type": "object"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "更新成功"
+                    },
+                    "422": {
+                        "description": "バリデーションエラー"
+                    },
+                    "401": {
+                        "description": "認証エラー"
+                    }
+                },
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ]
+            },
+            "delete": {
+                "tags": [
+                    "Customers"
+                ],
+                "summary": "顧客削除",
+                "operationId": "b64a35742d1c3be4f64ddbb4557730b7",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "description": "顧客ID",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "削除成功"
+                    },
+                    "404": {
+                        "description": "顧客が見つかりません"
+                    },
+                    "401": {
+                        "description": "認証エラー"
+                    }
+                },
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/api/v1/customers/industries": {
+            "get": {
+                "tags": [
+                    "Customers"
+                ],
+                "summary": "業種一覧取得（フィルター用）",
+                "operationId": "e82eaf44bc53df9296a07ebcd819fdf8",
+                "responses": {
+                    "200": {
+                        "description": "業種の配列"
+                    }
+                },
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/api/v1/dashboard": {
+            "get": {
+                "tags": [
+                    "Dashboard"
+                ],
+                "summary": "ダッシュボード情報取得",
+                "operationId": "a348324e41ded325da16e029a5efa2ce",
+                "responses": {
+                    "200": {
+                        "description": "KPI・パイプライン・月別売上・タスク・活動履歴・成約商談"
+                    },
+                    "401": {
+                        "description": "認証エラー"
+                    }
+                },
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/api/v1/deals": {
+            "get": {
+                "tags": [
+                    "Deals"
+                ],
+                "summary": "案件一覧取得",
+                "operationId": "0b72e865b419ef936cffdad687e7d754",
+                "parameters": [
+                    {
+                        "name": "search",
+                        "in": "query",
+                        "description": "案件名・会社名で検索",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "status",
+                        "in": "query",
+                        "description": "ステータスで絞り込み",
+                        "required": false,
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "新規",
+                                "提案",
+                                "交渉",
+                                "成約",
+                                "失注",
+                                "稼働中",
+                                "更新交渉中",
+                                "期限切れ"
+                            ]
+                        }
+                    },
+                    {
+                        "name": "customer_id",
+                        "in": "query",
+                        "description": "顧客IDで絞り込み",
+                        "required": false,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    },
+                    {
+                        "name": "amount_min",
+                        "in": "query",
+                        "description": "金額（下限）",
+                        "required": false,
+                        "schema": {
+                            "type": "number"
+                        }
+                    },
+                    {
+                        "name": "amount_max",
+                        "in": "query",
+                        "description": "金額（上限）",
+                        "required": false,
+                        "schema": {
+                            "type": "number"
+                        }
+                    },
+                    {
+                        "name": "page",
+                        "in": "query",
+                        "description": "ページ番号",
+                        "required": false,
+                        "schema": {
+                            "type": "integer",
+                            "default": 1
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "成功"
+                    },
+                    "401": {
+                        "description": "認証エラー"
+                    }
+                },
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ]
+            },
+            "post": {
+                "tags": [
+                    "Deals"
+                ],
+                "summary": "案件登録",
+                "operationId": "f0fc3a3bcdc35f7c3473857896f8667b",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "required": [
+                                    "customer_id",
+                                    "title",
+                                    "status"
+                                ],
+                                "properties": {
+                                    "customer_id": {
+                                        "type": "string",
+                                        "format": "uuid"
+                                    },
+                                    "contact_id": {
+                                        "type": "string",
+                                        "format": "uuid"
+                                    },
+                                    "title": {
+                                        "type": "string",
+                                        "example": "新規SES案件"
+                                    },
+                                    "amount": {
+                                        "type": "number",
+                                        "example": 500000
+                                    },
+                                    "status": {
+                                        "type": "string",
+                                        "enum": [
+                                            "新規",
+                                            "提案",
+                                            "交渉",
+                                            "成約",
+                                            "失注",
+                                            "稼働中",
+                                            "更新交渉中",
+                                            "期限切れ"
+                                        ]
+                                    },
+                                    "probability": {
+                                        "type": "integer",
+                                        "example": 70
+                                    },
+                                    "expected_close_date": {
+                                        "type": "string",
+                                        "format": "date",
+                                        "example": "2026-05-31"
+                                    },
+                                    "notes": {
+                                        "type": "string"
+                                    }
+                                },
+                                "type": "object"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "登録成功"
+                    },
+                    "422": {
+                        "description": "バリデーションエラー"
+                    },
+                    "401": {
+                        "description": "認証エラー"
+                    }
+                },
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/api/v1/deals/{id}": {
+            "get": {
+                "tags": [
+                    "Deals"
+                ],
+                "summary": "案件詳細取得",
+                "operationId": "8e0d48fb9e07918a1f79e18e81eaa516",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "description": "案件ID",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "成功"
+                    },
+                    "404": {
+                        "description": "案件が見つかりません"
+                    },
+                    "401": {
+                        "description": "認証エラー"
+                    }
+                },
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ]
+            },
+            "put": {
+                "tags": [
+                    "Deals"
+                ],
+                "summary": "案件更新",
+                "operationId": "5694e7a8015d8959fab12e392fe559b5",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "description": "案件ID",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "更新成功"
+                    },
+                    "422": {
+                        "description": "バリデーションエラー"
+                    },
+                    "401": {
+                        "description": "認証エラー"
+                    }
+                },
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ]
+            },
+            "delete": {
+                "tags": [
+                    "Deals"
+                ],
+                "summary": "案件削除",
+                "operationId": "b4ce678fa18fdcc64e0ac0878a89fa49",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "description": "案件ID",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "削除成功"
+                    },
+                    "404": {
+                        "description": "案件が見つかりません"
+                    },
+                    "401": {
+                        "description": "認証エラー"
+                    }
+                },
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/api/v1/emails": {
+            "get": {
+                "tags": [
+                    "Emails"
+                ],
+                "summary": "メール一覧取得",
+                "operationId": "6c3485ecb0f17fdfbe796aa0ab2934d6",
+                "parameters": [
+                    {
+                        "name": "search",
+                        "in": "query",
+                        "description": "件名・送信者・本文で検索",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "unread",
+                        "in": "query",
+                        "description": "未読のみ",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    },
+                    {
+                        "name": "category",
+                        "in": "query",
+                        "description": "カテゴリ",
+                        "required": false,
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "engineer",
+                                "project"
+                            ]
+                        }
+                    },
+                    {
+                        "name": "per_page",
+                        "in": "query",
+                        "description": "1ページ件数",
+                        "required": false,
+                        "schema": {
+                            "type": "integer",
+                            "default": 30
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "成功"
+                    },
+                    "401": {
+                        "description": "認証エラー"
+                    }
+                },
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/api/v1/emails/{id}": {
+            "get": {
+                "tags": [
+                    "Emails"
+                ],
+                "summary": "メール詳細取得（自動既読）",
+                "operationId": "03ab37d74a110a1d3f447afc4141e49c",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "description": "メールID",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "成功"
+                    },
+                    "404": {
+                        "description": "見つかりません"
+                    },
+                    "401": {
+                        "description": "認証エラー"
+                    }
+                },
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/api/v1/emails/sync": {
+            "post": {
+                "tags": [
+                    "Emails"
+                ],
+                "summary": "Gmailから最新メールを同期",
+                "operationId": "aed3ee3a1a946972c3aa06693693032d",
+                "responses": {
+                    "200": {
+                        "description": "同期成功"
+                    },
+                    "401": {
+                        "description": "Gmailトークン失効"
+                    },
+                    "422": {
+                        "description": "Gmail未接続"
+                    },
+                    "500": {
+                        "description": "同期失敗"
+                    }
+                },
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/api/v1/emails/{id}/link": {
+            "patch": {
+                "tags": [
+                    "Emails"
+                ],
+                "summary": "メールを担当者・商談・顧客に紐付け",
+                "operationId": "ead77b705f6f6579f246b6304ad5ce26",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "description": "メールID",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "成功"
+                    },
+                    "401": {
+                        "description": "認証エラー"
+                    }
+                },
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/api/v1/emails/unread-count": {
+            "get": {
+                "tags": [
+                    "Emails"
+                ],
+                "summary": "未読メール件数取得",
+                "operationId": "4f5d96d975403d70199bb1b53eda428f",
+                "responses": {
+                    "200": {
+                        "description": "成功"
+                    },
+                    "401": {
+                        "description": "認証エラー"
+                    }
+                },
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/api/v1/emails/mark-all-read": {
+            "post": {
+                "tags": [
+                    "Emails"
+                ],
+                "summary": "全メールを既読にする",
+                "operationId": "951808147ba27510d03081c86ffedaa4",
+                "responses": {
+                    "200": {
+                        "description": "成功"
+                    },
+                    "401": {
+                        "description": "認証エラー"
+                    }
+                },
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/api/v1/engineers": {
+            "get": {
+                "tags": [
+                    "Engineers"
+                ],
+                "summary": "技術者一覧取得",
+                "operationId": "9c3b4e8b150b44caa0bd48f3b4951c94",
+                "parameters": [
+                    {
+                        "name": "search",
+                        "in": "query",
+                        "description": "氏名・所属で検索",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "skill_id",
+                        "in": "query",
+                        "description": "スキルIDで絞り込み",
+                        "required": false,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "name": "work_style",
+                        "in": "query",
+                        "description": "勤務形態",
+                        "required": false,
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "remote",
+                                "office",
+                                "hybrid"
+                            ]
+                        }
+                    },
+                    {
+                        "name": "available_only",
+                        "in": "query",
+                        "description": "稼働可能のみ",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "成功"
+                    },
+                    "401": {
+                        "description": "認証エラー"
+                    }
+                },
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ]
+            },
+            "post": {
+                "tags": [
+                    "Engineers"
+                ],
+                "summary": "技術者登録",
+                "operationId": "f9ccdcc8e769c1ca06a09688c4b02216",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "required": [
+                                    "name"
+                                ],
+                                "properties": {
+                                    "name": {
+                                        "type": "string",
+                                        "example": "鈴木 一郎"
+                                    },
+                                    "name_kana": {
+                                        "type": "string",
+                                        "example": "スズキ イチロウ"
+                                    },
+                                    "email": {
+                                        "type": "string",
+                                        "example": "suzuki@example.com"
+                                    },
+                                    "affiliation": {
+                                        "type": "string",
+                                        "example": "株式会社サンプル"
+                                    },
+                                    "affiliation_email": {
+                                        "type": "string",
+                                        "example": "info@sample.co.jp"
+                                    },
+                                    "affiliation_type": {
+                                        "type": "string",
+                                        "enum": [
+                                            "self",
+                                            "first_sub",
+                                            "bp",
+                                            "bp_member",
+                                            "contract",
+                                            "freelance",
+                                            "joining",
+                                            "hiring"
+                                        ]
+                                    },
+                                    "work_style": {
+                                        "type": "string",
+                                        "enum": [
+                                            "remote",
+                                            "office",
+                                            "hybrid"
+                                        ]
+                                    },
+                                    "available_from": {
+                                        "type": "string",
+                                        "format": "date"
+                                    },
+                                    "availability_status": {
+                                        "type": "string",
+                                        "enum": [
+                                            "available",
+                                            "working",
+                                            "scheduled"
+                                        ]
+                                    }
+                                },
+                                "type": "object"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "登録成功"
+                    },
+                    "422": {
+                        "description": "バリデーションエラー"
+                    },
+                    "401": {
+                        "description": "認証エラー"
+                    }
+                },
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/api/v1/engineers/{id}": {
+            "get": {
+                "tags": [
+                    "Engineers"
+                ],
+                "summary": "技術者詳細取得",
+                "operationId": "9af696003b1f92b7fe445b46120680ed",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "description": "技術者ID",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "成功"
+                    },
+                    "404": {
+                        "description": "見つかりません"
+                    },
+                    "401": {
+                        "description": "認証エラー"
+                    }
+                },
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ]
+            },
+            "put": {
+                "tags": [
+                    "Engineers"
+                ],
+                "summary": "技術者更新",
+                "operationId": "b1740b8117ae6ba0d39a64da3cda283e",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "description": "技術者ID",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "更新成功"
+                    },
+                    "422": {
+                        "description": "バリデーションエラー"
+                    },
+                    "401": {
+                        "description": "認証エラー"
+                    }
+                },
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ]
+            },
+            "delete": {
+                "tags": [
+                    "Engineers"
+                ],
+                "summary": "技術者削除",
+                "operationId": "05280c310b595625cf0f693cf22e5bb3",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "description": "技術者ID",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "削除成功"
+                    },
+                    "401": {
+                        "description": "認証エラー"
+                    }
+                },
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/api/v1/engineers/parse-skill-sheet": {
+            "post": {
+                "tags": [
+                    "Engineers"
+                ],
+                "summary": "スキルシート解析（Claude API）",
+                "operationId": "3ccdde120df27b03790c07523c125124",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "multipart/form-data": {
+                            "schema": {
+                                "properties": {
+                                    "file": {
+                                        "description": "PDF/Excel/Wordファイル（最大10MB）",
+                                        "type": "string",
+                                        "format": "binary"
+                                    }
+                                },
+                                "type": "object"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "解析成功（技術者情報・スキル一覧を返す）"
+                    },
+                    "422": {
+                        "description": "ファイル解析失敗"
+                    },
+                    "401": {
+                        "description": "認証エラー"
+                    }
+                },
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/api/v1/matching/projects/{id}/engineers": {
+            "get": {
+                "tags": [
+                    "Matching"
+                ],
+                "summary": "案件に対するおすすめ技術者一覧",
+                "operationId": "c32b81eb71c8d9ac2f685e8c2a9ccf63",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "description": "案件ID",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "スコア付き技術者一覧"
+                    },
+                    "404": {
+                        "description": "案件が見つかりません"
+                    },
+                    "401": {
+                        "description": "認証エラー"
+                    }
+                },
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/api/v1/matching/engineers/{id}/projects": {
+            "get": {
+                "tags": [
+                    "Matching"
+                ],
+                "summary": "技術者に対するおすすめ案件一覧",
+                "operationId": "52bef4cc70d81e25a46182b3b4173d39",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "description": "技術者ID",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "スコア付き案件一覧"
+                    },
+                    "404": {
+                        "description": "技術者が見つかりません"
+                    },
+                    "401": {
+                        "description": "認証エラー"
+                    }
+                },
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/api/v1/matching/projects/{projectId}/engineers/{engineerId}": {
+            "get": {
+                "tags": [
+                    "Matching"
+                ],
+                "summary": "案件×技術者マッチングスコア詳細",
+                "operationId": "d64bbf5db4e98439dde49021a6c1f5f1",
+                "parameters": [
+                    {
+                        "name": "projectId",
+                        "in": "path",
+                        "description": "案件ID",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "name": "engineerId",
+                        "in": "path",
+                        "description": "技術者ID",
+                        "required": true,
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "スコア詳細とAI説明文"
+                    },
+                    "401": {
+                        "description": "認証エラー"
+                    }
+                },
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/api/v1/matching/skills": {
+            "get": {
+                "tags": [
+                    "Matching"
+                ],
+                "summary": "スキルマスタ一覧取得",
+                "operationId": "a4bae7cb9fedbb2da75c188bd2cfb9ec",
+                "parameters": [
+                    {
+                        "name": "category",
+                        "in": "query",
+                        "description": "カテゴリ",
+                        "required": false,
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "language",
+                                "framework",
+                                "database",
+                                "infrastructure",
+                                "other"
+                            ]
+                        }
+                    },
+                    {
+                        "name": "search",
+                        "in": "query",
+                        "description": "スキル名で検索",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "スキル一覧"
+                    },
+                    "401": {
+                        "description": "認証エラー"
+                    }
+                },
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ]
+            },
+            "post": {
+                "tags": [
+                    "Matching"
+                ],
+                "summary": "スキル登録（管理用）",
+                "operationId": "05640a0b0626bb7012bf0ecaf5b49d1c",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "required": [
+                                    "name"
+                                ],
+                                "properties": {
+                                    "name": {
+                                        "type": "string",
+                                        "example": "Laravel"
+                                    },
+                                    "category": {
+                                        "type": "string",
+                                        "enum": [
+                                            "language",
+                                            "framework",
+                                            "database",
+                                            "infrastructure",
+                                            "other"
+                                        ]
+                                    }
+                                },
+                                "type": "object"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "登録成功"
+                    },
+                    "422": {
+                        "description": "バリデーションエラー"
+                    },
+                    "401": {
+                        "description": "認証エラー"
+                    }
+                },
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/api/v1/tasks": {
+            "get": {
+                "tags": [
+                    "Tasks"
+                ],
+                "summary": "タスク一覧取得",
+                "operationId": "89f841aadff57d91e6136a738fd4a0f6",
+                "parameters": [
+                    {
+                        "name": "search",
+                        "in": "query",
+                        "description": "タスク名・会社名で検索",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "status",
+                        "in": "query",
+                        "description": "ステータス",
+                        "required": false,
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "未着手",
+                                "進行中",
+                                "完了"
+                            ]
+                        }
+                    },
+                    {
+                        "name": "priority",
+                        "in": "query",
+                        "description": "優先度",
+                        "required": false,
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "高",
+                                "中",
+                                "低"
+                            ]
+                        }
+                    },
+                    {
+                        "name": "due_filter",
+                        "in": "query",
+                        "description": "期限フィルター",
+                        "required": false,
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "today",
+                                "overdue",
+                                "week"
+                            ]
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "成功"
+                    },
+                    "401": {
+                        "description": "認証エラー"
+                    }
+                },
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ]
+            },
+            "post": {
+                "tags": [
+                    "Tasks"
+                ],
+                "summary": "タスク登録",
+                "operationId": "5325d35634686a28458a46c33dbf99dd",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "required": [
+                                    "title",
+                                    "priority",
+                                    "status"
+                                ],
+                                "properties": {
+                                    "title": {
+                                        "type": "string",
+                                        "example": "提案書作成"
+                                    },
+                                    "priority": {
+                                        "type": "string",
+                                        "enum": [
+                                            "高",
+                                            "中",
+                                            "低"
+                                        ]
+                                    },
+                                    "status": {
+                                        "type": "string",
+                                        "enum": [
+                                            "未着手",
+                                            "進行中",
+                                            "完了"
+                                        ]
+                                    },
+                                    "due_date": {
+                                        "type": "string",
+                                        "format": "date",
+                                        "example": "2026-04-30"
+                                    },
+                                    "customer_id": {
+                                        "type": "string",
+                                        "format": "uuid"
+                                    },
+                                    "deal_id": {
+                                        "type": "string",
+                                        "format": "uuid"
+                                    },
+                                    "description": {
+                                        "type": "string"
+                                    }
+                                },
+                                "type": "object"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "登録成功"
+                    },
+                    "422": {
+                        "description": "バリデーションエラー"
+                    },
+                    "401": {
+                        "description": "認証エラー"
+                    }
+                },
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/api/v1/tasks/{id}": {
+            "get": {
+                "tags": [
+                    "Tasks"
+                ],
+                "summary": "タスク詳細取得",
+                "operationId": "9c708295c919ce91e53ecdcc78244841",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "description": "タスクID",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "成功"
+                    },
+                    "404": {
+                        "description": "見つかりません"
+                    },
+                    "401": {
+                        "description": "認証エラー"
+                    }
+                },
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ]
+            },
+            "put": {
+                "tags": [
+                    "Tasks"
+                ],
+                "summary": "タスク更新",
+                "operationId": "10a24bf5d2e53be95928af7d28fd0e70",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "description": "タスクID",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "更新成功"
+                    },
+                    "422": {
+                        "description": "バリデーションエラー"
+                    },
+                    "401": {
+                        "description": "認証エラー"
+                    }
+                },
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ]
+            },
+            "delete": {
+                "tags": [
+                    "Tasks"
+                ],
+                "summary": "タスク削除",
+                "operationId": "04a16abb56b504238ecbc98f6c561962",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "description": "タスクID",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "削除成功"
+                    },
+                    "401": {
+                        "description": "認証エラー"
+                    }
+                },
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/api/v1/tasks/{id}/status": {
+            "patch": {
+                "tags": [
+                    "Tasks"
+                ],
+                "summary": "タスクステータス更新",
+                "operationId": "f5853a5f3540bbe2a7b1140aca03c2f3",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "description": "タスクID",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "required": [
+                                    "status"
+                                ],
+                                "properties": {
+                                    "status": {
+                                        "type": "string",
+                                        "enum": [
+                                            "未着手",
+                                            "進行中",
+                                            "完了"
+                                        ]
+                                    }
+                                },
+                                "type": "object"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "更新成功"
+                    },
+                    "401": {
+                        "description": "認証エラー"
+                    }
+                },
+                "security": [
+                    {
+                        "bearerAuth": []
+                    }
+                ]
+            }
+        }
+    },
+    "components": {
+        "securitySchemes": {
+            "bearerAuth": {
+                "type": "http",
+                "description": "Supabase Auth JWT トークン",
+                "bearerFormat": "JWT",
+                "scheme": "bearer"
+            }
+        }
+    },
+    "tags": [
+        {
+            "name": "Customers",
+            "description": "顧客管理"
+        },
+        {
+            "name": "Contacts",
+            "description": "担当者管理"
+        },
+        {
+            "name": "Deals",
+            "description": "案件管理"
+        },
+        {
+            "name": "Engineers",
+            "description": "技術者管理"
+        },
+        {
+            "name": "Activities",
+            "description": "活動履歴"
+        },
+        {
+            "name": "Emails",
+            "description": "メール"
+        },
+        {
+            "name": "Matching",
+            "description": "マッチング"
+        },
+        {
+            "name": "Tasks",
+            "description": "タスク管理"
+        },
+        {
+            "name": "BusinessCards",
+            "description": "名刺管理"
+        },
+        {
+            "name": "Dashboard",
+            "description": "ダッシュボード"
+        }
+    ]
+}

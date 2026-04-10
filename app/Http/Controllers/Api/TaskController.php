@@ -7,9 +7,26 @@ use App\Models\Task;
 use App\Http\Resources\TaskResource;
 use Illuminate\Http\Request;
 use Carbon\Carbon;
+use OpenApi\Attributes as OA;
 
 class TaskController extends Controller
 {
+    #[OA\Get(
+        path: '/api/v1/tasks',
+        summary: 'タスク一覧取得',
+        security: [['bearerAuth' => []]],
+        tags: ['Tasks'],
+        parameters: [
+            new OA\Parameter(name: 'search', in: 'query', required: false, description: 'タスク名・会社名で検索', schema: new OA\Schema(type: 'string')),
+            new OA\Parameter(name: 'status', in: 'query', required: false, description: 'ステータス', schema: new OA\Schema(type: 'string', enum: ['未着手', '進行中', '完了'])),
+            new OA\Parameter(name: 'priority', in: 'query', required: false, description: '優先度', schema: new OA\Schema(type: 'string', enum: ['高', '中', '低'])),
+            new OA\Parameter(name: 'due_filter', in: 'query', required: false, description: '期限フィルター', schema: new OA\Schema(type: 'string', enum: ['today', 'overdue', 'week'])),
+        ],
+        responses: [
+            new OA\Response(response: 200, description: '成功'),
+            new OA\Response(response: 401, description: '認証エラー'),
+        ]
+    )]
     public function index(Request $request)
     {
         $today = Carbon::today();
@@ -53,6 +70,32 @@ class TaskController extends Controller
         return TaskResource::collection($tasks);
     }
 
+    #[OA\Post(
+        path: '/api/v1/tasks',
+        summary: 'タスク登録',
+        security: [['bearerAuth' => []]],
+        tags: ['Tasks'],
+        requestBody: new OA\RequestBody(
+            required: true,
+            content: new OA\JsonContent(
+                required: ['title', 'priority', 'status'],
+                properties: [
+                    new OA\Property(property: 'title', type: 'string', example: '提案書作成'),
+                    new OA\Property(property: 'priority', type: 'string', enum: ['高', '中', '低']),
+                    new OA\Property(property: 'status', type: 'string', enum: ['未着手', '進行中', '完了']),
+                    new OA\Property(property: 'due_date', type: 'string', format: 'date', example: '2026-04-30'),
+                    new OA\Property(property: 'customer_id', type: 'string', format: 'uuid'),
+                    new OA\Property(property: 'deal_id', type: 'string', format: 'uuid'),
+                    new OA\Property(property: 'description', type: 'string'),
+                ]
+            )
+        ),
+        responses: [
+            new OA\Response(response: 201, description: '登録成功'),
+            new OA\Response(response: 422, description: 'バリデーションエラー'),
+            new OA\Response(response: 401, description: '認証エラー'),
+        ]
+    )]
     public function store(Request $request)
     {
         $validated = $request->validate([
@@ -70,12 +113,40 @@ class TaskController extends Controller
         return new TaskResource($task);
     }
 
+    #[OA\Get(
+        path: '/api/v1/tasks/{id}',
+        summary: 'タスク詳細取得',
+        security: [['bearerAuth' => []]],
+        tags: ['Tasks'],
+        parameters: [
+            new OA\Parameter(name: 'id', in: 'path', required: true, description: 'タスクID', schema: new OA\Schema(type: 'string', format: 'uuid')),
+        ],
+        responses: [
+            new OA\Response(response: 200, description: '成功'),
+            new OA\Response(response: 404, description: '見つかりません'),
+            new OA\Response(response: 401, description: '認証エラー'),
+        ]
+    )]
     public function show(Task $task)
     {
         $task->load(['customer', 'deal', 'user']);
         return new TaskResource($task);
     }
 
+    #[OA\Put(
+        path: '/api/v1/tasks/{id}',
+        summary: 'タスク更新',
+        security: [['bearerAuth' => []]],
+        tags: ['Tasks'],
+        parameters: [
+            new OA\Parameter(name: 'id', in: 'path', required: true, description: 'タスクID', schema: new OA\Schema(type: 'string', format: 'uuid')),
+        ],
+        responses: [
+            new OA\Response(response: 200, description: '更新成功'),
+            new OA\Response(response: 422, description: 'バリデーションエラー'),
+            new OA\Response(response: 401, description: '認証エラー'),
+        ]
+    )]
     public function update(Request $request, Task $task)
     {
         $validated = $request->validate([
@@ -92,6 +163,28 @@ class TaskController extends Controller
         return new TaskResource($task);
     }
 
+    #[OA\Patch(
+        path: '/api/v1/tasks/{id}/status',
+        summary: 'タスクステータス更新',
+        security: [['bearerAuth' => []]],
+        tags: ['Tasks'],
+        parameters: [
+            new OA\Parameter(name: 'id', in: 'path', required: true, description: 'タスクID', schema: new OA\Schema(type: 'string', format: 'uuid')),
+        ],
+        requestBody: new OA\RequestBody(
+            required: true,
+            content: new OA\JsonContent(
+                required: ['status'],
+                properties: [
+                    new OA\Property(property: 'status', type: 'string', enum: ['未着手', '進行中', '完了']),
+                ]
+            )
+        ),
+        responses: [
+            new OA\Response(response: 200, description: '更新成功'),
+            new OA\Response(response: 401, description: '認証エラー'),
+        ]
+    )]
     public function updateStatus(Request $request, Task $task)
     {
         $request->validate(
@@ -102,6 +195,19 @@ class TaskController extends Controller
         return new TaskResource($task);
     }
 
+    #[OA\Delete(
+        path: '/api/v1/tasks/{id}',
+        summary: 'タスク削除',
+        security: [['bearerAuth' => []]],
+        tags: ['Tasks'],
+        parameters: [
+            new OA\Parameter(name: 'id', in: 'path', required: true, description: 'タスクID', schema: new OA\Schema(type: 'string', format: 'uuid')),
+        ],
+        responses: [
+            new OA\Response(response: 204, description: '削除成功'),
+            new OA\Response(response: 401, description: '認証エラー'),
+        ]
+    )]
     public function destroy(Task $task)
     {
         $task->delete();

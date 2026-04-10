@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Engineer;
+use OpenApi\Attributes as OA;
 use App\Models\EngineerProfile;
 use App\Models\EngineerSkill;
 use App\Models\Skill;
@@ -60,6 +61,22 @@ class EngineerController extends Controller
         ];
     }
 
+    #[OA\Get(
+        path: '/api/v1/engineers',
+        summary: '技術者一覧取得',
+        security: [['bearerAuth' => []]],
+        tags: ['Engineers'],
+        parameters: [
+            new OA\Parameter(name: 'search', in: 'query', required: false, description: '氏名・所属で検索', schema: new OA\Schema(type: 'string')),
+            new OA\Parameter(name: 'skill_id', in: 'query', required: false, description: 'スキルIDで絞り込み', schema: new OA\Schema(type: 'integer')),
+            new OA\Parameter(name: 'work_style', in: 'query', required: false, description: '勤務形態', schema: new OA\Schema(type: 'string', enum: ['remote', 'office', 'hybrid'])),
+            new OA\Parameter(name: 'available_only', in: 'query', required: false, description: '稼働可能のみ', schema: new OA\Schema(type: 'boolean')),
+        ],
+        responses: [
+            new OA\Response(response: 200, description: '成功'),
+            new OA\Response(response: 401, description: '認証エラー'),
+        ]
+    )]
     public function index(Request $request): JsonResponse
     {
         $tenantId = auth()->user()->tenant_id;
@@ -109,6 +126,20 @@ class EngineerController extends Controller
         ]);
     }
 
+    #[OA\Get(
+        path: '/api/v1/engineers/{id}',
+        summary: '技術者詳細取得',
+        security: [['bearerAuth' => []]],
+        tags: ['Engineers'],
+        parameters: [
+            new OA\Parameter(name: 'id', in: 'path', required: true, description: '技術者ID', schema: new OA\Schema(type: 'integer')),
+        ],
+        responses: [
+            new OA\Response(response: 200, description: '成功'),
+            new OA\Response(response: 404, description: '見つかりません'),
+            new OA\Response(response: 401, description: '認証エラー'),
+        ]
+    )]
     public function show(int $id): JsonResponse
     {
         $tenantId = auth()->user()->tenant_id;
@@ -119,6 +150,34 @@ class EngineerController extends Controller
         return response()->json(['data' => $this->formatEngineer($engineer)]);
     }
 
+    #[OA\Post(
+        path: '/api/v1/engineers',
+        summary: '技術者登録',
+        security: [['bearerAuth' => []]],
+        tags: ['Engineers'],
+        requestBody: new OA\RequestBody(
+            required: true,
+            content: new OA\JsonContent(
+                required: ['name'],
+                properties: [
+                    new OA\Property(property: 'name', type: 'string', example: '鈴木 一郎'),
+                    new OA\Property(property: 'name_kana', type: 'string', example: 'スズキ イチロウ'),
+                    new OA\Property(property: 'email', type: 'string', example: 'suzuki@example.com'),
+                    new OA\Property(property: 'affiliation', type: 'string', example: '株式会社サンプル'),
+                    new OA\Property(property: 'affiliation_email', type: 'string', example: 'info@sample.co.jp'),
+                    new OA\Property(property: 'affiliation_type', type: 'string', enum: ['self', 'first_sub', 'bp', 'bp_member', 'contract', 'freelance', 'joining', 'hiring']),
+                    new OA\Property(property: 'work_style', type: 'string', enum: ['remote', 'office', 'hybrid']),
+                    new OA\Property(property: 'available_from', type: 'string', format: 'date'),
+                    new OA\Property(property: 'availability_status', type: 'string', enum: ['available', 'working', 'scheduled']),
+                ]
+            )
+        ),
+        responses: [
+            new OA\Response(response: 201, description: '登録成功'),
+            new OA\Response(response: 422, description: 'バリデーションエラー'),
+            new OA\Response(response: 401, description: '認証エラー'),
+        ]
+    )]
     public function store(Request $request): JsonResponse
     {
         $tenantId = auth()->user()->tenant_id;
@@ -212,6 +271,20 @@ class EngineerController extends Controller
         return response()->json(['data' => $this->formatEngineer($engineer)], 201);
     }
 
+    #[OA\Put(
+        path: '/api/v1/engineers/{id}',
+        summary: '技術者更新',
+        security: [['bearerAuth' => []]],
+        tags: ['Engineers'],
+        parameters: [
+            new OA\Parameter(name: 'id', in: 'path', required: true, description: '技術者ID', schema: new OA\Schema(type: 'integer')),
+        ],
+        responses: [
+            new OA\Response(response: 200, description: '更新成功'),
+            new OA\Response(response: 422, description: 'バリデーションエラー'),
+            new OA\Response(response: 401, description: '認証エラー'),
+        ]
+    )]
     public function update(Request $request, int $id): JsonResponse
     {
         $tenantId = auth()->user()->tenant_id;
@@ -309,6 +382,19 @@ class EngineerController extends Controller
         return response()->json(['data' => $this->formatEngineer($engineer)]);
     }
 
+    #[OA\Delete(
+        path: '/api/v1/engineers/{id}',
+        summary: '技術者削除',
+        security: [['bearerAuth' => []]],
+        tags: ['Engineers'],
+        parameters: [
+            new OA\Parameter(name: 'id', in: 'path', required: true, description: '技術者ID', schema: new OA\Schema(type: 'integer')),
+        ],
+        responses: [
+            new OA\Response(response: 204, description: '削除成功'),
+            new OA\Response(response: 401, description: '認証エラー'),
+        ]
+    )]
     public function destroy(int $id): JsonResponse
     {
         $tenantId = auth()->user()->tenant_id;
@@ -317,10 +403,28 @@ class EngineerController extends Controller
         return response()->json(null, 204);
     }
 
-    /**
-     * スキルシートをアップロードしてClaude APIで解析する
-     * POST /api/v1/engineers/parse-skill-sheet
-     */
+    #[OA\Post(
+        path: '/api/v1/engineers/parse-skill-sheet',
+        summary: 'スキルシート解析（Claude API）',
+        security: [['bearerAuth' => []]],
+        tags: ['Engineers'],
+        requestBody: new OA\RequestBody(
+            required: true,
+            content: new OA\MediaType(
+                mediaType: 'multipart/form-data',
+                schema: new OA\Schema(
+                    properties: [
+                        new OA\Property(property: 'file', type: 'string', format: 'binary', description: 'PDF/Excel/Wordファイル（最大10MB）'),
+                    ]
+                )
+            )
+        ),
+        responses: [
+            new OA\Response(response: 200, description: '解析成功（技術者情報・スキル一覧を返す）'),
+            new OA\Response(response: 422, description: 'ファイル解析失敗'),
+            new OA\Response(response: 401, description: '認証エラー'),
+        ]
+    )]
     public function parseSkillSheet(Request $request): JsonResponse
     {
         $request->validate([

@@ -6,9 +6,27 @@ use App\Http\Controllers\Controller;
 use App\Models\Activity;
 use App\Http\Resources\ActivityResource;
 use Illuminate\Http\Request;
+use OpenApi\Attributes as OA;
 
 class ActivityController extends Controller
 {
+    #[OA\Get(
+        path: '/api/v1/activities',
+        summary: '活動履歴一覧取得',
+        security: [['bearerAuth' => []]],
+        tags: ['Activities'],
+        parameters: [
+            new OA\Parameter(name: 'search', in: 'query', required: false, description: '件名・内容・会社名で検索', schema: new OA\Schema(type: 'string')),
+            new OA\Parameter(name: 'type', in: 'query', required: false, description: '活動種別', schema: new OA\Schema(type: 'string', enum: ['訪問', '電話', 'メール', 'その他'])),
+            new OA\Parameter(name: 'customer_id', in: 'query', required: false, description: '顧客IDで絞り込み', schema: new OA\Schema(type: 'string', format: 'uuid')),
+            new OA\Parameter(name: 'date_from', in: 'query', required: false, description: '期間（開始）', schema: new OA\Schema(type: 'string', format: 'date')),
+            new OA\Parameter(name: 'date_to', in: 'query', required: false, description: '期間（終了）', schema: new OA\Schema(type: 'string', format: 'date')),
+        ],
+        responses: [
+            new OA\Response(response: 200, description: '成功'),
+            new OA\Response(response: 401, description: '認証エラー'),
+        ]
+    )]
     public function index(Request $request)
     {
         $userFilter = $this->resolveUserFilter($request);
@@ -36,6 +54,32 @@ class ActivityController extends Controller
         return ActivityResource::collection($activities);
     }
 
+    #[OA\Post(
+        path: '/api/v1/activities',
+        summary: '活動履歴登録',
+        security: [['bearerAuth' => []]],
+        tags: ['Activities'],
+        requestBody: new OA\RequestBody(
+            required: true,
+            content: new OA\JsonContent(
+                required: ['customer_id', 'type', 'subject', 'activity_date'],
+                properties: [
+                    new OA\Property(property: 'customer_id', type: 'string', format: 'uuid'),
+                    new OA\Property(property: 'contact_id', type: 'string', format: 'uuid'),
+                    new OA\Property(property: 'deal_id', type: 'string', format: 'uuid'),
+                    new OA\Property(property: 'type', type: 'string', enum: ['訪問', '電話', 'メール', 'その他']),
+                    new OA\Property(property: 'subject', type: 'string', example: '初回訪問'),
+                    new OA\Property(property: 'content', type: 'string', example: '新規案件の提案を行った'),
+                    new OA\Property(property: 'activity_date', type: 'string', format: 'date', example: '2026-04-11'),
+                ]
+            )
+        ),
+        responses: [
+            new OA\Response(response: 201, description: '登録成功'),
+            new OA\Response(response: 422, description: 'バリデーションエラー'),
+            new OA\Response(response: 401, description: '認証エラー'),
+        ]
+    )]
     public function store(Request $request)
     {
         $validated = $request->validate([
@@ -53,12 +97,40 @@ class ActivityController extends Controller
         return new ActivityResource($activity);
     }
 
+    #[OA\Get(
+        path: '/api/v1/activities/{id}',
+        summary: '活動履歴詳細取得',
+        security: [['bearerAuth' => []]],
+        tags: ['Activities'],
+        parameters: [
+            new OA\Parameter(name: 'id', in: 'path', required: true, description: '活動履歴ID', schema: new OA\Schema(type: 'string', format: 'uuid')),
+        ],
+        responses: [
+            new OA\Response(response: 200, description: '成功'),
+            new OA\Response(response: 404, description: '見つかりません'),
+            new OA\Response(response: 401, description: '認証エラー'),
+        ]
+    )]
     public function show(Activity $activity)
     {
         $activity->load(['customer', 'contact', 'deal', 'user']);
         return new ActivityResource($activity);
     }
 
+    #[OA\Put(
+        path: '/api/v1/activities/{id}',
+        summary: '活動履歴更新',
+        security: [['bearerAuth' => []]],
+        tags: ['Activities'],
+        parameters: [
+            new OA\Parameter(name: 'id', in: 'path', required: true, description: '活動履歴ID', schema: new OA\Schema(type: 'string', format: 'uuid')),
+        ],
+        responses: [
+            new OA\Response(response: 200, description: '更新成功'),
+            new OA\Response(response: 422, description: 'バリデーションエラー'),
+            new OA\Response(response: 401, description: '認証エラー'),
+        ]
+    )]
     public function update(Request $request, Activity $activity)
     {
         $validated = $request->validate([
@@ -75,6 +147,19 @@ class ActivityController extends Controller
         return new ActivityResource($activity);
     }
 
+    #[OA\Delete(
+        path: '/api/v1/activities/{id}',
+        summary: '活動履歴削除',
+        security: [['bearerAuth' => []]],
+        tags: ['Activities'],
+        parameters: [
+            new OA\Parameter(name: 'id', in: 'path', required: true, description: '活動履歴ID', schema: new OA\Schema(type: 'string', format: 'uuid')),
+        ],
+        responses: [
+            new OA\Response(response: 204, description: '削除成功'),
+            new OA\Response(response: 401, description: '認証エラー'),
+        ]
+    )]
     public function destroy(Activity $activity)
     {
         $activity->delete();

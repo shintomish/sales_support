@@ -6,9 +6,25 @@ use App\Http\Controllers\Controller;
 use App\Models\Customer;
 use App\Http\Resources\CustomerResource;
 use Illuminate\Http\Request;
+use OpenApi\Attributes as OA;
 
 class CustomerController extends Controller
 {
+    #[OA\Get(
+        path: '/api/v1/customers',
+        summary: '顧客一覧取得',
+        security: [['bearerAuth' => []]],
+        tags: ['Customers'],
+        parameters: [
+            new OA\Parameter(name: 'search', in: 'query', required: false, description: '会社名・業種で検索', schema: new OA\Schema(type: 'string')),
+            new OA\Parameter(name: 'industry', in: 'query', required: false, description: '業種フィルター', schema: new OA\Schema(type: 'string')),
+            new OA\Parameter(name: 'page', in: 'query', required: false, description: 'ページ番号', schema: new OA\Schema(type: 'integer', default: 1)),
+        ],
+        responses: [
+            new OA\Response(response: 200, description: '成功'),
+            new OA\Response(response: 401, description: '認証エラー'),
+        ]
+    )]
     public function index(Request $request)
     {
         $customers = Customer::query()
@@ -23,6 +39,32 @@ class CustomerController extends Controller
         return CustomerResource::collection($customers);
     }
 
+    #[OA\Post(
+        path: '/api/v1/customers',
+        summary: '顧客登録',
+        security: [['bearerAuth' => []]],
+        tags: ['Customers'],
+        requestBody: new OA\RequestBody(
+            required: true,
+            content: new OA\JsonContent(
+                required: ['company_name'],
+                properties: [
+                    new OA\Property(property: 'company_name', type: 'string', example: '株式会社サンプル'),
+                    new OA\Property(property: 'industry', type: 'string', example: 'IT'),
+                    new OA\Property(property: 'phone', type: 'string', example: '03-1234-5678'),
+                    new OA\Property(property: 'address', type: 'string', example: '東京都千代田区1-1-1'),
+                    new OA\Property(property: 'employee_count', type: 'integer', example: 100),
+                    new OA\Property(property: 'website', type: 'string', example: 'https://example.com'),
+                    new OA\Property(property: 'notes', type: 'string', example: '備考'),
+                ]
+            )
+        ),
+        responses: [
+            new OA\Response(response: 201, description: '登録成功'),
+            new OA\Response(response: 422, description: 'バリデーションエラー'),
+            new OA\Response(response: 401, description: '認証エラー'),
+        ]
+    )]
     public function store(Request $request)
     {
         $validated = $request->validate([
@@ -39,12 +81,55 @@ class CustomerController extends Controller
         return new CustomerResource($customer);
     }
 
+    #[OA\Get(
+        path: '/api/v1/customers/{id}',
+        summary: '顧客詳細取得',
+        security: [['bearerAuth' => []]],
+        tags: ['Customers'],
+        parameters: [
+            new OA\Parameter(name: 'id', in: 'path', required: true, description: '顧客ID', schema: new OA\Schema(type: 'string', format: 'uuid')),
+        ],
+        responses: [
+            new OA\Response(response: 200, description: '成功'),
+            new OA\Response(response: 404, description: '顧客が見つかりません'),
+            new OA\Response(response: 401, description: '認証エラー'),
+        ]
+    )]
     public function show(Customer $customer)
     {
         $customer->load(['contacts', 'deals']);
         return new CustomerResource($customer);
     }
 
+    #[OA\Put(
+        path: '/api/v1/customers/{id}',
+        summary: '顧客更新',
+        security: [['bearerAuth' => []]],
+        tags: ['Customers'],
+        parameters: [
+            new OA\Parameter(name: 'id', in: 'path', required: true, description: '顧客ID', schema: new OA\Schema(type: 'string', format: 'uuid')),
+        ],
+        requestBody: new OA\RequestBody(
+            required: true,
+            content: new OA\JsonContent(
+                required: ['company_name'],
+                properties: [
+                    new OA\Property(property: 'company_name', type: 'string', example: '株式会社サンプル'),
+                    new OA\Property(property: 'industry', type: 'string', example: 'IT'),
+                    new OA\Property(property: 'phone', type: 'string', example: '03-1234-5678'),
+                    new OA\Property(property: 'address', type: 'string', example: '東京都千代田区1-1-1'),
+                    new OA\Property(property: 'employee_count', type: 'integer', example: 100),
+                    new OA\Property(property: 'website', type: 'string', example: 'https://example.com'),
+                    new OA\Property(property: 'notes', type: 'string', example: '備考'),
+                ]
+            )
+        ),
+        responses: [
+            new OA\Response(response: 200, description: '更新成功'),
+            new OA\Response(response: 422, description: 'バリデーションエラー'),
+            new OA\Response(response: 401, description: '認証エラー'),
+        ]
+    )]
     public function update(Request $request, Customer $customer)
     {
         $validated = $request->validate([
@@ -61,13 +146,35 @@ class CustomerController extends Controller
         return new CustomerResource($customer);
     }
 
+    #[OA\Delete(
+        path: '/api/v1/customers/{id}',
+        summary: '顧客削除',
+        security: [['bearerAuth' => []]],
+        tags: ['Customers'],
+        parameters: [
+            new OA\Parameter(name: 'id', in: 'path', required: true, description: '顧客ID', schema: new OA\Schema(type: 'string', format: 'uuid')),
+        ],
+        responses: [
+            new OA\Response(response: 204, description: '削除成功'),
+            new OA\Response(response: 404, description: '顧客が見つかりません'),
+            new OA\Response(response: 401, description: '認証エラー'),
+        ]
+    )]
     public function destroy(Customer $customer)
     {
         $customer->delete();
         return response()->json(null, 204);
     }
 
-    // 業種一覧取得（フィルター用）
+    #[OA\Get(
+        path: '/api/v1/customers/industries',
+        summary: '業種一覧取得（フィルター用）',
+        security: [['bearerAuth' => []]],
+        tags: ['Customers'],
+        responses: [
+            new OA\Response(response: 200, description: '業種の配列'),
+        ]
+    )]
     public function industries()
     {
         $industries = Customer::whereNotNull('industry')

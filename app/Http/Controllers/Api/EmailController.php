@@ -6,12 +6,29 @@ use App\Models\GmailToken;
 use App\Services\GmailService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
+use OpenApi\Attributes as OA;
 class EmailController extends Controller
 {
     public function __construct(
         private GmailService $gmailService,
     ) {}
 
+    #[OA\Get(
+        path: '/api/v1/emails',
+        summary: 'メール一覧取得',
+        security: [['bearerAuth' => []]],
+        tags: ['Emails'],
+        parameters: [
+            new OA\Parameter(name: 'search', in: 'query', required: false, description: '件名・送信者・本文で検索', schema: new OA\Schema(type: 'string')),
+            new OA\Parameter(name: 'unread', in: 'query', required: false, description: '未読のみ', schema: new OA\Schema(type: 'boolean')),
+            new OA\Parameter(name: 'category', in: 'query', required: false, description: 'カテゴリ', schema: new OA\Schema(type: 'string', enum: ['engineer', 'project'])),
+            new OA\Parameter(name: 'per_page', in: 'query', required: false, description: '1ページ件数', schema: new OA\Schema(type: 'integer', default: 30)),
+        ],
+        responses: [
+            new OA\Response(response: 200, description: '成功'),
+            new OA\Response(response: 401, description: '認証エラー'),
+        ]
+    )]
     // メール一覧
     public function index(Request $request)
     {
@@ -40,6 +57,20 @@ class EmailController extends Controller
         );
     }
 
+    #[OA\Get(
+        path: '/api/v1/emails/{id}',
+        summary: 'メール詳細取得（自動既読）',
+        security: [['bearerAuth' => []]],
+        tags: ['Emails'],
+        parameters: [
+            new OA\Parameter(name: 'id', in: 'path', required: true, description: 'メールID', schema: new OA\Schema(type: 'integer')),
+        ],
+        responses: [
+            new OA\Response(response: 200, description: '成功'),
+            new OA\Response(response: 404, description: '見つかりません'),
+            new OA\Response(response: 401, description: '認証エラー'),
+        ]
+    )]
     // メール詳細（自動既読）
     public function show(int $id)
     {
@@ -59,6 +90,18 @@ class EmailController extends Controller
         return response()->json($email->load(['contact', 'deal', 'customer', 'attachments']));
     }
 
+    #[OA\Post(
+        path: '/api/v1/emails/sync',
+        summary: 'Gmailから最新メールを同期',
+        security: [['bearerAuth' => []]],
+        tags: ['Emails'],
+        responses: [
+            new OA\Response(response: 200, description: '同期成功'),
+            new OA\Response(response: 401, description: 'Gmailトークン失効'),
+            new OA\Response(response: 422, description: 'Gmail未接続'),
+            new OA\Response(response: 500, description: '同期失敗'),
+        ]
+    )]
     // Gmail から最新メールを同期
     public function sync()
     {
@@ -86,6 +129,19 @@ class EmailController extends Controller
         }
     }
 
+    #[OA\Patch(
+        path: '/api/v1/emails/{id}/link',
+        summary: 'メールを担当者・商談・顧客に紐付け',
+        security: [['bearerAuth' => []]],
+        tags: ['Emails'],
+        parameters: [
+            new OA\Parameter(name: 'id', in: 'path', required: true, description: 'メールID', schema: new OA\Schema(type: 'integer')),
+        ],
+        responses: [
+            new OA\Response(response: 200, description: '成功'),
+            new OA\Response(response: 401, description: '認証エラー'),
+        ]
+    )]
     // 担当者・商談への紐付け
     public function link(Request $request, int $id)
     {
@@ -99,6 +155,16 @@ class EmailController extends Controller
         return response()->json($email->load(['contact', 'deal', 'customer']));
     }
 
+    #[OA\Get(
+        path: '/api/v1/emails/unread-count',
+        summary: '未読メール件数取得',
+        security: [['bearerAuth' => []]],
+        tags: ['Emails'],
+        responses: [
+            new OA\Response(response: 200, description: '成功'),
+            new OA\Response(response: 401, description: '認証エラー'),
+        ]
+    )]
     // 未読件数
     public function unreadCount()
     {
@@ -136,6 +202,16 @@ class EmailController extends Controller
         }
     }
 
+    #[OA\Post(
+        path: '/api/v1/emails/mark-all-read',
+        summary: '全メールを既読にする',
+        security: [['bearerAuth' => []]],
+        tags: ['Emails'],
+        responses: [
+            new OA\Response(response: 200, description: '成功'),
+            new OA\Response(response: 401, description: '認証エラー'),
+        ]
+    )]
     // 全件既読
     public function markAllRead()
     {

@@ -9,15 +9,26 @@ use App\Models\Skill;
 use App\Services\MatchingService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use OpenApi\Attributes as OA;
 
 class MatchingController extends Controller
 {
     public function __construct(private MatchingService $matchingService) {}
 
-    /**
-     * 案件に対するおすすめ技術者一覧
-     * GET /v1/matching/projects/{id}/engineers
-     */
+    #[OA\Get(
+        path: '/api/v1/matching/projects/{id}/engineers',
+        summary: '案件に対するおすすめ技術者一覧',
+        security: [['bearerAuth' => []]],
+        tags: ['Matching'],
+        parameters: [
+            new OA\Parameter(name: 'id', in: 'path', required: true, description: '案件ID', schema: new OA\Schema(type: 'integer')),
+        ],
+        responses: [
+            new OA\Response(response: 200, description: 'スコア付き技術者一覧'),
+            new OA\Response(response: 404, description: '案件が見つかりません'),
+            new OA\Response(response: 401, description: '認証エラー'),
+        ]
+    )]
     public function recommendEngineers(int $projectId): JsonResponse
     {
         $tenantId = auth()->user()->tenant_id;
@@ -51,10 +62,20 @@ class MatchingController extends Controller
         ]);
     }
 
-    /**
-     * 技術者に対するおすすめ案件一覧
-     * GET /v1/matching/engineers/{id}/projects
-     */
+    #[OA\Get(
+        path: '/api/v1/matching/engineers/{id}/projects',
+        summary: '技術者に対するおすすめ案件一覧',
+        security: [['bearerAuth' => []]],
+        tags: ['Matching'],
+        parameters: [
+            new OA\Parameter(name: 'id', in: 'path', required: true, description: '技術者ID', schema: new OA\Schema(type: 'integer')),
+        ],
+        responses: [
+            new OA\Response(response: 200, description: 'スコア付き案件一覧'),
+            new OA\Response(response: 404, description: '技術者が見つかりません'),
+            new OA\Response(response: 401, description: '認証エラー'),
+        ]
+    )]
     public function recommendProjects(int $engineerId): JsonResponse
     {
         $tenantId = auth()->user()->tenant_id;
@@ -88,10 +109,20 @@ class MatchingController extends Controller
         ]);
     }
 
-    /**
-     * 特定の案件×技術者ペアのスコアとAI説明文を返す
-     * GET /v1/matching/projects/{projectId}/engineers/{engineerId}
-     */
+    #[OA\Get(
+        path: '/api/v1/matching/projects/{projectId}/engineers/{engineerId}',
+        summary: '案件×技術者マッチングスコア詳細',
+        security: [['bearerAuth' => []]],
+        tags: ['Matching'],
+        parameters: [
+            new OA\Parameter(name: 'projectId', in: 'path', required: true, description: '案件ID', schema: new OA\Schema(type: 'integer')),
+            new OA\Parameter(name: 'engineerId', in: 'path', required: true, description: '技術者ID', schema: new OA\Schema(type: 'integer')),
+        ],
+        responses: [
+            new OA\Response(response: 200, description: 'スコア詳細とAI説明文'),
+            new OA\Response(response: 401, description: '認証エラー'),
+        ]
+    )]
     public function scoreDetail(int $projectId, int $engineerId): JsonResponse
     {
         $tenantId = auth()->user()->tenant_id;
@@ -120,10 +151,20 @@ class MatchingController extends Controller
         return '⚫';
     }
 
-    /**
-     * スキルマスタ一覧
-     * GET /v1/matching/skills
-     */
+    #[OA\Get(
+        path: '/api/v1/matching/skills',
+        summary: 'スキルマスタ一覧取得',
+        security: [['bearerAuth' => []]],
+        tags: ['Matching'],
+        parameters: [
+            new OA\Parameter(name: 'category', in: 'query', required: false, description: 'カテゴリ', schema: new OA\Schema(type: 'string', enum: ['language', 'framework', 'database', 'infrastructure', 'other'])),
+            new OA\Parameter(name: 'search', in: 'query', required: false, description: 'スキル名で検索', schema: new OA\Schema(type: 'string')),
+        ],
+        responses: [
+            new OA\Response(response: 200, description: 'スキル一覧'),
+            new OA\Response(response: 401, description: '認証エラー'),
+        ]
+    )]
     public function skills(Request $request): JsonResponse
     {
         $query = Skill::query();
@@ -141,10 +182,27 @@ class MatchingController extends Controller
         ]);
     }
 
-    /**
-     * スキル登録（管理用）
-     * POST /v1/matching/skills
-     */
+    #[OA\Post(
+        path: '/api/v1/matching/skills',
+        summary: 'スキル登録（管理用）',
+        security: [['bearerAuth' => []]],
+        tags: ['Matching'],
+        requestBody: new OA\RequestBody(
+            required: true,
+            content: new OA\JsonContent(
+                required: ['name'],
+                properties: [
+                    new OA\Property(property: 'name', type: 'string', example: 'Laravel'),
+                    new OA\Property(property: 'category', type: 'string', enum: ['language', 'framework', 'database', 'infrastructure', 'other']),
+                ]
+            )
+        ),
+        responses: [
+            new OA\Response(response: 201, description: '登録成功'),
+            new OA\Response(response: 422, description: 'バリデーションエラー'),
+            new OA\Response(response: 401, description: '認証エラー'),
+        ]
+    )]
     public function storeSkill(Request $request): JsonResponse
     {
         $v = $request->validate([

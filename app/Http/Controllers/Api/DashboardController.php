@@ -9,9 +9,20 @@ use App\Models\Deal;
 use App\Models\Task;
 use App\Models\Activity;
 use Illuminate\Support\Carbon;
+use OpenApi\Attributes as OA;
 
 class DashboardController extends Controller
 {
+    #[OA\Get(
+        path: '/api/v1/dashboard',
+        summary: 'ダッシュボード情報取得',
+        security: [['bearerAuth' => []]],
+        tags: ['Dashboard'],
+        responses: [
+            new OA\Response(response: 200, description: 'KPI・パイプライン・月別売上・タスク・活動履歴・成約商談'),
+            new OA\Response(response: 401, description: '認証エラー'),
+        ]
+    )]
     public function index()
     {
         $now = Carbon::now();

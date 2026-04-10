@@ -8,6 +8,7 @@
     "require": {
         "php": "^8.2",
         "aws/aws-sdk-php": "^3.378",
+        "darkaonline/l5-swagger": "^11.0",
         "firebase/php-jwt": "^7.0",
         "google/cloud-secret-manager": "^2.3",
         "google/cloud-vision": "^2.1",

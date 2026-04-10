@@ -6,9 +6,25 @@ use App\Http\Controllers\Controller;
 use App\Models\Contact;
 use App\Http\Resources\ContactResource;
 use Illuminate\Http\Request;
+use OpenApi\Attributes as OA;
 
 class ContactController extends Controller
 {
+    #[OA\Get(
+        path: '/api/v1/contacts',
+        summary: '担当者一覧取得',
+        security: [['bearerAuth' => []]],
+        tags: ['Contacts'],
+        parameters: [
+            new OA\Parameter(name: 'search', in: 'query', required: false, description: '氏名・部署・役職・会社名で検索', schema: new OA\Schema(type: 'string')),
+            new OA\Parameter(name: 'customer_id', in: 'query', required: false, description: '顧客IDで絞り込み', schema: new OA\Schema(type: 'string', format: 'uuid')),
+            new OA\Parameter(name: 'page', in: 'query', required: false, description: 'ページ番号', schema: new OA\Schema(type: 'integer', default: 1)),
+        ],
+        responses: [
+            new OA\Response(response: 200, description: '成功'),
+            new OA\Response(response: 401, description: '認証エラー'),
+        ]
+    )]
     public function index(Request $request)
     {
         $contacts = Contact::with('customer')
@@ -27,6 +43,32 @@ class ContactController extends Controller
         return ContactResource::collection($contacts);
     }
 
+    #[OA\Post(
+        path: '/api/v1/contacts',
+        summary: '担当者登録',
+        security: [['bearerAuth' => []]],
+        tags: ['Contacts'],
+        requestBody: new OA\RequestBody(
+            required: true,
+            content: new OA\JsonContent(
+                required: ['customer_id', 'name'],
+                properties: [
+                    new OA\Property(property: 'customer_id', type: 'string', format: 'uuid', example: 'xxxx-xxxx'),
+                    new OA\Property(property: 'name', type: 'string', example: '山田 太郎'),
+                    new OA\Property(property: 'department', type: 'string', example: '営業部'),
+                    new OA\Property(property: 'position', type: 'string', example: '部長'),
+                    new OA\Property(property: 'email', type: 'string', example: 'yamada@example.com'),
+                    new OA\Property(property: 'phone', type: 'string', example: '03-1234-5678'),
+                    new OA\Property(property: 'notes', type: 'string', example: '備考'),
+                ]
+            )
+        ),
+        responses: [
+            new OA\Response(response: 201, description: '登録成功'),
+            new OA\Response(response: 422, description: 'バリデーションエラー'),
+            new OA\Response(response: 401, description: '認証エラー'),
+        ]
+    )]
     public function store(Request $request)
     {
         $validated = $request->validate([
@@ -43,12 +85,55 @@ class ContactController extends Controller
         return new ContactResource($contact);
     }
 
+    #[OA\Get(
+        path: '/api/v1/contacts/{id}',
+        summary: '担当者詳細取得',
+        security: [['bearerAuth' => []]],
+        tags: ['Contacts'],
+        parameters: [
+            new OA\Parameter(name: 'id', in: 'path', required: true, description: '担当者ID', schema: new OA\Schema(type: 'string', format: 'uuid')),
+        ],
+        responses: [
+            new OA\Response(response: 200, description: '成功'),
+            new OA\Response(response: 404, description: '担当者が見つかりません'),
+            new OA\Response(response: 401, description: '認証エラー'),
+        ]
+    )]
     public function show(Contact $contact)
     {
         $contact->load(['customer', 'deals', 'activities']);
         return new ContactResource($contact);
     }
 
+    #[OA\Put(
+        path: '/api/v1/contacts/{id}',
+        summary: '担当者更新',
+        security: [['bearerAuth' => []]],
+        tags: ['Contacts'],
+        parameters: [
+            new OA\Parameter(name: 'id', in: 'path', required: true, description: '担当者ID', schema: new OA\Schema(type: 'string', format: 'uuid')),
+        ],
+        requestBody: new OA\RequestBody(
+            required: true,
+            content: new OA\JsonContent(
+                required: ['customer_id', 'name'],
+                properties: [
+                    new OA\Property(property: 'customer_id', type: 'string', format: 'uuid'),
+                    new OA\Property(property: 'name', type: 'string', example: '山田 太郎'),
+                    new OA\Property(property: 'department', type: 'string', example: '営業部'),
+                    new OA\Property(property: 'position', type: 'string', example: '部長'),
+                    new OA\Property(property: 'email', type: 'string', example: 'yamada@example.com'),
+                    new OA\Property(property: 'phone', type: 'string', example: '03-1234-5678'),
+                    new OA\Property(property: 'notes', type: 'string'),
+                ]
+            )
+        ),
+        responses: [
+            new OA\Response(response: 200, description: '更新成功'),
+            new OA\Response(response: 422, description: 'バリデーションエラー'),
+            new OA\Response(response: 401, description: '認証エラー'),
+        ]
+    )]
     public function update(Request $request, Contact $contact)
     {
         $validated = $request->validate([
@@ -65,6 +150,20 @@ class ContactController extends Controller
         return new ContactResource($contact);
     }
 
+    #[OA\Delete(
+        path: '/api/v1/contacts/{id}',
+        summary: '担当者削除',
+        security: [['bearerAuth' => []]],
+        tags: ['Contacts'],
+        parameters: [
+            new OA\Parameter(name: 'id', in: 'path', required: true, description: '担当者ID', schema: new OA\Schema(type: 'string', format: 'uuid')),
+        ],
+        responses: [
+            new OA\Response(response: 204, description: '削除成功'),
+            new OA\Response(response: 404, description: '担当者が見つかりません'),
+            new OA\Response(response: 401, description: '認証エラー'),
+        ]
+    )]
     public function destroy(Contact $contact)
     {
         $contact->delete();

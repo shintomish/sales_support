@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\BusinessCard;
+use OpenApi\Attributes as OA;
 use App\Http\Resources\BusinessCardResource;
 use App\Services\SupabaseStorageService;
 use App\Services\ClaudeService;
@@ -19,6 +20,16 @@ use Google\Cloud\Vision\V1\BatchAnnotateImagesRequest;
 
 class BusinessCardController extends Controller
 {
+    #[OA\Get(
+        path: '/api/v1/cards',
+        summary: '名刺一覧取得',
+        security: [['bearerAuth' => []]],
+        tags: ['BusinessCards'],
+        responses: [
+            new OA\Response(response: 200, description: '成功'),
+            new OA\Response(response: 401, description: '認証エラー'),
+        ]
+    )]
     public function index(\Illuminate\Http\Request $request)
     {
         $userFilter = $this->resolveUserFilter($request);
@@ -35,6 +46,29 @@ class BusinessCardController extends Controller
         return BusinessCardResource::collection($cards);
     }
 
+    #[OA\Post(
+        path: '/api/v1/cards',
+        summary: '名刺画像OCR解析・登録（Google Vision + Claude API）',
+        security: [['bearerAuth' => []]],
+        tags: ['BusinessCards'],
+        requestBody: new OA\RequestBody(
+            required: true,
+            content: new OA\MediaType(
+                mediaType: 'multipart/form-data',
+                schema: new OA\Schema(
+                    properties: [
+                        new OA\Property(property: 'images[]', type: 'array', items: new OA\Items(type: 'string', format: 'binary'), description: 'JPEG/PNG画像（最大20枚・各10MB）'),
+                    ]
+                )
+            )
+        ),
+        responses: [
+            new OA\Response(response: 201, description: '登録成功（顧客・担当者も自動登録）'),
+            new OA\Response(response: 422, description: 'バリデーションエラー'),
+            new OA\Response(response: 500, description: 'OCR処理失敗'),
+            new OA\Response(response: 401, description: '認証エラー'),
+        ]
+    )]
     public function store(Request $request)
     {
         \Log::info('BusinessCardController::store called');
@@ -150,12 +184,40 @@ class BusinessCardController extends Controller
         }
     }
 
+    #[OA\Get(
+        path: '/api/v1/cards/{id}',
+        summary: '名刺詳細取得',
+        security: [['bearerAuth' => []]],
+        tags: ['BusinessCards'],
+        parameters: [
+            new OA\Parameter(name: 'id', in: 'path', required: true, description: '名刺ID', schema: new OA\Schema(type: 'string', format: 'uuid')),
+        ],
+        responses: [
+            new OA\Response(response: 200, description: '成功'),
+            new OA\Response(response: 404, description: '見つかりません'),
+            new OA\Response(response: 401, description: '認証エラー'),
+        ]
+    )]
     public function show(string $id)
     {
         $card = BusinessCard::with(['customer', 'contact'])->findOrFail($id);
         return new BusinessCardResource($card);
     }
 
+    #[OA\Put(
+        path: '/api/v1/cards/{id}',
+        summary: '名刺情報更新',
+        security: [['bearerAuth' => []]],
+        tags: ['BusinessCards'],
+        parameters: [
+            new OA\Parameter(name: 'id', in: 'path', required: true, description: '名刺ID', schema: new OA\Schema(type: 'string', format: 'uuid')),
+        ],
+        responses: [
+            new OA\Response(response: 200, description: '更新成功'),
+            new OA\Response(response: 422, description: 'バリデーションエラー'),
+            new OA\Response(response: 401, description: '認証エラー'),
+        ]
+    )]
     public function update(Request $request, string $id)
     {
         $card = BusinessCard::findOrFail($id);
@@ -202,6 +264,19 @@ class BusinessCardController extends Controller
         return new BusinessCardResource($card);
     }
 
+    #[OA\Delete(
+        path: '/api/v1/cards/{id}',
+        summary: '名刺削除（Supabase Storageからも削除）',
+        security: [['bearerAuth' => []]],
+        tags: ['BusinessCards'],
+        parameters: [
+            new OA\Parameter(name: 'id', in: 'path', required: true, description: '名刺ID', schema: new OA\Schema(type: 'string', format: 'uuid')),
+        ],
+        responses: [
+            new OA\Response(response: 204, description: '削除成功'),
+            new OA\Response(response: 401, description: '認証エラー'),
+        ]
+    )]
     public function destroy(string $id)
     {
         $card = BusinessCard::findOrFail($id);
