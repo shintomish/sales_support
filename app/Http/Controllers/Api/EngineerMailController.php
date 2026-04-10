@@ -4,14 +4,19 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\EmailAttachment;
+use App\Models\Engineer;
 use App\Models\EngineerMailSource;
+use App\Models\EngineerSkill;
 use App\Models\GmailToken;
+use App\Models\PublicProject;
+use App\Models\Skill;
 use App\Services\EngineerMailScoringService;
 use App\Services\GmailService;
 use App\Services\SupabaseStorageService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
@@ -25,7 +30,7 @@ class EngineerMailController extends Controller
     public function index(Request $request)
     {
         $perPage  = $request->integer('per_page', 30);
-        $status   = $request->string('status');
+        $status   = $request->input('status');
         $scoreMin = $request->integer('score_min', 0);
         $scoreMax = $request->integer('score_max', 100);
         $search   = $request->string('search');
@@ -96,6 +101,105 @@ class EngineerMailController extends Controller
         $ems->update($v);
 
         return response()->json($ems->fresh());
+    }
+
+    // ── P1: EngineerMailSource → Engineerマスタへワンクリック登録 ─────────────
+
+    public function registerEngineer(int $id): JsonResponse
+    {
+        $ems = EngineerMailSource::with('email')->findOrFail($id);
+
+        if ($ems->status === 'registered') {
+            return response()->json(['message' => 'すでに登録済みです'], 422);
+        }
+
+        DB::transaction(function () use ($ems) {
+            $engineer = Engineer::create([
+                'name'              => $ems->name ?? '（名前未取得）',
+                'affiliation_type'  => $ems->affiliation_type,
+                'nearest_station'   => $ems->nearest_station,
+                'affiliation_email' => $ems->email?->from_address,
+            ]);
+
+            // スキル名からSkillレコードを取得/作成してEngineerSkillに登録
+            foreach ((array) ($ems->skills ?? []) as $skillName) {
+                $skillName = trim((string) $skillName);
+                if ($skillName === '') {
+                    continue;
+                }
+                $skill = Skill::firstOrCreate(
+                    ['name' => $skillName],
+                    ['category' => 'other']
+                );
+                EngineerSkill::firstOrCreate([
+                    'tenant_id'   => $engineer->tenant_id,
+                    'engineer_id' => $engineer->id,
+                    'skill_id'    => $skill->id,
+                ]);
+            }
+
+            $ems->update(['status' => 'registered']);
+        });
+
+        $ems->refresh();
+
+        return response()->json([
+            'message' => 'Engineerマスタに登録しました',
+            'ems'     => $ems,
+        ], 201);
+    }
+
+    // ── P2: EngineerMailSourceのスキルと自社公開案件のマッチング ─────────────
+
+    public function matchedProjects(int $id): JsonResponse
+    {
+        $ems = EngineerMailSource::findOrFail($id);
+
+        // EMS の抽出スキルを小文字正規化してセット化
+        $emsSkills = collect((array) ($ems->skills ?? []))
+            ->map(fn($s) => mb_strtolower(trim((string) $s)))
+            ->filter()
+            ->flip(); // O(1) lookup 用
+
+        // テナントのオープン案件を必要スキルと一緒に取得
+        $projects = PublicProject::with(['requiredSkills.skill'])
+            ->published()
+            ->open()
+            ->get();
+
+        $results = $projects->map(function (PublicProject $project) use ($emsSkills) {
+            $required = $project->requiredSkills;
+            $total    = $required->count();
+
+            $matched = $required->filter(
+                fn($rs) => $emsSkills->has(mb_strtolower(trim((string) ($rs->skill?->name ?? ''))))
+            );
+
+            $matchScore = $total > 0 ? round($matched->count() / $total * 100) : 0;
+
+            return [
+                'project_id'       => $project->id,
+                'project_title'    => $project->title,
+                'status'           => $project->status,
+                'work_style'       => $project->work_style,
+                'nearest_station'  => $project->nearest_station,
+                'unit_price_min'   => $project->unit_price_min,
+                'unit_price_max'   => $project->unit_price_max,
+                'match_score'      => $matchScore,
+                'matched_count'    => $matched->count(),
+                'total_skills'     => $total,
+                'required_skills'  => $required->map(fn($rs) => [
+                    'name'         => $rs->skill?->name,
+                    'is_required'  => $rs->is_required,
+                    'matched'      => $emsSkills->has(mb_strtolower(trim((string) ($rs->skill?->name ?? '')))),
+                ])->values(),
+            ];
+        })
+        ->sortByDesc('match_score')
+        ->values()
+        ->take(20);
+
+        return response()->json(['data' => $results]);
     }
 
     // 添付ファイルのmagic bytesチェック（壊れたファイルを検出）
