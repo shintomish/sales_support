@@ -26,7 +26,7 @@ class ProjectMailController extends Controller
     public function index(Request $request)
     {
         $perPage   = $request->integer('per_page', 30);
-        $status    = $request->string('status');    // new / review / proposed / interview / won / lost / excluded
+        $status    = $request->input('status');    // new / review / proposed / interview / won / lost / excluded
         $scoreMin  = $request->integer('score_min', 0);
         $scoreMax  = $request->integer('score_max', 100);
         $search    = $request->string('search');
