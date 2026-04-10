@@ -153,7 +153,7 @@ class ProjectMailScoringService
                         $score >= self::SCORE_REVIEW => 'review',
                         default                      => 'excluded',
                     };
-                    $pms->update(array_merge($extracted, [
+                    $pms->update(array_merge($this->sanitizeExtracted($extracted), [
                         'score'         => $score,
                         'score_reasons' => $reasons,
                         'engine'        => 'rule',
@@ -185,7 +185,7 @@ class ProjectMailScoringService
             if (!$pms->email) continue;
             try {
                 $extracted = $this->extract($pms->email);
-                $pms->update($extracted);
+                $pms->update($this->sanitizeExtracted($extracted));
                 $count++;
             } catch (\Throwable $e) {
                 Log::error("[ProjectMailExtract] pms_id={$pms->id} 失敗: " . $e->getMessage());
@@ -845,7 +845,17 @@ class ProjectMailScoringService
                 'engine'       => $engine,
                 'status'       => $status,
                 'received_at'  => $email->received_at,
-            ], $extracted)
+            ], $this->sanitizeExtracted($extracted))
         );
+    }
+
+    private function sanitizeExtracted(array $extracted): array
+    {
+        return array_map(function ($value) {
+            if (is_string($value)) {
+                return mb_convert_encoding($value, 'UTF-8', 'UTF-8');
+            }
+            return $value;
+        }, $extracted);
     }
 }
