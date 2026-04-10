@@ -22,9 +22,12 @@ use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\EmailBodyTemplateController;
 use App\Http\Controllers\Api\DeliveryAddressController;
 use App\Http\Controllers\Api\DeliveryCampaignController;
+use App\Http\Controllers\Api\HealthController;
 
 // ── 認証不要 ────────────────────────────────────────
 Route::prefix('v1')->group(function () {
+    Route::get('health', HealthController::class);
+
     Route::post('login', [AuthController::class, 'login']);
 
     // Gmail OAuth（コールバックのみ認証不要）
