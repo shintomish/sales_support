@@ -20,6 +20,8 @@ use App\Http\Controllers\Api\ProjectMailController;
 use App\Http\Controllers\Api\EngineerMailController;
 use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\EmailBodyTemplateController;
+use App\Http\Controllers\Api\DeliveryAddressController;
+use App\Http\Controllers\Api\DeliveryCampaignController;
 
 // ── 認証不要 ────────────────────────────────────────
 Route::prefix('v1')->group(function () {
@@ -188,4 +190,20 @@ Route::prefix('v1')->middleware(['supabase.auth'])->group(function () {
 
     // マッチングスコア詳細（AI説明付き）
     Route::get('matching/projects/{projectId}/engineers/{engineerId}', [MatchingController::class, 'scoreDetail']);
+
+    // ── 配信先管理 ──────────────────────────────────────
+    Route::prefix('delivery-addresses')->group(function () {
+        Route::get('/',                [DeliveryAddressController::class, 'index']);
+        Route::post('/import',         [DeliveryAddressController::class, 'import']);
+        Route::get('/import-progress', [DeliveryAddressController::class, 'importProgress']);
+        Route::patch('/{id}',          [DeliveryAddressController::class, 'update']);
+        Route::delete('/{id}',         [DeliveryAddressController::class, 'destroy']);
+    });
+
+    // ── 配信キャンペーン ────────────────────────────────
+    Route::prefix('delivery-campaigns')->group(function () {
+        Route::get('/',     [DeliveryCampaignController::class, 'index']);
+        Route::post('/',    [DeliveryCampaignController::class, 'store']);
+        Route::get('/{id}', [DeliveryCampaignController::class, 'show']);
+    });
 });
