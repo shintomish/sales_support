@@ -1,5 +1,22 @@
 # CLAUDE.md - sales_support（Laravel API）
 
+# 開発方針
+
+## 応答言語
+- ユーザーが別言語を指定しない限り、日本語で回答する。
+
+## 基本ワークフロー
+- 曖昧な点は推測せず、ファイルや実行結果を確認する。
+- 破壊的、または巻き戻し困難な操作の前には、必ずユーザーの明示同意を取る。
+- 最終報告では、変更点・確認内容・未検証事項を簡潔にまとめる。
+
+## マルチエージェント運用
+- 並列調査や役割分担が有効な場合は、agent team を作成してよい。
+- 調査・レビュー・比較検討のように独立して進められる作業では、複数の teammate に分担して進める。
+- 実装を伴う大きな作業では、必要に応じて team の人数や役割を増やしてよい。
+- team を作る場合は、各 teammate の役割が重複しないように分ける。
+- split panes を使える環境では、team 作成時は split panes を優先する。
+
 ## プロジェクト概要
 SES企業向け営業支援システムのバックエンドAPI。
 Laravel 11 + Supabase PostgreSQL + Docker構成。
@@ -26,7 +43,7 @@ docker compose up -d
 docker compose exec app php artisan migrate
 docker compose exec app php artisan config:clear
 docker compose exec app php artisan cache:clear
-docker compose exec app tail -f storage/logs/laravel.log
+docker compose exec app tail -f storage/logs/sales_sup-$(date +%Y-%m-%d).log
 ```
 
 ## 重要な注意点
