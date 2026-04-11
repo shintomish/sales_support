@@ -39,6 +39,7 @@ tmp/
 *_tmp.html
 curl_output.txt
 output.txt
+output/
 .env.production.backup
 .skills/
 .claude/settings.local.json
