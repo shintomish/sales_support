@@ -142,7 +142,9 @@ class GmailService
 
 	[$fromName, $fromAddress] = $this->parseFrom($from);
 
-$receivedAt = isset($data['internalDate']) ? Carbon::createFromTimestampMs((int)$data['internalDate'])->setTimezone('Asia/Tokyo') : ($dateStr ? Carbon::parse($dateStr)->setTimezone('Asia/Tokyo') : Carbon::now()->setTimezone('Asia/Tokyo'));
+        $receivedAt = isset($data['internalDate'])
+            ? Carbon::createFromTimestampMs((int)$data['internalDate'])->utc()
+            : ($dateStr ? Carbon::parse($dateStr)->utc() : Carbon::now()->utc());
 
         [$bodyText, $bodyHtml] = $this->extractBody($data['payload']);
         $attachments = $this->extractAttachments($data['payload']);
