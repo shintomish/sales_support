@@ -155,6 +155,8 @@ Route::prefix('v1')->middleware(['supabase.auth'])->group(function () {
         Route::put('/{id}/status',                    [EngineerMailController::class, 'updateStatus']);
         Route::post('/{id}/register-engineer',        [EngineerMailController::class, 'registerEngineer']);
         Route::get('/{id}/matched-projects',          [EngineerMailController::class, 'matchedProjects']);
+        Route::post('/{id}/generate-proposal',        [EngineerMailController::class, 'generateProposal']);
+        Route::post('/{id}/send-proposal',            [EngineerMailController::class, 'sendProposal']);
     });
 
     // ── マッチング機能 ───────────────────────────────────

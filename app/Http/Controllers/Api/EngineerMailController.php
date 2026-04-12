@@ -3,13 +3,16 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Mail\ProposalMail;
 use App\Models\EmailAttachment;
 use App\Models\Engineer;
 use App\Models\EngineerMailSource;
 use App\Models\EngineerSkill;
 use App\Models\GmailToken;
+use App\Models\MailSendHistory;
 use App\Models\PublicProject;
 use App\Models\Skill;
+use App\Services\ClaudeService;
 use App\Services\EngineerMailScoringService;
 use App\Services\GmailService;
 use App\Services\SupabaseStorageService;
@@ -19,6 +22,7 @@ use Illuminate\Http\Response;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Mail;
 
 class EngineerMailController extends Controller
 {
@@ -162,7 +166,7 @@ class EngineerMailController extends Controller
             ->flip(); // O(1) lookup 用
 
         // テナントのオープン案件を必要スキルと一緒に取得
-        $projects = PublicProject::with(['requiredSkills.skill'])
+        $projects = PublicProject::with(['requiredSkills.skill', 'postedByCustomer.contacts'])
             ->published()
             ->open()
             ->get();
@@ -176,6 +180,10 @@ class EngineerMailController extends Controller
             );
 
             $matchScore = $total > 0 ? round($matched->count() / $total * 100) : 0;
+
+            $contact       = $project->postedByCustomer?->contacts->first();
+            $toEmail       = $contact?->email ?? '';
+            $salesContact  = $contact?->name ?? $project->postedByCustomer?->name ?? '';
 
             return [
                 'project_id'       => $project->id,
@@ -193,6 +201,8 @@ class EngineerMailController extends Controller
                     'is_required'  => $rs->is_required,
                     'matched'      => $emsSkills->has(mb_strtolower(trim((string) ($rs->skill?->name ?? '')))),
                 ])->values(),
+                'to_email'         => $toEmail,
+                'sales_contact'    => $salesContact,
             ];
         })
         ->sortByDesc('match_score')
@@ -315,5 +325,102 @@ class EngineerMailController extends Controller
             'count'     => $count,
             'remaining' => $remaining,
         ]);
+    }
+
+    // ── 技術者メール → マッチ案件への提案文生成 ─────────────────────────────
+
+    public function generateProposal(Request $request, int $id): JsonResponse
+    {
+        $v = $request->validate(['project_id' => 'required|integer']);
+
+        $ems     = EngineerMailSource::with('email')->findOrFail($id);
+        $project = PublicProject::with('requiredSkills.skill')->findOrFail($v['project_id']);
+
+        $mailData = [
+            'title'           => $project->title,
+            'email_subject'   => $project->title,
+            'required_skills' => $project->requiredSkills->map(fn($rs) => $rs->skill?->name)->filter()->values()->toArray(),
+            'work_location'   => $project->work_location ?? '',
+            'unit_price_min'  => $project->unit_price_min,
+            'unit_price_max'  => $project->unit_price_max,
+            'sales_contact'   => '',
+            'from_address'    => '',
+            'from_name'       => '',
+        ];
+
+        $engineerData = [
+            'name'                   => $ems->name ?? '技術者',
+            'age'                    => '',
+            'skills'                 => collect($ems->skills ?? [])->map(fn($s) => ['name' => $s, 'experience_years' => null])->toArray(),
+            'availability_status'    => $ems->available_from ? 'scheduled' : 'available',
+            'available_from'         => $ems->available_from,
+            'desired_unit_price_min' => null,
+            'desired_unit_price_max' => null,
+            'affiliation'            => $ems->email?->from_name ?? '',
+        ];
+
+        $result = app(ClaudeService::class)->generateProposal($mailData, $engineerData);
+
+        return response()->json([
+            'subject' => $result['subject'],
+            'body'    => $result['body'],
+        ]);
+    }
+
+    // ── 技術者メール → マッチ案件への提案メール送信 ──────────────────────────
+
+    public function sendProposal(Request $request, int $id): JsonResponse
+    {
+        $tenantId = auth()->user()->tenant_id;
+        EngineerMailSource::where('tenant_id', $tenantId)->findOrFail($id);
+
+        $v = $request->validate([
+            'project_id' => 'required|integer',
+            'to'         => 'required|email',
+            'subject'    => 'required|string|max:500',
+            'body'       => 'required|string',
+        ]);
+
+        $userId      = auth()->id();
+        $senderName  = auth()->user()->name ?? '';
+        $senderEmail = $this->replyToAddress($tenantId, $userId);
+
+        try {
+            Mail::to($v['to'])->send(new ProposalMail($v['subject'], $v['body'], $senderName, $senderEmail));
+            MailSendHistory::create([
+                'tenant_id'         => $tenantId,
+                'public_project_id' => $v['project_id'],
+                'send_type'         => 'engineer_proposal',
+                'to_address'        => $v['to'],
+                'subject'           => $v['subject'],
+                'body'              => $v['body'],
+                'status'            => 'sent',
+                'sent_by'           => $userId,
+            ]);
+            Log::info("技術者提案メール送信 engineer_mail_id={$id} to={$v['to']}");
+            return response()->json(['message' => '送信しました']);
+        } catch (\Exception $e) {
+            MailSendHistory::create([
+                'tenant_id'         => $tenantId,
+                'public_project_id' => $v['project_id'],
+                'send_type'         => 'engineer_proposal',
+                'to_address'        => $v['to'],
+                'subject'           => $v['subject'],
+                'body'              => $v['body'],
+                'status'            => 'failed',
+                'error_message'     => $e->getMessage(),
+                'sent_by'           => $userId,
+            ]);
+            Log::error("技術者提案メール送信失敗 engineer_mail_id={$id}: " . $e->getMessage());
+            return response()->json(['message' => 'メール送信に失敗しました'], 500);
+        }
+    }
+
+    private function replyToAddress(int $tenantId, int $userId): string
+    {
+        $gmailAddress = GmailToken::where('tenant_id', $tenantId)->value('gmail_address');
+        if (!$gmailAddress) return '';
+        [$local, $domain] = explode('@', $gmailAddress, 2);
+        return "{$local}+{$userId}@{$domain}";
     }
 }
