@@ -22,11 +22,16 @@ class ProposalMail extends Mailable
 
     public function envelope(): Envelope
     {
+        $replyTo = $this->senderEmail
+            ? [new Address($this->senderEmail, $this->senderName)]
+            : [];
+
         return new Envelope(
             from: new Address(
-                $this->senderEmail ?: config('mail.from.address'),
-                $this->senderName  ?: config('mail.from.name'),
+                config('mail.from.address'),
+                $this->senderName ?: config('mail.from.name'),
             ),
+            replyTo: $replyTo,
             subject: $this->mailSubject,
         );
     }
