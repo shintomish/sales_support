@@ -3,17 +3,25 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Mail\ProposalMail;
 use App\Models\Engineer;
+use App\Models\MailSendHistory;
 use App\Models\PublicProject;
 use App\Models\Skill;
+use App\Services\ClaudeService;
 use App\Services\MatchingService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Mail;
 use OpenApi\Attributes as OA;
 
 class MatchingController extends Controller
 {
-    public function __construct(private MatchingService $matchingService) {}
+    public function __construct(
+        private MatchingService $matchingService,
+        private ClaudeService   $claudeService,
+    ) {}
 
     #[OA\Get(
         path: '/api/v1/matching/projects/{id}/engineers',
@@ -213,5 +221,115 @@ class MatchingController extends Controller
         $skill = Skill::create($v);
 
         return response()->json(['data' => $skill], 201);
+    }
+
+    /**
+     * P3: マッチング画面から提案メール草稿を生成
+     * POST /v1/matching/projects/{projectId}/engineers/{engineerId}/generate-proposal
+     */
+    public function generateProposal(int $projectId, int $engineerId): JsonResponse
+    {
+        $tenantId = auth()->user()->tenant_id;
+
+        $project  = PublicProject::with(['requiredSkills.skill'])
+            ->where('tenant_id', $tenantId)
+            ->findOrFail($projectId);
+
+        $engineer = Engineer::with(['engineerSkills.skill', 'profile'])
+            ->where('tenant_id', $tenantId)
+            ->findOrFail($engineerId);
+
+        $mailData = [
+            'title'           => $project->title,
+            'email_subject'   => $project->title,
+            'from_address'    => null,
+            'from_name'       => null,
+            'sales_contact'   => null,
+            'required_skills' => $project->requiredSkills
+                ->map(fn($rs) => $rs->skill?->name)
+                ->filter()
+                ->values()
+                ->toArray(),
+            'work_location'   => $project->work_location ?? $project->nearest_station,
+            'unit_price_min'  => $project->unit_price_min,
+            'unit_price_max'  => $project->unit_price_max,
+        ];
+
+        $engineerData = [
+            'name'                   => $engineer->name,
+            'age'                    => $engineer->age,
+            'affiliation'            => $engineer->affiliation,
+            'availability_status'    => $engineer->profile?->availability_status,
+            'available_from'         => $engineer->profile?->available_from,
+            'desired_unit_price_min' => $engineer->profile?->desired_unit_price_min,
+            'desired_unit_price_max' => $engineer->profile?->desired_unit_price_max,
+            'skills' => $engineer->engineerSkills->map(fn($es) => [
+                'name'             => $es->skill?->name,
+                'experience_years' => $es->experience_years,
+            ])->values()->toArray(),
+        ];
+
+        try {
+            $draft = $this->claudeService->generateProposal($mailData, $engineerData);
+            return response()->json($draft);
+        } catch (\Exception $e) {
+            Log::error("matching generateProposal failed project={$projectId} engineer={$engineerId}: " . $e->getMessage());
+            return response()->json(['message' => 'メール生成に失敗しました'], 500);
+        }
+    }
+
+    /**
+     * P3: マッチング画面から提案メールを送信
+     * POST /v1/matching/projects/{projectId}/engineers/{engineerId}/send-proposal
+     */
+    public function sendProposal(Request $request, int $projectId, int $engineerId): JsonResponse
+    {
+        $tenantId = auth()->user()->tenant_id;
+
+        // テナント所有チェック
+        PublicProject::where('tenant_id', $tenantId)->findOrFail($projectId);
+        Engineer::where('tenant_id', $tenantId)->findOrFail($engineerId);
+
+        $v = $request->validate([
+            'to'      => 'required|email',
+            'subject' => 'required|string|max:500',
+            'body'    => 'required|string',
+        ]);
+
+        $userId      = auth()->id();
+        $senderName  = auth()->user()->name  ?? '';
+        $senderEmail = auth()->user()->email ?? '';
+
+        try {
+            Mail::to($v['to'])->send(new ProposalMail($v['subject'], $v['body'], $senderName, $senderEmail));
+            MailSendHistory::create([
+                'tenant_id'         => $tenantId,
+                'engineer_id'       => $engineerId,
+                'public_project_id' => $projectId,
+                'send_type'         => 'matching_proposal',
+                'to_address'        => $v['to'],
+                'subject'           => $v['subject'],
+                'body'              => $v['body'],
+                'status'            => 'sent',
+                'sent_by'           => $userId,
+            ]);
+            Log::info("マッチング提案メール送信 project={$projectId} engineer={$engineerId} to={$v['to']}");
+            return response()->json(['message' => '送信しました']);
+        } catch (\Exception $e) {
+            MailSendHistory::create([
+                'tenant_id'         => $tenantId,
+                'engineer_id'       => $engineerId,
+                'public_project_id' => $projectId,
+                'send_type'         => 'matching_proposal',
+                'to_address'        => $v['to'],
+                'subject'           => $v['subject'],
+                'body'              => $v['body'],
+                'status'            => 'failed',
+                'error_message'     => $e->getMessage(),
+                'sent_by'           => $userId,
+            ]);
+            Log::error("マッチング提案メール送信失敗 project={$projectId} engineer={$engineerId}: " . $e->getMessage());
+            return response()->json(['message' => 'メール送信に失敗しました'], 500);
+        }
     }
 }

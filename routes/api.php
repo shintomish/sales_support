@@ -23,6 +23,7 @@ use App\Http\Controllers\Api\EmailBodyTemplateController;
 use App\Http\Controllers\Api\DeliveryAddressController;
 use App\Http\Controllers\Api\DeliveryCampaignController;
 use App\Http\Controllers\Api\HealthController;
+use App\Http\Controllers\Api\SendHistoryController;
 
 // ── 認証不要 ────────────────────────────────────────
 Route::prefix('v1')->group(function () {
@@ -196,6 +197,10 @@ Route::prefix('v1')->middleware(['supabase.auth'])->group(function () {
     // マッチングスコア詳細（AI説明付き）
     Route::get('matching/projects/{projectId}/engineers/{engineerId}', [MatchingController::class, 'scoreDetail']);
 
+    // P3: マッチング画面から提案メール生成・送信
+    Route::post('matching/projects/{projectId}/engineers/{engineerId}/generate-proposal', [MatchingController::class, 'generateProposal']);
+    Route::post('matching/projects/{projectId}/engineers/{engineerId}/send-proposal',     [MatchingController::class, 'sendProposal']);
+
     // ── 配信先管理 ──────────────────────────────────────
     Route::prefix('delivery-addresses')->group(function () {
         Route::get('/',                [DeliveryAddressController::class, 'index']);
@@ -204,6 +209,10 @@ Route::prefix('v1')->middleware(['supabase.auth'])->group(function () {
         Route::patch('/{id}',          [DeliveryAddressController::class, 'update']);
         Route::delete('/{id}',         [DeliveryAddressController::class, 'destroy']);
     });
+
+    // ── 送信履歴 ────────────────────────────────────────
+    Route::get('send-histories',      [SendHistoryController::class, 'index']);
+    Route::get('send-histories/{id}', [SendHistoryController::class, 'show']);
 
     // ── 配信キャンペーン ────────────────────────────────
     Route::prefix('delivery-campaigns')->group(function () {

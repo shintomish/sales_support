@@ -13,6 +13,8 @@ class MailSendHistory extends Model
     protected $fillable = [
         'tenant_id',
         'project_mail_id',
+        'engineer_id',
+        'public_project_id',
         'send_type',
         'to_address',
         'to_name',
@@ -31,6 +33,16 @@ class MailSendHistory extends Model
     public function projectMail(): BelongsTo
     {
         return $this->belongsTo(ProjectMailSource::class, 'project_mail_id');
+    }
+
+    public function engineer(): BelongsTo
+    {
+        return $this->belongsTo(Engineer::class, 'engineer_id');
+    }
+
+    public function publicProject(): BelongsTo
+    {
+        return $this->belongsTo(PublicProject::class, 'public_project_id');
     }
 
     public function sentBy(): BelongsTo

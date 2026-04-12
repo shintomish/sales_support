@@ -12,9 +12,36 @@ class DeliveryCampaignController extends Controller
 {
     public function index(Request $request): JsonResponse
     {
-        $campaigns = DeliveryCampaign::with(['user', 'projectMailSource'])
-            ->latest()
-            ->paginate(20);
+        $search   = $request->input('search');
+        $dateFrom = $request->input('date_from');
+        $dateTo   = $request->input('date_to');
+        $perPage  = $request->integer('per_page', 20);
+
+        $query = DeliveryCampaign::with(['user', 'projectMailSource'])
+            ->latest();
+
+        if ($search) {
+            $query->where(function ($q) use ($search) {
+                $q->where('subject', 'like', "%{$search}%")
+                  ->orWhereHas('projectMailSource', fn($pq) =>
+                      $pq->where('title', 'like', "%{$search}%")
+                  )
+                  ->orWhereHas('sendHistories', fn($sq) =>
+                      $sq->where('email', 'like', "%{$search}%")
+                         ->orWhere('name', 'like', "%{$search}%")
+                  );
+            });
+        }
+
+        if ($dateFrom) {
+            $query->where('sent_at', '>=', $dateFrom . ' 00:00:00');
+        }
+
+        if ($dateTo) {
+            $query->where('sent_at', '<=', $dateTo . ' 23:59:59');
+        }
+
+        $campaigns = $query->paginate($perPage);
 
         $campaigns->getCollection()->transform(function ($campaign) {
             return [
