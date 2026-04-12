@@ -40,6 +40,11 @@ tmp/
 curl_output.txt
 output.txt
 output/
+
+# ドキュメント（機密情報が含まれる可能性があるバイナリ）
+docs/*.xlsx
+docs/*.pptx
+docs/*.pdf
 .env.production.backup
 .skills/
 .claude/settings.local.json
