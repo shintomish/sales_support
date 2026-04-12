@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Mail\ProposalMail;
+use App\Models\GmailToken;
 use App\Models\MailSendHistory;
 use App\Models\ProjectMailSource;
 use App\Services\ClaudeService;
@@ -225,7 +226,7 @@ class ProjectMailController extends Controller
 
         $userId      = auth()->id();
         $senderName  = auth()->user()->name  ?? '';
-        $senderEmail = auth()->user()->email ?? '';
+        $senderEmail = $this->replyToAddress($tenantId, $userId);
         try {
             Mail::to($v['to'])->send(new ProposalMail($v['subject'], $v['body'], $senderName, $senderEmail));
             MailSendHistory::create([
@@ -278,7 +279,7 @@ class ProjectMailController extends Controller
         $failed      = [];
         $userId      = auth()->id();
         $senderName  = auth()->user()->name  ?? '';
-        $senderEmail = auth()->user()->email ?? '';
+        $senderEmail = $this->replyToAddress($tenantId, $userId);
 
         foreach ($v['recipients'] as $recipient) {
             try {
@@ -357,5 +358,13 @@ class ProjectMailController extends Controller
                 ])->values(),
             ]),
         ]);
+    }
+
+    private function replyToAddress(int $tenantId, int $userId): string
+    {
+        $gmailAddress = GmailToken::where('tenant_id', $tenantId)->value('gmail_address');
+        if (!$gmailAddress) return '';
+        [$local, $domain] = explode('@', $gmailAddress, 2);
+        return "{$local}+{$userId}@{$domain}";
     }
 }

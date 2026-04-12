@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Mail\ProposalMail;
 use App\Models\Engineer;
+use App\Models\GmailToken;
 use App\Models\MailSendHistory;
 use App\Models\PublicProject;
 use App\Models\Skill;
@@ -298,7 +299,7 @@ class MatchingController extends Controller
 
         $userId      = auth()->id();
         $senderName  = auth()->user()->name  ?? '';
-        $senderEmail = auth()->user()->email ?? '';
+        $senderEmail = $this->replyToAddress($tenantId, $userId);
 
         try {
             Mail::to($v['to'])->send(new ProposalMail($v['subject'], $v['body'], $senderName, $senderEmail));
@@ -331,5 +332,13 @@ class MatchingController extends Controller
             Log::error("マッチング提案メール送信失敗 project={$projectId} engineer={$engineerId}: " . $e->getMessage());
             return response()->json(['message' => 'メール送信に失敗しました'], 500);
         }
+    }
+
+    private function replyToAddress(int $tenantId, int $userId): string
+    {
+        $gmailAddress = GmailToken::where('tenant_id', $tenantId)->value('gmail_address');
+        if (!$gmailAddress) return '';
+        [$local, $domain] = explode('@', $gmailAddress, 2);
+        return "{$local}+{$userId}@{$domain}";
     }
 }

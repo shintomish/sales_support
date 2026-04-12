@@ -6,6 +6,7 @@ use App\Mail\DeliveryMail;
 use App\Models\DeliveryAddress;
 use App\Models\DeliveryCampaign;
 use App\Models\DeliverySendHistory;
+use App\Models\GmailToken;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
@@ -25,7 +26,7 @@ class DeliveryCampaignService
     public function send(array $data): DeliveryCampaign
     {
         $senderName  = auth()->user()->name  ?? '';
-        $senderEmail = auth()->user()->email ?? '';
+        $senderEmail = $this->replyToAddress();
 
         $addresses = DeliveryAddress::where('tenant_id', $this->tenantId)
             ->where('is_active', true)
@@ -98,5 +99,13 @@ class DeliveryCampaignService
         ]);
 
         return $campaign->fresh();
+    }
+
+    private function replyToAddress(): string
+    {
+        $gmailAddress = GmailToken::where('tenant_id', $this->tenantId)->value('gmail_address');
+        if (!$gmailAddress) return '';
+        [$local, $domain] = explode('@', $gmailAddress, 2);
+        return "{$local}+{$this->userId}@{$domain}";
     }
 }
