@@ -23,7 +23,6 @@ use App\Http\Controllers\Api\EmailBodyTemplateController;
 use App\Http\Controllers\Api\DeliveryAddressController;
 use App\Http\Controllers\Api\DeliveryCampaignController;
 use App\Http\Controllers\Api\HealthController;
-use App\Http\Controllers\Api\SendHistoryController;
 
 // ── 認証不要 ────────────────────────────────────────
 Route::prefix('v1')->group(function () {
@@ -212,11 +211,7 @@ Route::prefix('v1')->middleware(['supabase.auth'])->group(function () {
         Route::delete('/{id}',         [DeliveryAddressController::class, 'destroy']);
     });
 
-    // ── 送信履歴 ────────────────────────────────────────
-    Route::get('send-histories',      [SendHistoryController::class, 'index']);
-    Route::get('send-histories/{id}', [SendHistoryController::class, 'show']);
-
-    // ── 配信キャンペーン ────────────────────────────────
+    // ── 配信キャンペーン（送信履歴を統合）───────────────────
     Route::prefix('delivery-campaigns')->group(function () {
         Route::get('/',     [DeliveryCampaignController::class, 'index']);
         Route::post('/',    [DeliveryCampaignController::class, 'store']);

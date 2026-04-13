@@ -4,9 +4,10 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Mail\ProposalMail;
+use App\Models\DeliveryCampaign;
+use App\Models\DeliverySendHistory;
 use App\Models\Engineer;
 use App\Models\GmailToken;
-use App\Models\MailSendHistory;
 use App\Models\PublicProject;
 use App\Models\Skill;
 use App\Services\ClaudeService;
@@ -301,34 +302,42 @@ class MatchingController extends Controller
         $senderName  = auth()->user()->name  ?? '';
         $senderEmail = $this->replyToAddress($tenantId, $userId);
 
+        $campaign = DeliveryCampaign::create([
+            'tenant_id'     => $tenantId,
+            'send_type'     => 'matching_proposal',
+            'user_id'       => $userId,
+            'subject'       => $v['subject'],
+            'body'          => $v['body'],
+            'total_count'   => 1,
+            'success_count' => 0,
+            'failed_count'  => 0,
+            'sent_at'       => now(),
+        ]);
+
         try {
             Mail::to($v['to'])->send(new ProposalMail($v['subject'], $v['body'], $senderName, $senderEmail));
-            MailSendHistory::create([
+            DeliverySendHistory::create([
                 'tenant_id'         => $tenantId,
+                'campaign_id'       => $campaign->id,
                 'engineer_id'       => $engineerId,
                 'public_project_id' => $projectId,
-                'send_type'         => 'matching_proposal',
-                'to_address'        => $v['to'],
-                'subject'           => $v['subject'],
-                'body'              => $v['body'],
+                'email'             => $v['to'],
                 'status'            => 'sent',
-                'sent_by'           => $userId,
             ]);
+            $campaign->update(['success_count' => 1]);
             Log::info("マッチング提案メール送信 project={$projectId} engineer={$engineerId} to={$v['to']}");
             return response()->json(['message' => '送信しました']);
         } catch (\Exception $e) {
-            MailSendHistory::create([
+            DeliverySendHistory::create([
                 'tenant_id'         => $tenantId,
+                'campaign_id'       => $campaign->id,
                 'engineer_id'       => $engineerId,
                 'public_project_id' => $projectId,
-                'send_type'         => 'matching_proposal',
-                'to_address'        => $v['to'],
-                'subject'           => $v['subject'],
-                'body'              => $v['body'],
+                'email'             => $v['to'],
                 'status'            => 'failed',
                 'error_message'     => $e->getMessage(),
-                'sent_by'           => $userId,
             ]);
+            $campaign->update(['failed_count' => 1]);
             Log::error("マッチング提案メール送信失敗 project={$projectId} engineer={$engineerId}: " . $e->getMessage());
             return response()->json(['message' => 'メール送信に失敗しました'], 500);
         }

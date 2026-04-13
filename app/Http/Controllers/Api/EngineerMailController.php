@@ -4,12 +4,13 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Mail\ProposalMail;
+use App\Models\DeliveryCampaign;
+use App\Models\DeliverySendHistory;
 use App\Models\EmailAttachment;
 use App\Models\Engineer;
 use App\Models\EngineerMailSource;
 use App\Models\EngineerSkill;
 use App\Models\GmailToken;
-use App\Models\MailSendHistory;
 use App\Models\PublicProject;
 use App\Models\Skill;
 use App\Services\ClaudeService;
@@ -86,6 +87,8 @@ class EngineerMailController extends Controller
             'nearest_station'  => 'nullable|string|max:100',
             'skills'           => 'nullable|array',
             'skills.*'         => 'string|max:100',
+            'unit_price_min'   => 'nullable|integer|min:0',
+            'unit_price_max'   => 'nullable|integer|min:0',
         ]);
 
         $ems->update($v);
@@ -171,6 +174,9 @@ class EngineerMailController extends Controller
             ->open()
             ->get();
 
+        // 技術者の希望単価（単価上限を基準にフィルタリング）
+        $engineerPrice = $ems->unit_price_max ?? $ems->unit_price_min;
+
         $results = $projects->map(function (PublicProject $project) use ($emsSkills) {
             $required = $project->requiredSkills;
             $total    = $required->count();
@@ -204,6 +210,14 @@ class EngineerMailController extends Controller
                 'to_email'         => $toEmail,
                 'sales_contact'    => $salesContact,
             ];
+        })
+        // 技術者の希望単価が案件の単価上限を超える場合は除外
+        // 案件に単価情報がない場合は表示する
+        ->filter(function ($item) use ($engineerPrice) {
+            if ($engineerPrice === null) return true;
+            $projectMax = $item['unit_price_max'];
+            if ($projectMax === null) return true;
+            return (float) $projectMax >= $engineerPrice;
         })
         ->sortByDesc('match_score')
         ->values()
@@ -311,13 +325,12 @@ class EngineerMailController extends Controller
         ]);
     }
 
-    // 既存レコードを全件再スコアリング＋再抽出（500件バッチ）
+    // 既存レコードを全件再スコアリング＋再抽出（全件）
     public function rescoreAll(): JsonResponse
     {
-        set_time_limit(300);
-        $batchSize = 500;
+        set_time_limit(600);
         $total     = EngineerMailSource::whereNotNull('email_id')->count();
-        $count     = $this->scoringService->rescoreAll($batchSize);
+        $count     = $this->scoringService->rescoreAll(null);
         $remaining = max(0, $total - $count);
 
         return response()->json([
@@ -350,7 +363,7 @@ class EngineerMailController extends Controller
 
         $engineerData = [
             'name'                   => $ems->name ?? '技術者',
-            'age'                    => '',
+            'age'                    => $ems->age,
             'skills'                 => collect($ems->skills ?? [])->map(fn($s) => ['name' => $s, 'experience_years' => null])->toArray(),
             'availability_status'    => $ems->available_from ? 'scheduled' : 'available',
             'available_from'         => $ems->available_from,
@@ -385,32 +398,41 @@ class EngineerMailController extends Controller
         $senderName  = auth()->user()->name ?? '';
         $senderEmail = $this->replyToAddress($tenantId, $userId);
 
+        $campaign = DeliveryCampaign::create([
+            'tenant_id'               => $tenantId,
+            'send_type'               => 'engineer_proposal',
+            'engineer_mail_source_id' => $id,
+            'user_id'                 => $userId,
+            'subject'                 => $v['subject'],
+            'body'                    => $v['body'],
+            'total_count'             => 1,
+            'success_count'           => 0,
+            'failed_count'            => 0,
+            'sent_at'                 => now(),
+        ]);
+
         try {
             Mail::to($v['to'])->send(new ProposalMail($v['subject'], $v['body'], $senderName, $senderEmail));
-            MailSendHistory::create([
+            DeliverySendHistory::create([
                 'tenant_id'         => $tenantId,
+                'campaign_id'       => $campaign->id,
                 'public_project_id' => $v['project_id'],
-                'send_type'         => 'engineer_proposal',
-                'to_address'        => $v['to'],
-                'subject'           => $v['subject'],
-                'body'              => $v['body'],
+                'email'             => $v['to'],
                 'status'            => 'sent',
-                'sent_by'           => $userId,
             ]);
+            $campaign->update(['success_count' => 1]);
             Log::info("技術者提案メール送信 engineer_mail_id={$id} to={$v['to']}");
             return response()->json(['message' => '送信しました']);
         } catch (\Exception $e) {
-            MailSendHistory::create([
+            DeliverySendHistory::create([
                 'tenant_id'         => $tenantId,
+                'campaign_id'       => $campaign->id,
                 'public_project_id' => $v['project_id'],
-                'send_type'         => 'engineer_proposal',
-                'to_address'        => $v['to'],
-                'subject'           => $v['subject'],
-                'body'              => $v['body'],
+                'email'             => $v['to'],
                 'status'            => 'failed',
                 'error_message'     => $e->getMessage(),
-                'sent_by'           => $userId,
             ]);
+            $campaign->update(['failed_count' => 1]);
             Log::error("技術者提案メール送信失敗 engineer_mail_id={$id}: " . $e->getMessage());
             return response()->json(['message' => 'メール送信に失敗しました'], 500);
         }

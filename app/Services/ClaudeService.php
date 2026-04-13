@@ -37,12 +37,19 @@ class ClaudeService
 
         $text = $response->json('content.0.text', '');
 
-        // subject / body を分割して返す
-        if (preg_match('/【件名】\s*(.+?)(?:\n|$)/u', $text, $sm)) {
-            $subject = trim($sm[1]);
-        } else {
-            $subject = 'Re: ' . ($mail['email_subject'] ?? '案件のご紹介');
+        // 件名：【技術者ご紹介】{タイトル}（max{単価}万円）
+        $title    = $mail['title'] ?? $mail['email_subject'] ?? '案件';
+        $priceStr = '';
+        $priceMax = isset($mail['unit_price_max']) ? (int) $mail['unit_price_max'] : 0;
+        $priceMin = isset($mail['unit_price_min']) ? (int) $mail['unit_price_min'] : 0;
+        if ($priceMax > 0) {
+            $priceStr = '（max' . $priceMax . '万円）';
+        } elseif ($priceMin > 0) {
+            $priceStr = '（' . $priceMin . '万円〜）';
         }
+        $subject = '【技術者ご紹介】' . $title . $priceStr;
+
+        // 本文：【本文】以降を抽出
         $body = preg_replace('/^.*?【本文】\s*/su', '', $text);
 
         return [
@@ -80,8 +87,13 @@ class ClaudeService
         }
         $toName       = $mail['sales_contact'] ?? $mail['from_name'] ?? 'ご担当者';
 
+        $age = !empty($engineer['age']) ? (int) $engineer['age'] : null;
+        $nameWithSuffix = $engineer['name']
+            ? $engineer['name'] . ($age ? "（{$age}歳）" : '') . '氏'
+            : '技術者';
+
         return <<<PROMPT
-あなたはSES企業の積極的な営業担当です。以下の案件に対して、技術者を提案するメールの「中心本文」のみを日本語で作成してください。
+あなたはSES企業の積極的な営業担当です。以下の案件に対して、技術者を提案するメールの「本文パート」のみを日本語で作成してください。
 
 ## 案件情報
 - タイトル: {$mailTitle}
@@ -90,8 +102,7 @@ class ClaudeService
 - 単価: {$mailPrice}
 
 ## 提案する技術者
-- 氏名: {$engineer['name']}
-- 年齢: {$engineer['age']}歳
+- 氏名（表記）: {$nameWithSuffix}
 - スキル: {$skills}
 - 稼働: {$availability}
 - 希望単価: {$price}
@@ -99,16 +110,16 @@ class ClaudeService
 
 ## 絶対に守るべき指示
 - 挨拶文・署名は不要（別途テンプレートで付与するため）
+- 本文の冒頭に必ず「{$nameWithSuffix}のご紹介です。」という一文を入れること
 - スキル経験が浅い・0年でも、絶対に謝罪・遠慮・ネガティブな表現を使わないこと
 - スキルが乏しい場合は「習得意欲・成長速度・コミュニケーション力・ポテンシャル」を前面に出して積極的にアピールすること
 - 面談を強くプッシュする締めにすること
-- 簡潔に100〜150文字程度
+- 1文ごとに改行を入れ、読みやすい段落構造にすること
+- 全体150〜200文字程度
 - 以下の形式で出力すること:
 
-【件名】{$mailTitle}
-
 【本文】
-（ポジティブな技術者紹介・面談打診のみ。謝罪・ネガティブ表現禁止）
+（技術者紹介・面談打診のみ。謝罪・ネガティブ表現禁止）
 PROMPT;
     }
 

@@ -80,8 +80,9 @@ class EngineerMailScoringService
         'BP', 'フリーランス', '自社社員', '下請け', '一社先', '個人事業主', '契約社員',
     ];
 
-    private const SCORE_OK     = 60;
-    private const SCORE_REVIEW = 40;
+    private const SCORE_OK       = 60;
+    private const SCORE_REVIEW   = 40;
+    private const PRICE_MIN_FLOOR = 35; // 万円：これ未満は除外
 
     // ── 所属区分マッピング ─────────────────────────────────
 
@@ -295,8 +296,13 @@ class EngineerMailScoringService
         $body    = iconv('UTF-8', 'UTF-8//IGNORE', $body)    ?: '';
         $text    = $subject . "\n" . $body;
 
+        [$priceMin, $priceMax] = $this->extractUnitPrice($text);
+
         $result = [
             'name'             => $this->extractName($text),
+            'age'              => $this->extractAge($text),
+            'unit_price_min'   => $priceMin,
+            'unit_price_max'   => $priceMax,
             'affiliation_type' => $this->extractAffiliationType($text),
             'available_from'   => $this->extractAvailableFrom($text),
             'nearest_station'  => $this->extractNearestStation($text),
@@ -502,8 +508,14 @@ class EngineerMailScoringService
             if (!empty($s['name'])) $skills[] = $s['name'];
         }
 
+        $priceMin = isset($data['desired_unit_price_min']) ? (int) $data['desired_unit_price_min'] : null;
+        $priceMax = isset($data['desired_unit_price_max']) ? (int) $data['desired_unit_price_max'] : null;
+
         return [
             'name'             => $data['name']             ?? null,
+            'age'              => isset($data['age']) ? (int) $data['age'] : null,
+            'unit_price_min'   => $priceMin,
+            'unit_price_max'   => $priceMax,
             'affiliation_type' => $affiliationType,
             'available_from'   => $data['available_from']   ?? null,
             'nearest_station'  => $data['nearest_station']  ?? null,
@@ -534,6 +546,82 @@ class EngineerMailScoringService
         }
 
         return null;
+    }
+
+    private function extractAge(string $text): ?int
+    {
+        // ■年齢■ 形式（次行に値）
+        if (preg_match('/■年齢■\s*\n\s*(\d{1,3})/u', $text, $m)) {
+            return (int) $m[1];
+        }
+        // 年齢：28 / 年齢: 28歳 / 28歳
+        if (preg_match('/年齢[：:\s]*(\d{2,3})/u', $text, $m)) {
+            return (int) $m[1];
+        }
+        // NA(32歳) / S.N(28歳/男性) / MN(女性/51歳) などの括弧内
+        if (preg_match('/[（(][^）)]*?(\d{2,3})歳/u', $text, $m)) {
+            return (int) $m[1];
+        }
+        // 満28歳
+        if (preg_match('/満\s*(\d{2,3})\s*歳/u', $text, $m)) {
+            return (int) $m[1];
+        }
+        return null;
+    }
+
+    /**
+     * 希望単価（万円/月）を抽出して [min, max] で返す。
+     * 記載なしの場合は [null, null]。
+     *
+     * @return array{0: int|null, 1: int|null}
+     */
+    private function extractUnitPrice(string $text): array
+    {
+        // ■単金 / ■単　金 形式（■終端・改行・次行どちらも対応、範囲も対応）
+        // 例: "■単金■\n60~70万円" / "■単　金：110万" / "■単金：〜80万"
+        if (preg_match('/■単[　\s]*金[■：:\s　]*\n?\s*(.*?)(?:\n|$)/u', $text, $m)) {
+            $line = $m[1];
+            // 範囲: 60~70万 / 60〜70万
+            if (preg_match('/(\d{2,3})[万Mm]?[〜～~\-－](\d{2,3})/u', $line, $r)) {
+                return [(int) $r[1], (int) $r[2]];
+            }
+            // 単一値: ~110万 / 110万
+            if (preg_match('/[〜～~]?(\d{2,3})[万Mm]/u', $line, $r)) {
+                $val = (int) $r[1];
+                return [$val, $val];
+            }
+        }
+
+        // ■単価 / ■希望単価 形式（■終端・改行・次行どちらも対応）
+        if (preg_match('/■(?:単[　\s]*価|希望単価)[■：:\s　]*\n?\s*(.*?)(?:\n|$)/u', $text, $m)) {
+            $line = $m[1];
+            if (preg_match('/(\d{2,3})[万Mm]?[〜～~\-－](\d{2,3})/u', $line, $r)) {
+                return [(int) $r[1], (int) $r[2]];
+            }
+            if (preg_match('/[〜～~]?(\d{2,3})[万Mm]/u', $line, $r)) {
+                $val = (int) $r[1];
+                return [$val, $val];
+            }
+        }
+
+        // 範囲パターン（ラベルなし）: 60〜80万, 60~80万円, 60-80万円
+        if (preg_match('/(\d{2,3})[万Mm]?[〜～~\-－](\d{2,3})[万Mm円]/u', $text, $m)) {
+            return [(int) $m[1], (int) $m[2]];
+        }
+
+        // ラベル付き単一値（全角スペース対応）: 単　価：80万, 単金 110万
+        if (preg_match('/(?:単[　\s]*価|単[　\s]*金|希望単価|想定単価|月単価|月額)[：:\s　]*[〜～~]?(\d{2,3})[万Mm]/u', $text, $m)) {
+            $val = (int) $m[1];
+            return [$val, $val];
+        }
+
+        // 上限のみ: ～80万/月, 〜110万円
+        if (preg_match('/[〜～](\d{2,3})[万Mm][円]?[\/／]?[月Mm]?/u', $text, $m)) {
+            $val = (int) $m[1];
+            return [null, $val];
+        }
+
+        return [null, null];
     }
 
     private function extractAffiliationType(string $text): ?string
@@ -649,6 +737,19 @@ class EngineerMailScoringService
 
     private function save(Email $email, int $score, array $reasons, string $engine, array $extracted): EngineerMailSource
     {
+        // 単価チェック（記載なし・下限未満は除外）
+        $priceMin = $extracted['unit_price_min'] ?? null;
+        $priceMax = $extracted['unit_price_max'] ?? null;
+        $price    = $priceMin ?? $priceMax; // いずれか有効な値を使う
+
+        if ($price === null) {
+            $reasons[] = 'no_unit_price';
+            $reasons[]  = 'excluded';
+        } elseif ($price < self::PRICE_MIN_FLOOR) {
+            $reasons[] = 'unit_price_too_low';
+            $reasons[]  = 'excluded';
+        }
+
         $status = match(true) {
             in_array('excluded', $reasons) => 'excluded',
             $score >= self::SCORE_OK       => 'new',
