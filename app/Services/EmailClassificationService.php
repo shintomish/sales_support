@@ -18,6 +18,16 @@ class EmailClassificationService
         'ご紹介', '弊社直', '弊社要員', '弊社社員',
     ];
 
+    // 本文にこれらが含まれる場合は技術者メールと判定
+    private const ENGINEER_BODY_KEYWORDS = [
+        '弊社要員をご紹介',
+        '弊社社員をご紹介',
+        '弊社エンジニアをご紹介',
+        '弊社技術者をご紹介',
+        'スキルシートを添付',
+        '経歴書を添付',
+    ];
+
     /**
      * 全メールを再分類する（ルール変更後の一括更新用）
      * @return int 分類件数
@@ -83,9 +93,11 @@ class EmailClassificationService
      * 優先順位:
      *   1. 添付ファイルあり               → engineer
      *   2. 件名に【技術者情報】           → engineer
-     *   3. 件名に【案件情報】             → project
-     *   4. 本文にURLあり（件名なし含む）  → project
-     *   5. 本文のみ（URLなし）            → project
+     *   3. 件名に人材系キーワード         → engineer
+     *   4. 本文に技術者キーワード         → engineer
+     *   5. 件名に【案件情報】             → project
+     *   6. 本文にURLあり（件名なし含む）  → project
+     *   7. 本文のみ（URLなし）            → project
      */
     private function determineCategory(Email $email): array
     {
@@ -110,17 +122,24 @@ class EmailClassificationService
             }
         }
 
-        // 4. 件名【案件情報】
+        // 4. 本文に技術者キーワード
+        foreach (self::ENGINEER_BODY_KEYWORDS as $kw) {
+            if (mb_strpos($body, $kw) !== false) {
+                return ['engineer', 'body_engineer_keyword:' . $kw, $urls];
+            }
+        }
+
+        // 5. 件名【案件情報】
         if (mb_strpos($subject, '【案件情報】') !== false) {
             return ['project', 'subject_project_keyword', $urls];
         }
 
-        // 5. 本文にURLあり（件名なし・URLのみ含む）
+        // 6. 本文にURLあり（件名なし・URLのみ含む）
         if (!empty($urls)) {
             return ['project', 'body_url', $urls];
         }
 
-        // 6. 本文のみ
+        // 7. 本文のみ
         return ['project', 'body_text_only', []];
     }
 
