@@ -71,7 +71,7 @@ return [
             'level' => env('LOG_LEVEL', 'debug'),
             'days' => env('LOG_DAILY_DAYS', 14),
             'replace_placeholders' => true,
-            'timezone' => 'Asia/Tokyo',
+            'tap' => [\App\Logging\JstFormatter::class],
         ],
 
         'slack' => [
