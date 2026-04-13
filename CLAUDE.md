@@ -92,8 +92,10 @@ docker exec sales_support_app php artisan config:clear
 ## 開発環境（職場・自宅 併用）
 - 職場・自宅ともに WSL2 + Docker 環境
 - コード共有: GitHub（git push/pull）
-- `.env` 共有: `.env_backup` をセキュアな方法で手動同期（gitには含めない）
-- `memory.db` 共有: 下記「長期記憶の参照方法」参照
+- `.env` 共有: 手動同期（gitには含めない）
+- `memory.db` 共有: Dropbox経由でリアルタイム同期（職場・自宅ともにシンボリックリンク）
+  - 実体: `/mnt/c/Users/user/Dropbox/Public/Book/03_Aizen/990_Sales_Support/memory_engine/memory.db`
+  - 職場・自宅共通: `ln -s "/mnt/c/Users/user/Dropbox/.../memory_engine/memory.db" ~/memory_engine/memory.db`
 
 ## 長期記憶の参照方法
 過去のセッションで議論した設計判断・トラブル対応は以下で検索できる:
