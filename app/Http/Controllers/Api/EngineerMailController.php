@@ -388,10 +388,12 @@ class EngineerMailController extends Controller
         EngineerMailSource::where('tenant_id', $tenantId)->findOrFail($id);
 
         $v = $request->validate([
-            'project_id' => 'required|integer',
-            'to'         => 'required|email',
-            'subject'    => 'required|string|max:500',
-            'body'       => 'required|string',
+            'project_id'    => 'required|integer',
+            'to'            => 'required|email',
+            'subject'       => 'required|string|max:500',
+            'body'          => 'required|string',
+            'attachments'   => 'nullable|array',
+            'attachments.*' => 'file|max:10240',
         ]);
 
         $userId      = auth()->id();
@@ -412,7 +414,8 @@ class EngineerMailController extends Controller
         ]);
 
         try {
-            Mail::to($v['to'])->send(new ProposalMail($v['subject'], $v['body'], $senderName, $senderEmail));
+            $uploadedFiles = $request->file('attachments') ?? [];
+            Mail::to($v['to'])->send(new ProposalMail($v['subject'], $v['body'], $senderName, $senderEmail, $uploadedFiles));
             DeliverySendHistory::create([
                 'tenant_id'         => $tenantId,
                 'campaign_id'       => $campaign->id,
