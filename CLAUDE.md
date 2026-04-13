@@ -74,6 +74,27 @@ docker exec sales_support_app php artisan migrate --force
 docker exec sales_support_app php artisan config:clear
 ```
 
+## 事業概要（確認省略のための固定知識）
+- **事業内容**: SES企業。IT技術者と発注企業（IT会社）をマッチング・提案
+- **主なフロー**: 技術者紹介メール受信 → スコアリング → マッチ案件を特定 → 提案メール送信
+- **目標**: 月1,200社への一括配信（現在AWS SES本番審査待ち・東京リージョン）
+- **送信メール**: B2Bトランザクションメール（取引先IT企業の担当者宛）
+
+## 確定済み設計判断
+- 希望単価なし・35万/月未満の技術者 → 除外（`no_unit_price` / `unit_price_too_low`）
+- マッチ案件表示条件: `案件.unit_price_max >= 技術者.unit_price_max`
+- 送信履歴は `delivery_campaigns` + `delivery_send_histories` で一元管理
+  - send_type: `delivery` / `proposal` / `matching_proposal` / `engineer_proposal`
+- メール送信: AWS SES ap-northeast-1（東京）DKIM検証済み
+- 全件再スコア: 添付解析スキップ・上限なし・600秒タイムアウト
+- `storage/api-docs/` はgitignore済み（自動生成ファイル）
+
+## 開発環境（職場・自宅 併用）
+- 職場・自宅ともに WSL2 + Docker 環境
+- コード共有: GitHub（git push/pull）
+- `.env` 共有: `.env_backup` をセキュアな方法で手動同期（gitには含めない）
+- `memory.db` 共有: 下記「長期記憶の参照方法」参照
+
 ## 長期記憶の参照方法
 過去のセッションで議論した設計判断・トラブル対応は以下で検索できる:
 ```bash
