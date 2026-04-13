@@ -10,7 +10,6 @@ use App\Models\EmailAttachment;
 use App\Models\Engineer;
 use App\Models\EngineerMailSource;
 use App\Models\EngineerSkill;
-use App\Models\GmailToken;
 use App\Models\PublicProject;
 use App\Models\Skill;
 use App\Services\ClaudeService;
@@ -398,7 +397,7 @@ class EngineerMailController extends Controller
 
         $userId      = auth()->id();
         $senderName  = auth()->user()->name ?? '';
-        $senderEmail = $this->replyToAddress($tenantId, $userId);
+        $senderEmail = $this->replyToAddress();
 
         $campaign = DeliveryCampaign::create([
             'tenant_id'               => $tenantId,
@@ -441,11 +440,8 @@ class EngineerMailController extends Controller
         }
     }
 
-    private function replyToAddress(int $tenantId, int $userId): string
+    private function replyToAddress(): string
     {
-        $gmailAddress = GmailToken::where('tenant_id', $tenantId)->value('gmail_address');
-        if (!$gmailAddress) return '';
-        [$local, $domain] = explode('@', $gmailAddress, 2);
-        return "{$local}+{$userId}@{$domain}";
+        return config('mail.from.address') ?? '';
     }
 }

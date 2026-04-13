@@ -6,7 +6,6 @@ use App\Http\Controllers\Controller;
 use App\Mail\ProposalMail;
 use App\Models\DeliveryCampaign;
 use App\Models\DeliverySendHistory;
-use App\Models\GmailToken;
 use App\Models\ProjectMailSource;
 use App\Services\ClaudeService;
 use App\Services\ProjectMailMatchingService;
@@ -227,7 +226,7 @@ class ProjectMailController extends Controller
 
         $userId      = auth()->id();
         $senderName  = auth()->user()->name  ?? '';
-        $senderEmail = $this->replyToAddress($tenantId, $userId);
+        $senderEmail = $this->replyToAddress();
 
         $campaign = DeliveryCampaign::create([
             'tenant_id'       => $tenantId,
@@ -288,7 +287,7 @@ class ProjectMailController extends Controller
         $failed      = [];
         $userId      = auth()->id();
         $senderName  = auth()->user()->name  ?? '';
-        $senderEmail = $this->replyToAddress($tenantId, $userId);
+        $senderEmail = $this->replyToAddress();
 
         $campaign = DeliveryCampaign::create([
             'tenant_id'       => $tenantId,
@@ -379,11 +378,8 @@ class ProjectMailController extends Controller
         ]);
     }
 
-    private function replyToAddress(int $tenantId, int $userId): string
+    private function replyToAddress(): string
     {
-        $gmailAddress = GmailToken::where('tenant_id', $tenantId)->value('gmail_address');
-        if (!$gmailAddress) return '';
-        [$local, $domain] = explode('@', $gmailAddress, 2);
-        return "{$local}+{$userId}@{$domain}";
+        return config('mail.from.address') ?? '';
     }
 }

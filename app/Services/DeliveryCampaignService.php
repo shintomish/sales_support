@@ -6,7 +6,6 @@ use App\Mail\DeliveryMail;
 use App\Models\DeliveryAddress;
 use App\Models\DeliveryCampaign;
 use App\Models\DeliverySendHistory;
-use App\Models\GmailToken;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
@@ -103,9 +102,6 @@ class DeliveryCampaignService
 
     private function replyToAddress(): string
     {
-        $gmailAddress = GmailToken::where('tenant_id', $this->tenantId)->value('gmail_address');
-        if (!$gmailAddress) return '';
-        [$local, $domain] = explode('@', $gmailAddress, 2);
-        return "{$local}+{$this->userId}@{$domain}";
+        return config('mail.from.address') ?? '';
     }
 }
