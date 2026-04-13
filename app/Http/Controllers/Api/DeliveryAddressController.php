@@ -73,7 +73,8 @@ class DeliveryAddressController extends Controller
         $address = DeliveryAddress::findOrFail($id);
 
         $validated = $request->validate([
-            'is_active' => 'required|boolean',
+            'is_active' => 'sometimes|boolean',
+            'name'      => 'sometimes|nullable|string|max:255',
         ]);
 
         $address->update($validated);
