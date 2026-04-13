@@ -390,6 +390,7 @@ class EngineerMailController extends Controller
         $v = $request->validate([
             'project_id'    => 'required|integer',
             'to'            => 'required|email',
+            'to_name'       => 'nullable|string|max:255',
             'subject'       => 'required|string|max:500',
             'body'          => 'required|string',
             'attachments'   => 'nullable|array',
@@ -421,6 +422,7 @@ class EngineerMailController extends Controller
                 'campaign_id'       => $campaign->id,
                 'public_project_id' => $v['project_id'],
                 'email'             => $v['to'],
+                'name'              => $v['to_name'] ?? null,
                 'status'            => 'sent',
             ]);
             $campaign->update(['success_count' => 1]);
@@ -432,6 +434,7 @@ class EngineerMailController extends Controller
                 'campaign_id'       => $campaign->id,
                 'public_project_id' => $v['project_id'],
                 'email'             => $v['to'],
+                'name'              => $v['to_name'] ?? null,
                 'status'            => 'failed',
                 'error_message'     => $e->getMessage(),
             ]);

@@ -220,6 +220,7 @@ class ProjectMailController extends Controller
 
         $v = $request->validate([
             'to'      => 'required|email',
+            'to_name' => 'nullable|string|max:255',
             'subject' => 'required|string|max:500',
             'body'    => 'required|string',
         ]);
@@ -247,6 +248,7 @@ class ProjectMailController extends Controller
                 'tenant_id'   => $tenantId,
                 'campaign_id' => $campaign->id,
                 'email'       => $v['to'],
+                'name'        => $v['to_name'] ?? null,
                 'status'      => 'sent',
             ]);
             $campaign->update(['success_count' => 1]);
@@ -257,6 +259,7 @@ class ProjectMailController extends Controller
                 'tenant_id'     => $tenantId,
                 'campaign_id'   => $campaign->id,
                 'email'         => $v['to'],
+                'name'          => $v['to_name'] ?? null,
                 'status'        => 'failed',
                 'error_message' => $e->getMessage(),
             ]);

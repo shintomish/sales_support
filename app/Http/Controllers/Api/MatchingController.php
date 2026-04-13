@@ -293,6 +293,7 @@ class MatchingController extends Controller
 
         $v = $request->validate([
             'to'      => 'required|email',
+            'to_name' => 'nullable|string|max:255',
             'subject' => 'required|string|max:500',
             'body'    => 'required|string',
         ]);
@@ -321,6 +322,7 @@ class MatchingController extends Controller
                 'engineer_id'       => $engineerId,
                 'public_project_id' => $projectId,
                 'email'             => $v['to'],
+                'name'              => $v['to_name'] ?? null,
                 'status'            => 'sent',
             ]);
             $campaign->update(['success_count' => 1]);
@@ -333,6 +335,7 @@ class MatchingController extends Controller
                 'engineer_id'       => $engineerId,
                 'public_project_id' => $projectId,
                 'email'             => $v['to'],
+                'name'              => $v['to_name'] ?? null,
                 'status'            => 'failed',
                 'error_message'     => $e->getMessage(),
             ]);
