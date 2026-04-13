@@ -38,7 +38,8 @@ class ClaudeService
         $text = $response->json('content.0.text', '');
 
         // 件名：【技術者ご紹介】{タイトル}（max{単価}万円）
-        $title    = $mail['title'] ?? $mail['email_subject'] ?? '案件';
+        // タイトル末尾に既に単価表示がある場合は除去して重複を防ぐ
+        $title    = rtrim((string) preg_replace('/[（(](?:max)?\d+万円[〜～]?[）)]\s*$/u', '', $mail['title'] ?? $mail['email_subject'] ?? '案件'));
         $priceStr = '';
         $priceMax = isset($mail['unit_price_max']) ? (int) $mail['unit_price_max'] : 0;
         $priceMin = isset($mail['unit_price_min']) ? (int) $mail['unit_price_min'] : 0;
