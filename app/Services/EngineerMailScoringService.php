@@ -128,9 +128,11 @@ class EngineerMailScoringService
 
         $count = 0;
         foreach ($query->get() as $email) {
+            Log::info("[EngineerMailScoring] 処理開始 email_id={$email->id}");
             try {
                 $this->score($email);
                 $count++;
+                Log::info("[EngineerMailScoring] 処理完了 email_id={$email->id}");
             } catch (\Throwable $e) {
                 Log::error("[EngineerMailScoring] email_id={$email->id} 失敗: " . $e->getMessage());
             }
@@ -415,6 +417,9 @@ class EngineerMailScoringService
     private function extractTextFromTempFile(string $path, string $ext): string
     {
         if ($ext === 'pdf') {
+            if (filesize($path) > 5 * 1024 * 1024) {
+                return '（ファイルサイズが大きいため添付解析をスキップしました）';
+            }
             $parser = new \Smalot\PdfParser\Parser();
             return $parser->parseFile($path)->getText();
         }

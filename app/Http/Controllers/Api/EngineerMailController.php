@@ -315,7 +315,7 @@ class EngineerMailController extends Controller
     {
         set_time_limit(300);
         ini_set('memory_limit', '512M');
-        $batchSize = 10;
+        $batchSize = 1;
         $count     = $this->scoringService->scorePending($batchSize);
         $remaining = $this->scoringService->pendingCount();
 
