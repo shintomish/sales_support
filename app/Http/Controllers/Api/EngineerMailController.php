@@ -310,13 +310,13 @@ class EngineerMailController extends Controller
         ]);
     }
 
-    // 未処理メールを手動で一括スコアリング（1回50件ずつ処理）
-    public function scoreAll(): JsonResponse
+    // 未処理メールを手動で一括スコアリング（添付解析スキップで高速化）
+    public function scoreAll(Request $request): JsonResponse
     {
-        set_time_limit(300);
+        set_time_limit(120);
         ini_set('memory_limit', '512M');
-        $batchSize = 1;
-        $count     = $this->scoringService->scorePending($batchSize);
+        $batchSize = 100;
+        $count     = $this->scoringService->scorePending($batchSize, false);
         $remaining = $this->scoringService->pendingCount();
 
         return response()->json([
@@ -326,18 +326,22 @@ class EngineerMailController extends Controller
         ]);
     }
 
-    // 既存レコードを全件再スコアリング＋再抽出（全件）
-    public function rescoreAll(): JsonResponse
+    // 既存レコードを全件再スコアリング＋再抽出（バッチ処理対応）
+    public function rescoreAll(Request $request): JsonResponse
     {
-        set_time_limit(600);
+        set_time_limit(120);
+        ini_set('memory_limit', '512M');
+        $batchSize = 300;
+        $offset    = $request->integer('offset', 0);
+        $count     = $this->scoringService->rescoreAll($batchSize, $offset);
         $total     = EngineerMailSource::whereNotNull('email_id')->count();
-        $count     = $this->scoringService->rescoreAll(null);
-        $remaining = max(0, $total - $count);
+        $remaining = max(0, $total - ($offset + $count));
 
         return response()->json([
             'message'   => "{$count}件を再スコアリングしました",
             'count'     => $count,
             'remaining' => $remaining,
+            'offset'    => $offset + $count,
         ]);
     }
 

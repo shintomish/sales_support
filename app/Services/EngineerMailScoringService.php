@@ -104,21 +104,25 @@ class EngineerMailScoringService
      */
     public function pendingCount(): int
     {
-        $processedIds = EngineerMailSource::pluck('email_id')->all();
         return Email::where('category', 'engineer')
-            ->whereNotIn('id', $processedIds)
+            ->whereNotExists(function ($q) {
+                $q->selectRaw('1')
+                  ->from('engineer_mail_sources')
+                  ->whereColumn('engineer_mail_sources.email_id', 'emails.id');
+            })
             ->count();
     }
 
     /**
      * 未処理の技術者メールを一括スコアリング
+     *
+     * @param int|null $limit        処理件数の上限
+     * @param bool     $withAttachment 添付ファイルをClaudeで解析するか（手動取込時はfalseで高速化）
      */
-    public function scorePending(?int $limit = null): int
+    public function scorePending(?int $limit = null, bool $withAttachment = false): int
     {
         $skipFlagDir = storage_path('app/score_skip');
         if (!is_dir($skipFlagDir)) mkdir($skipFlagDir, 0755, true);
-
-        $processedIds = EngineerMailSource::pluck('email_id')->all();
 
         // クラッシュ済みメール（フラグファイルが残っている）をスキップ対象に追加
         $skipIds = array_map(
@@ -127,7 +131,12 @@ class EngineerMailScoringService
         );
 
         $query = Email::where('category', 'engineer')
-            ->whereNotIn('id', array_merge($processedIds, $skipIds))
+            ->whereNotExists(function ($q) {
+                $q->selectRaw('1')
+                  ->from('engineer_mail_sources')
+                  ->whereColumn('engineer_mail_sources.email_id', 'emails.id');
+            })
+            ->when(!empty($skipIds), fn($q) => $q->whereNotIn('id', $skipIds))
             ->with('attachments')
             ->orderByDesc('received_at');
 
@@ -142,7 +151,7 @@ class EngineerMailScoringService
             file_put_contents($flagFile, date('Y-m-d H:i:s'));
             Log::info("[EngineerMailScoring] 処理開始 email_id={$email->id}");
             try {
-                $this->score($email);
+                $this->score($email, $withAttachment);
                 $count++;
                 Log::info("[EngineerMailScoring] 処理完了 email_id={$email->id}");
                 @unlink($flagFile);
@@ -157,13 +166,19 @@ class EngineerMailScoringService
 
     /**
      * 既存レコードを全件再スコアリング＋再抽出
+     *
+     * @param int|null $limit  処理件数の上限
+     * @param int      $offset 処理開始位置（バッチ処理用）
      */
-    public function rescoreAll(?int $limit = null): int
+    public function rescoreAll(?int $limit = null, int $offset = 0): int
     {
         ini_set('memory_limit', '512M');
 
         // 大量処理のため chunk で分割して処理（メモリ節約）
-        $query = EngineerMailSource::with(['email.attachments'])->whereNotNull('email_id');
+        $query = EngineerMailSource::with(['email.attachments'])
+            ->whereNotNull('email_id')
+            ->orderBy('id');
+        if ($offset > 0) $query->skip($offset);
         if ($limit !== null) $query->limit($limit);
 
         $count = 0;
@@ -208,8 +223,10 @@ class EngineerMailScoringService
 
     /**
      * 1件スコアリング＋抽出して保存
+     *
+     * @param bool $withAttachment 添付ファイルをClaudeで解析するか
      */
-    public function score(Email $email): EngineerMailSource
+    public function score(Email $email, bool $withAttachment = false): EngineerMailSource
     {
         $subject = $email->subject ?? '';
         $from    = $email->from_address ?? '';
@@ -226,7 +243,7 @@ class EngineerMailScoringService
         );
 
         $score     = max(0, min(100, $score));
-        $extracted = $this->extract($email);
+        $extracted = $this->extract($email, $withAttachment);
 
         return $this->save($email, $score, $reasons, 'rule', $extracted);
     }
