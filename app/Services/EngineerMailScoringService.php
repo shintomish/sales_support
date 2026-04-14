@@ -115,10 +115,19 @@ class EngineerMailScoringService
      */
     public function scorePending(?int $limit = null): int
     {
+        $skipFlagDir = storage_path('app/score_skip');
+        if (!is_dir($skipFlagDir)) mkdir($skipFlagDir, 0755, true);
+
         $processedIds = EngineerMailSource::pluck('email_id')->all();
 
+        // クラッシュ済みメール（フラグファイルが残っている）をスキップ対象に追加
+        $skipIds = array_map(
+            fn($f) => (int) pathinfo($f, PATHINFO_FILENAME),
+            glob("{$skipFlagDir}/*.skip") ?: []
+        );
+
         $query = Email::where('category', 'engineer')
-            ->whereNotIn('id', $processedIds)
+            ->whereNotIn('id', array_merge($processedIds, $skipIds))
             ->with('attachments')
             ->orderByDesc('received_at');
 
@@ -128,13 +137,18 @@ class EngineerMailScoringService
 
         $count = 0;
         foreach ($query->get() as $email) {
+            $flagFile = "{$skipFlagDir}/{$email->id}.skip";
+            // クラッシュ検出用フラグ作成（完了時に削除）
+            file_put_contents($flagFile, date('Y-m-d H:i:s'));
             Log::info("[EngineerMailScoring] 処理開始 email_id={$email->id}");
             try {
                 $this->score($email);
                 $count++;
                 Log::info("[EngineerMailScoring] 処理完了 email_id={$email->id}");
+                @unlink($flagFile);
             } catch (\Throwable $e) {
                 Log::error("[EngineerMailScoring] email_id={$email->id} 失敗: " . $e->getMessage());
+                @unlink($flagFile);
             }
         }
 
