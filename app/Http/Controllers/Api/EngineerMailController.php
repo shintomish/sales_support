@@ -314,7 +314,8 @@ class EngineerMailController extends Controller
     public function scoreAll(): JsonResponse
     {
         set_time_limit(120);
-        $batchSize = 50;
+        ini_set('memory_limit', '512M');
+        $batchSize = 20;
         $count     = $this->scoringService->scorePending($batchSize);
         $remaining = $this->scoringService->pendingCount();
 
