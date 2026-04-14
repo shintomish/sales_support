@@ -435,6 +435,9 @@ class EngineerMailScoringService
                     if (!empty($cells)) $text .= implode("\t", $cells) . "\n";
                 }
             }
+            $spreadsheet->disconnectWorksheets();
+            unset($spreadsheet);
+            gc_collect_cycles();
             return $text;
         }
 
