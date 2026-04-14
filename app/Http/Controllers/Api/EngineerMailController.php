@@ -439,6 +439,6 @@ class EngineerMailController extends Controller
 
     private function replyToAddress(): string
     {
-        return config('mail.from.address') ?? '';
+        return config('mail.reply_to.address', config('mail.from.address')) ?? '';
     }
 }
