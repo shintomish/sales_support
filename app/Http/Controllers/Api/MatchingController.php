@@ -15,6 +15,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Str;
 use OpenApi\Attributes as OA;
 
 class MatchingController extends Controller
@@ -314,8 +315,9 @@ class MatchingController extends Controller
             'sent_at'       => now(),
         ]);
 
+        $messageId = '<' . Str::uuid() . '@aizen-sol.co.jp>';
         try {
-            Mail::to($v['to'])->send(new ProposalMail($v['subject'], $v['body'], $senderName, $senderEmail));
+            Mail::to($v['to'])->send(new ProposalMail($v['subject'], $v['body'], $senderName, $senderEmail, [], $messageId));
             DeliverySendHistory::create([
                 'tenant_id'         => $tenantId,
                 'campaign_id'       => $campaign->id,
@@ -324,6 +326,7 @@ class MatchingController extends Controller
                 'email'             => $v['to'],
                 'name'              => $v['to_name'] ?? null,
                 'status'            => 'sent',
+                'ses_message_id'    => $messageId,
             ]);
             $campaign->update(['success_count' => 1]);
             Log::info("マッチング提案メール送信 project={$projectId} engineer={$engineerId} to={$v['to']}");
@@ -337,6 +340,7 @@ class MatchingController extends Controller
                 'email'             => $v['to'],
                 'name'              => $v['to_name'] ?? null,
                 'status'            => 'failed',
+                'ses_message_id'    => $messageId,
                 'error_message'     => $e->getMessage(),
             ]);
             $campaign->update(['failed_count' => 1]);

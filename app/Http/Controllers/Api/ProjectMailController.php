@@ -14,6 +14,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Str;
 
 class ProjectMailController extends Controller
 {
@@ -250,26 +251,29 @@ class ProjectMailController extends Controller
             'sent_at'         => now(),
         ]);
 
+        $messageId = '<' . Str::uuid() . '@aizen-sol.co.jp>';
         try {
-            Mail::to($v['to'])->send(new ProposalMail($v['subject'], $v['body'], $senderName, $senderEmail));
+            Mail::to($v['to'])->send(new ProposalMail($v['subject'], $v['body'], $senderName, $senderEmail, [], $messageId));
             DeliverySendHistory::create([
-                'tenant_id'   => $tenantId,
-                'campaign_id' => $campaign->id,
-                'email'       => $v['to'],
-                'name'        => $v['to_name'] ?? null,
-                'status'      => 'sent',
+                'tenant_id'      => $tenantId,
+                'campaign_id'    => $campaign->id,
+                'email'          => $v['to'],
+                'name'           => $v['to_name'] ?? null,
+                'status'         => 'sent',
+                'ses_message_id' => $messageId,
             ]);
             $campaign->update(['success_count' => 1]);
             Log::info("提案メール送信 project_mail_id={$id} to={$v['to']}");
             return response()->json(['message' => '送信しました']);
         } catch (\Exception $e) {
             DeliverySendHistory::create([
-                'tenant_id'     => $tenantId,
-                'campaign_id'   => $campaign->id,
-                'email'         => $v['to'],
-                'name'          => $v['to_name'] ?? null,
-                'status'        => 'failed',
-                'error_message' => $e->getMessage(),
+                'tenant_id'      => $tenantId,
+                'campaign_id'    => $campaign->id,
+                'email'          => $v['to'],
+                'name'           => $v['to_name'] ?? null,
+                'status'         => 'failed',
+                'ses_message_id' => $messageId,
+                'error_message'  => $e->getMessage(),
             ]);
             $campaign->update(['failed_count' => 1]);
             Log::error("提案メール送信失敗 project_mail_id={$id}: " . $e->getMessage());
@@ -314,24 +318,27 @@ class ProjectMailController extends Controller
         ]);
 
         foreach ($v['recipients'] as $recipient) {
+            $messageId = '<' . Str::uuid() . '@aizen-sol.co.jp>';
             try {
-                Mail::to($recipient['to'])->send(new ProposalMail($v['subject'], $v['body'], $senderName, $senderEmail));
+                Mail::to($recipient['to'])->send(new ProposalMail($v['subject'], $v['body'], $senderName, $senderEmail, [], $messageId));
                 DeliverySendHistory::create([
-                    'tenant_id'   => $tenantId,
-                    'campaign_id' => $campaign->id,
-                    'email'       => $recipient['to'],
-                    'name'        => $recipient['name'] ?? null,
-                    'status'      => 'sent',
+                    'tenant_id'      => $tenantId,
+                    'campaign_id'    => $campaign->id,
+                    'email'          => $recipient['to'],
+                    'name'           => $recipient['name'] ?? null,
+                    'status'         => 'sent',
+                    'ses_message_id' => $messageId,
                 ]);
                 $sent++;
             } catch (\Exception $e) {
                 DeliverySendHistory::create([
-                    'tenant_id'     => $tenantId,
-                    'campaign_id'   => $campaign->id,
-                    'email'         => $recipient['to'],
-                    'name'          => $recipient['name'] ?? null,
-                    'status'        => 'failed',
-                    'error_message' => $e->getMessage(),
+                    'tenant_id'      => $tenantId,
+                    'campaign_id'    => $campaign->id,
+                    'email'          => $recipient['to'],
+                    'name'           => $recipient['name'] ?? null,
+                    'status'         => 'failed',
+                    'ses_message_id' => $messageId,
+                    'error_message'  => $e->getMessage(),
                 ]);
                 Log::error("一斉配信失敗 project_mail_id={$id} to={$recipient['to']}: " . $e->getMessage());
                 $failed[] = $recipient['to'];

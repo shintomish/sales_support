@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\DeliverySendHistory;
 use App\Models\GmailToken;
 use App\Models\Email;
 use App\Models\EmailAttachment;
@@ -171,6 +172,22 @@ class GmailService
                 'size'                => $att['size'],
                 'gmail_attachment_id' => $att['gmail_attachment_id'],
             ]);
+        }
+
+        // 返信紐づけ: In-Reply-To ヘッダーで送信履歴にリンク
+        $inReplyTo = $headers->firstWhere('name', 'In-Reply-To')['value'] ?? null;
+        if ($inReplyTo) {
+            $history = DeliverySendHistory::where('ses_message_id', trim($inReplyTo))
+                ->whereNull('reply_email_id')
+                ->first();
+            if ($history) {
+                $history->update([
+                    'reply_email_id' => $email->id,
+                    'replied_at'     => $email->received_at,
+                    'status'         => 'replied',
+                ]);
+                Log::info("[GmailSync] 返信紐づけ完了 history_id={$history->id} email_id={$email->id}");
+            }
         }
     }
 

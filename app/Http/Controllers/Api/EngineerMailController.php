@@ -22,6 +22,7 @@ use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 
@@ -403,9 +404,10 @@ class EngineerMailController extends Controller
             'sent_at'                 => now(),
         ]);
 
+        $messageId = '<' . Str::uuid() . '@aizen-sol.co.jp>';
         try {
             $uploadedFiles = $request->file('attachments') ?? [];
-            Mail::to($v['to'])->send(new ProposalMail($v['subject'], $v['body'], $senderName, $senderEmail, $uploadedFiles));
+            Mail::to($v['to'])->send(new ProposalMail($v['subject'], $v['body'], $senderName, $senderEmail, $uploadedFiles, $messageId));
             DeliverySendHistory::create([
                 'tenant_id'         => $tenantId,
                 'campaign_id'       => $campaign->id,
@@ -413,6 +415,7 @@ class EngineerMailController extends Controller
                 'email'             => $v['to'],
                 'name'              => $v['to_name'] ?? null,
                 'status'            => 'sent',
+                'ses_message_id'    => $messageId,
             ]);
             $campaign->update(['success_count' => 1]);
             Log::info("技術者提案メール送信 engineer_mail_id={$id} to={$v['to']}");
@@ -425,6 +428,7 @@ class EngineerMailController extends Controller
                 'email'             => $v['to'],
                 'name'              => $v['to_name'] ?? null,
                 'status'            => 'failed',
+                'ses_message_id'    => $messageId,
                 'error_message'     => $e->getMessage(),
             ]);
             $campaign->update(['failed_count' => 1]);

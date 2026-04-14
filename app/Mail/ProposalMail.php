@@ -9,6 +9,7 @@ use Illuminate\Mail\Mailables\Address;
 use Illuminate\Mail\Mailables\Attachment;
 use Illuminate\Mail\Mailables\Content;
 use Illuminate\Mail\Mailables\Envelope;
+use Illuminate\Mail\Mailables\Headers;
 use Illuminate\Queue\SerializesModels;
 
 class ProposalMail extends Mailable
@@ -21,6 +22,7 @@ class ProposalMail extends Mailable
         public readonly string $senderName = '',
         public readonly string $senderEmail = '',
         public readonly array $uploadedFiles = [],
+        public readonly string $messageId = '',
     ) {}
 
     public function envelope(): Envelope
@@ -36,6 +38,13 @@ class ProposalMail extends Mailable
             ),
             replyTo: $replyTo,
             subject: $this->mailSubject,
+        );
+    }
+
+    public function headers(): Headers
+    {
+        return new Headers(
+            messageId: $this->messageId ?: null,
         );
     }
 
