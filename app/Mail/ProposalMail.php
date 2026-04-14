@@ -43,9 +43,9 @@ class ProposalMail extends Mailable
 
     public function headers(): Headers
     {
-        return new Headers(
-            messageId: $this->messageId ?: null,
-        );
+        // Headers::messageId はブラケットなしで渡す（Symfony Mailerが自動付与）
+        $mid = $this->messageId ? trim($this->messageId, '<>') : null;
+        return new Headers(messageId: $mid);
     }
 
     public function content(): Content
