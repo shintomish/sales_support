@@ -205,6 +205,11 @@ class GmailService
                     'replied_at'     => $email->received_at,
                     'status'         => 'replied',
                 ]);
+                // キャンペーンの返信数をインクリメント
+                if ($history->campaign_id) {
+                    \App\Models\DeliveryCampaign::where('id', $history->campaign_id)
+                        ->increment('replied_count');
+                }
                 Log::info("[GmailSync] 返信紐づけ完了 history_id={$history->id} email_id={$email->id}");
             }
         }
