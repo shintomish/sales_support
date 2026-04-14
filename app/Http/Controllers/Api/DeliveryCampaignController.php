@@ -62,6 +62,7 @@ class DeliveryCampaignController extends Controller
                 'total_count'              => $campaign->total_count,
                 'success_count'            => $campaign->success_count,
                 'failed_count'             => $campaign->failed_count,
+                'replied_count'            => $campaign->replied_count,
             ];
         });
 
