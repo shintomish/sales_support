@@ -94,10 +94,12 @@ class ProjectMailScoringService
      */
     public function scorePending(?int $limit = null): int
     {
-        $processedIds = ProjectMailSource::pluck('email_id')->all();
-
         $query = Email::where('category', 'project')
-            ->whereNotIn('id', $processedIds)
+            ->whereNotExists(function ($q) {
+                $q->selectRaw('1')
+                  ->from('project_mail_sources')
+                  ->whereColumn('project_mail_sources.email_id', 'emails.id');
+            })
             ->orderByDesc('received_at');
 
         if ($limit !== null) {
@@ -118,11 +120,14 @@ class ProjectMailScoringService
     }
 
     /**
-     * 既存レコードを全件再スコアリング＋再抽出
+     * 既存レコードを全件再スコアリング＋再抽出（バッチ処理対応）
      */
-    public function rescoreAll(?int $limit = null): int
+    public function rescoreAll(?int $limit = null, int $offset = 0): int
     {
-        $query = ProjectMailSource::with('email')->whereNotNull('email_id');
+        $query = ProjectMailSource::with('email')
+            ->whereNotNull('email_id')
+            ->orderBy('id');
+        if ($offset > 0) $query->skip($offset);
         if ($limit !== null) $query->limit($limit);
 
         $count = 0;
@@ -169,16 +174,15 @@ class ProjectMailScoringService
     }
 
     /**
-     * 既存レコードの抽出情報だけを再計算（スコアは変えない）
+     * 既存レコードの抽出情報だけを再計算（スコアは変えない・バッチ処理対応）
      */
-    public function reextractAll(?int $limit = null): int
+    public function reextractAll(?int $limit = null, int $offset = 0): int
     {
         $query = ProjectMailSource::with('email')
-            ->whereNotNull('email_id');
-
-        if ($limit !== null) {
-            $query->limit($limit);
-        }
+            ->whereNotNull('email_id')
+            ->orderBy('id');
+        if ($offset > 0) $query->skip($offset);
+        if ($limit !== null) $query->limit($limit);
 
         $count = 0;
         foreach ($query->get() as $pms) {

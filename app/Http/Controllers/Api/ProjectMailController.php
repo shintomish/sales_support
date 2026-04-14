@@ -129,33 +129,41 @@ class ProjectMailController extends Controller
         }
     }
 
-    // 未処理メールを手動で一括スコアリング
-    public function scoreAll()
+    // 既存レコードを全件再スコアリング＋再抽出（バッチ処理対応）
+    public function rescoreAll(Request $request): JsonResponse
     {
-        $count = $this->scoringService->scorePending();
+        set_time_limit(120);
+        ini_set('memory_limit', '512M');
+        $batchSize = 300;
+        $offset    = $request->integer('offset', 0);
+        $count     = $this->scoringService->rescoreAll($batchSize, $offset);
+        $total     = ProjectMailSource::whereNotNull('email_id')->count();
+        $remaining = max(0, $total - ($offset + $count));
+
         return response()->json([
-            'message' => "{$count}件をスコアリングしました",
-            'count'   => $count,
+            'message'   => "{$count}件を再スコアリングしました",
+            'count'     => $count,
+            'remaining' => $remaining,
+            'offset'    => $offset + $count,
         ]);
     }
 
-    // 既存レコードを全件再スコアリング＋再抽出
-    public function rescoreAll()
+    // 既存レコードの抽出情報を一括再計算（バッチ処理対応）
+    public function reextractAll(Request $request): JsonResponse
     {
-        $count = $this->scoringService->rescoreAll();
-        return response()->json([
-            'message' => "{$count}件を再スコアリングしました",
-            'count'   => $count,
-        ]);
-    }
+        set_time_limit(120);
+        ini_set('memory_limit', '512M');
+        $batchSize = 300;
+        $offset    = $request->integer('offset', 0);
+        $count     = $this->scoringService->reextractAll($batchSize, $offset);
+        $total     = ProjectMailSource::whereNotNull('email_id')->count();
+        $remaining = max(0, $total - ($offset + $count));
 
-    // 既存レコードの抽出情報を一括再計算
-    public function reextractAll()
-    {
-        $count = $this->scoringService->reextractAll();
         return response()->json([
-            'message' => "{$count}件の抽出情報を更新しました",
-            'count'   => $count,
+            'message'   => "{$count}件の抽出情報を更新しました",
+            'count'     => $count,
+            'remaining' => $remaining,
+            'offset'    => $offset + $count,
         ]);
     }
 
