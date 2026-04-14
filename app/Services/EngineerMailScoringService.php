@@ -420,6 +420,10 @@ class EngineerMailScoringService
         }
 
         if (in_array($ext, ['xlsx', 'xls'], true)) {
+            // 3MB超のファイルはOOM/タイムアウトリスクが高いためスキップ
+            if (filesize($path) > 3 * 1024 * 1024) {
+                return '（ファイルサイズが大きいため添付解析をスキップしました）';
+            }
             $reader = SpreadsheetIOFactory::createReaderForFile($path);
             $reader->setReadDataOnly(true);
             $spreadsheet = $reader->load($path);
