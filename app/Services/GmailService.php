@@ -177,9 +177,28 @@ class GmailService
         // 返信紐づけ: In-Reply-To ヘッダーで送信履歴にリンク
         $inReplyTo = $headers->firstWhere('name', 'In-Reply-To')['value'] ?? null;
         if ($inReplyTo) {
+            // ① Message-ID完全一致
             $history = DeliverySendHistory::where('ses_message_id', trim($inReplyTo))
                 ->whereNull('reply_email_id')
                 ->first();
+
+            // ② SMTPリレーがMessage-IDを書き換えた場合のフォールバック:
+            //    差出人メール + 件名（Re:除去）で最新の送信履歴を探す
+            if (!$history && $fromAddress) {
+                $originalSubject = trim(preg_replace('/^(Re:\s*|RE:\s*|Fwd:\s*|FW:\s*)*/iu', '', $subject));
+                if ($originalSubject) {
+                    $history = DeliverySendHistory::where('email', $fromAddress)
+                        ->whereNull('reply_email_id')
+                        ->where('status', 'sent')
+                        ->whereHas('campaign', fn($q) => $q->where('subject', 'like', '%' . $originalSubject . '%'))
+                        ->latest()
+                        ->first();
+                    if ($history) {
+                        Log::info("[GmailSync] フォールバック紐づけ(件名+差出人) history_id={$history->id} email_id={$email->id}");
+                    }
+                }
+            }
+
             if ($history) {
                 $history->update([
                     'reply_email_id' => $email->id,
