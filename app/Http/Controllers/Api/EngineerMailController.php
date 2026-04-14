@@ -310,22 +310,6 @@ class EngineerMailController extends Controller
         ]);
     }
 
-    // 未処理メールを手動で一括スコアリング（添付解析スキップで高速化）
-    public function scoreAll(Request $request): JsonResponse
-    {
-        set_time_limit(120);
-        ini_set('memory_limit', '512M');
-        $batchSize = 100;
-        $count     = $this->scoringService->scorePending($batchSize, false);
-        $remaining = $this->scoringService->pendingCount();
-
-        return response()->json([
-            'message'   => "{$count}件をスコアリングしました",
-            'count'     => $count,
-            'remaining' => $remaining,
-        ]);
-    }
-
     // 既存レコードを全件再スコアリング＋再抽出（バッチ処理対応）
     public function rescoreAll(Request $request): JsonResponse
     {

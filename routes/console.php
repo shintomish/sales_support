@@ -35,14 +35,14 @@ Schedule::call(function () {
         \Illuminate\Support\Facades\Log::error('[Schedule] classify-emails 失敗');
     });
 
-// ── 技術者メール新着取込（1時間毎・50件バッチ）
+// ── 技術者メール新着取込（15分毎・100件バッチ）
 Schedule::call(function () {
-    $count = app(\App\Services\EngineerMailScoringService::class)->scorePending(50);
+    $count = app(\App\Services\EngineerMailScoringService::class)->scorePending(100);
     if ($count > 0) {
         Log::info("[Schedule] 技術者メール新着取込完了: {$count}件");
     }
 })
-    ->hourly()
+    ->everyFifteenMinutes()
     ->name('score-engineer-mails')
     ->withoutOverlapping()
     ->onFailure(function () {
