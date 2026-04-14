@@ -313,9 +313,9 @@ class EngineerMailController extends Controller
     // 未処理メールを手動で一括スコアリング（1回50件ずつ処理）
     public function scoreAll(): JsonResponse
     {
-        set_time_limit(120);
+        set_time_limit(300);
         ini_set('memory_limit', '512M');
-        $batchSize = 20;
+        $batchSize = 10;
         $count     = $this->scoringService->scorePending($batchSize);
         $remaining = $this->scoringService->pendingCount();
 

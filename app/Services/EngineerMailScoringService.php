@@ -420,16 +420,20 @@ class EngineerMailScoringService
         }
 
         if (in_array($ext, ['xlsx', 'xls'], true)) {
-            $spreadsheet = SpreadsheetIOFactory::load($path);
+            $reader = SpreadsheetIOFactory::createReaderForFile($path);
+            $reader->setReadDataOnly(true);
+            $spreadsheet = $reader->load($path);
             $text = '';
             foreach (array_slice($spreadsheet->getAllSheets(), 0, 2) as $sheet) {
                 $text .= '=== ' . $sheet->getTitle() . " ===\n";
+                $rowCount = 0;
                 foreach ($sheet->getRowIterator() as $row) {
+                    if (++$rowCount > 200) break;
                     $cells = [];
                     $iter  = $row->getCellIterator();
                     $iter->setIterateOnlyExistingCells(true);
                     foreach ($iter as $cell) {
-                        $val = trim($cell->getFormattedValue());
+                        $val = trim((string)$cell->getValue());
                         if ($val !== '') $cells[] = $val;
                     }
                     if (!empty($cells)) $text .= implode("\t", $cells) . "\n";
