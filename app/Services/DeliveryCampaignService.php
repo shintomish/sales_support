@@ -68,11 +68,14 @@ class DeliveryCampaignService
             $toEmail   = $testTo ?: $address->email;
             $messageId = '<' . Str::uuid() . '@aizen-sol.co.jp>';
 
+            // <%Name%> を配信先の名前に置換
+            $personalizedBody = str_replace('<%Name%>', $address->name ?? '', $campaign->body);
+
             try {
                 Mail::to($toEmail)->send(
                     new DeliveryMail(
                         mailSubject: $campaign->subject,
-                        body:        $campaign->body,
+                        body:        $personalizedBody,
                         senderName:  $this->senderName,
                         senderEmail: $senderEmail,
                         messageId:   $messageId,
