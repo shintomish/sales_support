@@ -88,9 +88,10 @@ class DeliveryCampaignController extends Controller
     public function store(Request $request): JsonResponse
     {
         $validated = $request->validate([
-            'project_mail_id' => 'nullable|exists:project_mail_sources,id',
-            'subject'         => 'required|string|max:500',
-            'body'            => 'required|string',
+            'project_mail_id'         => 'nullable|exists:project_mail_sources,id',
+            'engineer_mail_source_id' => 'nullable|exists:engineer_mail_sources,id',
+            'subject'                 => 'required|string|max:500',
+            'body'                    => 'required|string',
         ]);
 
         $service = new DeliveryCampaignService(

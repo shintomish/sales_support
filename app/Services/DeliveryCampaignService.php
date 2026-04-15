@@ -30,16 +30,20 @@ class DeliveryCampaignService
             ->where('is_active', true)
             ->count();
 
+        $hasEngineer = !empty($data['engineer_mail_source_id']);
+
         return DeliveryCampaign::create([
-            'tenant_id'       => $this->tenantId,
-            'project_mail_id' => $data['project_mail_id'] ?? null,
-            'user_id'         => $this->userId,
-            'subject'         => $data['subject'],
-            'body'            => $data['body'],
-            'total_count'     => $totalCount,
-            'success_count'   => 0,
-            'failed_count'    => 0,
-            'sent_at'         => now(),
+            'tenant_id'               => $this->tenantId,
+            'send_type'               => 'delivery',
+            'project_mail_id'         => !$hasEngineer ? ($data['project_mail_id'] ?? null) : null,
+            'engineer_mail_source_id' => $hasEngineer ? $data['engineer_mail_source_id'] : null,
+            'user_id'                 => $this->userId,
+            'subject'                 => $data['subject'],
+            'body'                    => $data['body'],
+            'total_count'             => $totalCount,
+            'success_count'           => 0,
+            'failed_count'            => 0,
+            'sent_at'                 => now(),
         ]);
     }
 
