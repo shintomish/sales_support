@@ -51,8 +51,10 @@ class DeliveryCampaignService
      * キャンペーンの一括送信を実行する（バックグラウンド想定）
      *
      * MAIL_DELIVERY_TEST_TO が設定されている場合は全件そのアドレスへリダイレクト。
+     *
+     * @param string[] $attachmentPaths 一時保存済みファイルの絶対パス一覧
      */
-    public function sendCampaign(DeliveryCampaign $campaign): void
+    public function sendCampaign(DeliveryCampaign $campaign, array $attachmentPaths = []): void
     {
         $testTo      = env('MAIL_DELIVERY_TEST_TO');
         $senderEmail = config('mail.from.address') ?? '';
@@ -74,11 +76,12 @@ class DeliveryCampaignService
             try {
                 Mail::to($toEmail)->send(
                     new DeliveryMail(
-                        mailSubject: $campaign->subject,
-                        body:        $personalizedBody,
-                        senderName:  $this->senderName,
-                        senderEmail: $senderEmail,
-                        messageId:   $messageId,
+                        mailSubject:     $campaign->subject,
+                        body:            $personalizedBody,
+                        senderName:      $this->senderName,
+                        senderEmail:     $senderEmail,
+                        messageId:       $messageId,
+                        attachmentPaths: $attachmentPaths,
                     )
                 );
 
@@ -113,5 +116,16 @@ class DeliveryCampaignService
         }
 
         Cache::forget("campaign_sending_{$campaign->id}");
+
+        // 一時ファイルを削除
+        foreach ($attachmentPaths as $path) {
+            if (is_file($path)) @unlink($path);
+        }
+        if ($attachmentPaths) {
+            $dir = dirname($attachmentPaths[0]);
+            if (is_dir($dir) && count(array_diff(scandir($dir), ['.', '..'])) === 0) {
+                @rmdir($dir);
+            }
+        }
     }
 }

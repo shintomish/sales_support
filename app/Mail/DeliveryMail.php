@@ -7,6 +7,7 @@ use Illuminate\Mail\Mailable;
 use Illuminate\Mail\Mailables\Address;
 use Illuminate\Mail\Mailables\Content;
 use Illuminate\Mail\Mailables\Envelope;
+use Illuminate\Mail\Mailables\Attachment;
 use Illuminate\Mail\Mailables\Headers;
 use Illuminate\Queue\SerializesModels;
 
@@ -17,9 +18,10 @@ class DeliveryMail extends Mailable
     public function __construct(
         public readonly string $mailSubject,
         public readonly string $body,
-        public readonly string $senderName  = '',
-        public readonly string $senderEmail = '',
-        public readonly string $messageId   = '',
+        public readonly string $senderName      = '',
+        public readonly string $senderEmail     = '',
+        public readonly string $messageId       = '',
+        public readonly array  $attachmentPaths = [],
     ) {}
 
     public function envelope(): Envelope
@@ -48,5 +50,13 @@ class DeliveryMail extends Mailable
     public function content(): Content
     {
         return new Content(view: 'emails.proposal');
+    }
+
+    public function attachments(): array
+    {
+        return array_map(
+            fn($path) => Attachment::fromPath($path),
+            $this->attachmentPaths
+        );
     }
 }

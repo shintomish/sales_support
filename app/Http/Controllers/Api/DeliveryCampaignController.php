@@ -99,7 +99,21 @@ class DeliveryCampaignController extends Controller
             'engineer_mail_source_id' => 'nullable|exists:engineer_mail_sources,id',
             'subject'                 => 'required|string|max:500',
             'body'                    => 'required|string',
+            'attachments'             => 'nullable|array',
+            'attachments.*'           => 'file|max:10240',
         ]);
+
+        // アップロードファイルを一時ディレクトリに保存
+        $attachmentPaths = [];
+        if ($request->hasFile('attachments')) {
+            $tempDir = storage_path('app/temp/campaigns/' . uniqid('camp_', true));
+            mkdir($tempDir, 0755, true);
+            foreach ($request->file('attachments') as $file) {
+                $dest = $tempDir . '/' . $file->getClientOriginalName();
+                $file->move($tempDir, $file->getClientOriginalName());
+                $attachmentPaths[] = $dest;
+            }
+        }
 
         $service = new DeliveryCampaignService(
             tenantId:   auth()->user()->tenant_id,
@@ -111,13 +125,13 @@ class DeliveryCampaignController extends Controller
         $campaign = $service->createCampaign($validated);
 
         // レスポンス返却後にバックグラウンドで送信
-        register_shutdown_function(function () use ($service, $campaign) {
+        register_shutdown_function(function () use ($service, $campaign, $attachmentPaths) {
             if (function_exists('fastcgi_finish_request')) {
                 fastcgi_finish_request();
             }
             set_time_limit(0);
             ignore_user_abort(true);
-            $service->sendCampaign($campaign);
+            $service->sendCampaign($campaign, $attachmentPaths);
         });
 
         return response()->json([
