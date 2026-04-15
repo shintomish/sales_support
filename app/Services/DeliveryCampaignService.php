@@ -73,6 +73,10 @@ class DeliveryCampaignService
             // <%Name%> を配信先の名前に置換
             $personalizedBody = str_replace('<%Name%>', $address->name ?? '', $campaign->body);
 
+            // 配信停止リンクを末尾に追加
+            $unsubscribeUrl   = url('/unsubscribe/' . $address->unsubscribe_token);
+            $personalizedBody .= "\n\n---\n配信停止をご希望の場合は、こちらからお手続きください。\n{$unsubscribeUrl}";
+
             try {
                 Mail::to($toEmail)->send(
                     new DeliveryMail(

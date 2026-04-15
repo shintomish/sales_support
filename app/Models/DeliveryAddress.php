@@ -20,7 +20,18 @@ class DeliveryAddress extends Model
         'tel',
         'occupation',
         'is_active',
+        'unsubscribe_token',
     ];
+
+    protected static function boot(): void
+    {
+        parent::boot();
+        static::creating(function ($model) {
+            if (empty($model->unsubscribe_token)) {
+                $model->unsubscribe_token = \Illuminate\Support\Str::uuid()->toString();
+            }
+        });
+    }
 
     protected $casts = [
         'is_active' => 'boolean',
