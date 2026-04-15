@@ -7,6 +7,7 @@ use App\Models\DeliveryCampaign;
 use App\Services\DeliveryCampaignService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 
 class DeliveryCampaignController extends Controller
 {
@@ -92,14 +93,42 @@ class DeliveryCampaignController extends Controller
             'body'            => 'required|string',
         ]);
 
-        // TODO: DeliveryCampaignService を呼び出して一括送信を実行する
         $service = new DeliveryCampaignService(
-            tenantId: auth()->user()->tenant_id,
-            userId:   auth()->id(),
+            tenantId:   auth()->user()->tenant_id,
+            userId:     auth()->id(),
+            senderName: auth()->user()->name ?? '',
         );
-        $campaign = $service->send($validated);
 
-        return response()->json($campaign, 201);
+        // キャンペーン作成（即座に返す）
+        $campaign = $service->createCampaign($validated);
+
+        // レスポンス返却後にバックグラウンドで送信
+        register_shutdown_function(function () use ($service, $campaign) {
+            if (function_exists('fastcgi_finish_request')) {
+                fastcgi_finish_request();
+            }
+            set_time_limit(0);
+            ignore_user_abort(true);
+            $service->sendCampaign($campaign);
+        });
+
+        return response()->json([
+            'id'          => $campaign->id,
+            'total_count' => $campaign->total_count,
+        ], 201);
+    }
+
+    public function progress(int $id): JsonResponse
+    {
+        $campaign = DeliveryCampaign::findOrFail($id);
+
+        return response()->json([
+            'id'            => $campaign->id,
+            'total_count'   => $campaign->total_count,
+            'success_count' => $campaign->success_count,
+            'failed_count'  => $campaign->failed_count,
+            'is_sending'    => Cache::has("campaign_sending_{$id}"),
+        ]);
     }
 
     public function show(int $id): JsonResponse

@@ -212,8 +212,9 @@ Route::prefix('v1')->middleware(['supabase.auth'])->group(function () {
 
     // ── 配信キャンペーン（送信履歴を統合）───────────────────
     Route::prefix('delivery-campaigns')->group(function () {
-        Route::get('/',     [DeliveryCampaignController::class, 'index']);
-        Route::post('/',    [DeliveryCampaignController::class, 'store']);
-        Route::get('/{id}', [DeliveryCampaignController::class, 'show']);
+        Route::get('/',              [DeliveryCampaignController::class, 'index']);
+        Route::post('/',             [DeliveryCampaignController::class, 'store']);
+        Route::get('/{id}',          [DeliveryCampaignController::class, 'show']);
+        Route::get('/{id}/progress', [DeliveryCampaignController::class, 'progress']);
     });
 });
