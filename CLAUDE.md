@@ -85,7 +85,7 @@ docker exec sales_support_app php artisan config:clear
 - マッチ案件表示条件: `案件.unit_price_max >= 技術者.unit_price_max`
 - 送信履歴は `delivery_campaigns` + `delivery_send_histories` で一元管理
   - send_type: `delivery` / `proposal` / `matching_proposal` / `engineer_proposal`
-- メール送信: AWS SES ap-northeast-1（東京）DKIM検証済み
+- メール送信: Brevo（SMTP）DKIM検証済み（AWS SESは本番アクセス拒否のため不採用）
 - 全件再スコア: 添付解析スキップ・上限なし・600秒タイムアウト
 - `storage/api-docs/` はgitignore済み（自動生成ファイル）
 
