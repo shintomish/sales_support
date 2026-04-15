@@ -203,6 +203,7 @@ Route::prefix('v1')->middleware(['supabase.auth'])->group(function () {
     // ── 配信先管理 ──────────────────────────────────────
     Route::prefix('delivery-addresses')->group(function () {
         Route::get('/',                [DeliveryAddressController::class, 'index']);
+        Route::post('/',               [DeliveryAddressController::class, 'store']);
         Route::post('/import',         [DeliveryAddressController::class, 'import']);
         Route::get('/import-progress', [DeliveryAddressController::class, 'importProgress']);
         Route::patch('/{id}',          [DeliveryAddressController::class, 'update']);

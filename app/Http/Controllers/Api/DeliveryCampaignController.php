@@ -16,13 +16,28 @@ class DeliveryCampaignController extends Controller
         $sendType  = $request->input('send_type');
         $dateFrom  = $request->input('date_from');
         $dateTo    = $request->input('date_to');
+        $userId    = $request->input('user_id');
         $perPage   = $request->integer('per_page', 20);
 
-        $query = DeliveryCampaign::with(['user', 'projectMailSource', 'engineerMailSource'])
-            ->latest();
+        $allowedSortBy = ['sent_at', 'subject', 'sent_by', 'project_title'];
+        $sortBy  = in_array($request->input('sort_by'), $allowedSortBy) ? $request->input('sort_by') : 'sent_at';
+        $sortDir = $request->input('sort_dir') === 'asc' ? 'asc' : 'desc';
+
+        $query = DeliveryCampaign::with(['user', 'projectMailSource', 'engineerMailSource']);
+
+        match ($sortBy) {
+            'sent_at'       => $query->orderBy('sent_at', $sortDir),
+            'subject'       => $query->orderBy('subject', $sortDir),
+            'sent_by'       => $query->orderByRaw("(SELECT name FROM users WHERE users.id = delivery_campaigns.user_id) {$sortDir} NULLS LAST"),
+            'project_title' => $query->orderByRaw("(SELECT title FROM project_mail_sources WHERE project_mail_sources.id = delivery_campaigns.project_mail_id) {$sortDir} NULLS LAST"),
+        };
 
         if ($sendType) {
             $query->where('send_type', $sendType);
+        }
+
+        if ($userId) {
+            $query->where('user_id', $userId);
         }
 
         if ($search) {

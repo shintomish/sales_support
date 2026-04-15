@@ -68,6 +68,38 @@ class DeliveryAddressController extends Controller
         ]);
     }
 
+    public function store(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'email'      => 'required|email|max:255',
+            'name'       => 'nullable|string|max:255',
+            'occupation' => 'nullable|string|max:255',
+        ], [
+            'email.required' => 'メールアドレスは必須です。',
+            'email.email'    => '有効なメールアドレスを入力してください。',
+        ]);
+
+        $tenantId = auth()->user()->tenant_id;
+
+        $existing = DeliveryAddress::where('tenant_id', $tenantId)
+            ->where('email', $validated['email'])
+            ->first();
+
+        if ($existing) {
+            return response()->json(['message' => 'このメールアドレスはすでに登録されています。'], 422);
+        }
+
+        $address = DeliveryAddress::create([
+            'tenant_id'  => $tenantId,
+            'email'      => $validated['email'],
+            'name'       => $validated['name'] ?? null,
+            'occupation' => $validated['occupation'] ?? null,
+            'is_active'  => true,
+        ]);
+
+        return response()->json($address, 201);
+    }
+
     public function update(Request $request, int $id): JsonResponse
     {
         $address = DeliveryAddress::findOrFail($id);
