@@ -14,10 +14,11 @@ class DeliveryCampaignController extends Controller
     public function index(Request $request): JsonResponse
     {
         $search    = $request->input('search');
-        $sendType  = $request->input('send_type');
-        $dateFrom  = $request->input('date_from');
-        $dateTo    = $request->input('date_to');
-        $userId    = $request->input('user_id');
+        $sendType     = $request->input('send_type');
+        $dateFrom     = $request->input('date_from');
+        $dateTo       = $request->input('date_to');
+        $userId       = $request->input('user_id');
+        $deliveryType = $request->input('delivery_type');
         $perPage   = $request->integer('per_page', 20);
 
         $allowedSortBy = ['sent_at', 'subject', 'sent_by', 'project_title'];
@@ -39,6 +40,12 @@ class DeliveryCampaignController extends Controller
 
         if ($userId) {
             $query->where('user_id', $userId);
+        }
+
+        if ($deliveryType === 'engineer') {
+            $query->whereNotNull('engineer_mail_source_id');
+        } elseif ($deliveryType === 'project') {
+            $query->whereNull('engineer_mail_source_id');
         }
 
         if ($search) {
