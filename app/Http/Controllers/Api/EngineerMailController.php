@@ -401,7 +401,7 @@ class EngineerMailController extends Controller
             'total_count'             => 1,
             'success_count'           => 0,
             'failed_count'            => 0,
-            'sent_at'                 => now('UTC'),
+            'sent_at'                 => now(),
         ]);
 
         $messageId = '<' . Str::uuid() . '@aizen-sol.co.jp>';

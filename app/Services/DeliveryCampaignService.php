@@ -43,7 +43,7 @@ class DeliveryCampaignService
             'total_count'             => $totalCount,
             'success_count'           => 0,
             'failed_count'            => 0,
-            'sent_at'                 => now('UTC'),
+            'sent_at'                 => now(),
         ]);
     }
 
