@@ -384,7 +384,7 @@ class DealImportService
         }
 
         // 区切り文字で分割（・ / ／）
-        $names = preg_split('/[・\/／]/', $salesPerson);
+        $names = preg_split('/[・\/／]/u', $salesPerson);
         $userIds = [];
 
         foreach ($names as $name) {
