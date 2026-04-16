@@ -90,11 +90,19 @@ class PublicProjectController extends Controller
             $query->whereHas('requiredSkills', fn($q) => $q->where('skill_id', $skillId));
         }
 
+        // 顧客名ソート用 JOIN
+        if ($request->get('sort_by') === 'posted_by_customer_name') {
+            $query->leftJoin('customers', 'public_projects.posted_by_customer_id', '=', 'customers.id')
+                  ->select('public_projects.*');
+        }
+
         $paginated = $query->orderBy(...$this->resolveSort($request, [
-            'title'          => 'title',
-            'status'         => 'status',
-            'unit_price_min' => 'unit_price_min',
-            'work_style'     => 'work_style',
+            'title'                    => 'title',
+            'status'                   => 'status',
+            'unit_price_min'           => 'unit_price_min',
+            'work_style'               => 'work_style',
+            'posted_by_customer_name'  => 'customers.company_name',
+            'start_date'               => 'start_date',
         ], 'published_at', 'desc'))->paginate($request->get('per_page', 20));
 
         return response()->json([

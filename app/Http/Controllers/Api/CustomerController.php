@@ -35,7 +35,14 @@ class CustomerController extends Controller
             ->when($request->industry, fn($q, $i) =>
                 $q->where('industry', 'like', "%{$i}%")
             )
-            ->paginate(20);
+            ->orderBy(...$this->resolveSort($request, [
+                'company_name'   => 'company_name',
+                'industry'       => 'industry',
+                'employee_count' => 'employee_count',
+                'phone'          => 'phone',
+                'created_at'     => 'created_at',
+            ], 'created_at', 'desc'))
+            ->paginate(50);
         return CustomerResource::collection($customers);
     }
 

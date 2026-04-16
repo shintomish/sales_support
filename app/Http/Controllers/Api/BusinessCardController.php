@@ -40,8 +40,10 @@ class BusinessCardController extends Controller
                 'created_at'   => 'created_at',
                 'company_name' => 'company_name',
                 'person_name'  => 'person_name',
+                'position'     => 'position',
+                'status'       => 'status',
             ], 'created_at', 'desc'))
-            ->paginate(20);
+            ->paginate(50);
 
         return BusinessCardResource::collection($cards);
     }

@@ -31,26 +31,34 @@ class ActivityController extends Controller
     {
         $userFilter = $this->resolveUserFilter($request);
 
-        $activities = Activity::with(['customer', 'contact', 'deal'])
-            ->when($userFilter,            fn($q, $id) => $q->where('user_id', $id))
+        $query = Activity::with(['customer', 'contact', 'deal'])
+            ->when($userFilter,            fn($q, $id) => $q->where('activities.user_id', $id))
             ->when($request->search, fn($q, $s) =>
-                $q->where('subject', 'like', "%{$s}%")
-                ->orWhere('content', 'like', "%{$s}%")
+                $q->where('activities.subject', 'like', "%{$s}%")
+                ->orWhere('activities.content', 'like', "%{$s}%")
                 ->orWhereHas('customer', fn($q) =>
                     $q->where('company_name', 'like', "%{$s}%")
                 )
             )
-            ->when($request->type,        fn($q, $t) => $q->where('type', $t))
-            ->when($request->customer_id, fn($q, $id) => $q->where('customer_id', $id))
-            ->when($request->date_from,   fn($q, $d) => $q->where('activity_date', '>=', $d))
-            ->when($request->date_to,     fn($q, $d) => $q->where('activity_date', '<=', $d))
-            ->orderBy(...$this->resolveSort($request, [
-                'activity_date' => 'activity_date',
-                'type'          => 'type',
-                'subject'       => 'subject',
-                'created_at'    => 'created_at',
-            ], 'activity_date', 'desc'))
-            ->paginate(20);
+            ->when($request->type,        fn($q, $t) => $q->where('activities.type', $t))
+            ->when($request->customer_id, fn($q, $id) => $q->where('activities.customer_id', $id))
+            ->when($request->date_from,   fn($q, $d) => $q->where('activities.activity_date', '>=', $d))
+            ->when($request->date_to,     fn($q, $d) => $q->where('activities.activity_date', '<=', $d));
+
+        // 顧客名ソート用 JOIN
+        if ($request->get('sort_by') === 'customer_name') {
+            $query->leftJoin('customers', 'activities.customer_id', '=', 'customers.id')
+                  ->select('activities.*');
+        }
+
+        $activities = $query->orderBy(...$this->resolveSort($request, [
+                'activity_date' => 'activities.activity_date',
+                'type'          => 'activities.type',
+                'subject'       => 'activities.subject',
+                'created_at'    => 'activities.created_at',
+                'customer_name' => 'customers.company_name',
+            ], 'activities.activity_date', 'desc'))
+            ->paginate(50);
         return ActivityResource::collection($activities);
     }
 
