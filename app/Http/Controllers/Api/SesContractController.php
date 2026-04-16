@@ -107,6 +107,10 @@ class SesContractController extends Controller
         if ($request->get('sort_by') === 'customer_name') {
             $query->leftJoin('customers', 'deals.customer_id', '=', 'customers.id');
         }
+        // 氏名ソート用 JOIN
+        if ($request->get('sort_by') === 'engineer_name') {
+            $query->leftJoin('contacts', 'deals.contact_id', '=', 'contacts.id');
+        }
         if ($request->get('sort_by')) {
             [$sortCol, $sortDir] = $this->resolveSort($request, [
                 'project_number'      => 'deals.project_number',
@@ -115,6 +119,10 @@ class SesContractController extends Controller
                 'status'              => 'deals.status',
                 'customer_name'       => 'customers.company_name',
                 'project_name'        => 'deals.title',
+                'engineer_name'       => 'contacts.name',
+                'change_type'         => 'deals.change_type',
+                'affiliation'         => 'deals.affiliation',
+                'end_client'          => 'deals.end_client',
             ], 'ses_contracts.contract_period_end', 'asc');
             $query->orderBy($sortCol, $sortDir);
         } else {
