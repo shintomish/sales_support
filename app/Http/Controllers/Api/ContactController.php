@@ -27,7 +27,7 @@ class ContactController extends Controller
     )]
     public function index(Request $request)
     {
-        $contacts = Contact::with('customer')
+        $query = Contact::with('customer')
             ->when($request->search, fn($q, $s) =>
                 $q->where('name', 'like', "%{$s}%")
                 ->orWhere('department', 'like', "%{$s}%")
@@ -38,8 +38,28 @@ class ContactController extends Controller
             )
             ->when($request->customer_id, fn($q, $id) =>
                 $q->where('customer_id', $id)
-            )
-            ->paginate(20);
+            );
+
+        // 会社名ソート用 JOIN
+        if ($request->get('sort_by') === 'company_name') {
+            $query->leftJoin('customers', 'contacts.customer_id', '=', 'customers.id')
+                  ->select('contacts.*');
+        }
+
+        if ($request->get('sort_by')) {
+            [$sortCol, $sortDir] = $this->resolveSort($request, [
+                'name'         => 'contacts.name',
+                'company_name' => 'customers.company_name',
+                'department'   => 'contacts.department',
+                'position'     => 'contacts.position',
+                'email'        => 'contacts.email',
+            ], 'contacts.id', 'desc');
+            $query->orderBy($sortCol, $sortDir);
+        } else {
+            $query->orderBy('contacts.id', 'desc');
+        }
+
+        $contacts = $query->paginate(20);
         return ContactResource::collection($contacts);
     }
 
