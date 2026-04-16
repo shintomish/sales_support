@@ -35,6 +35,12 @@ class CustomerController extends Controller
             ->when($request->industry, fn($q, $i) =>
                 $q->where('industry', 'like', "%{$i}%")
             )
+            ->when($request->type, function ($q, $type) {
+                // 'supplier' / 'customer' / 'both' で絞り込み
+                if ($type === 'supplier') $q->where('is_supplier', true);
+                elseif ($type === 'customer') $q->where('is_customer', true);
+                elseif ($type === 'both')     $q->where('is_supplier', true)->where('is_customer', true);
+            })
             ->orderBy(...$this->resolveSort($request, [
                 'company_name'   => 'company_name',
                 'industry'       => 'industry',
@@ -75,13 +81,20 @@ class CustomerController extends Controller
     public function store(Request $request)
     {
         $validated = $request->validate([
-            'company_name'   => 'required|string|max:255|unique:customers,company_name',
-            'industry'       => 'nullable|string|max:100',
-            'phone'          => ['nullable', 'string', 'max:20', 'regex:/^[\d\-\+\(\)\s]+$/'],
-            'address'        => 'nullable|string|max:500',
-            'employee_count' => 'nullable|integer|min:0|max:9999999',
-            'website'        => 'nullable|url|max:255',
-            'notes'          => 'nullable|string|max:2000',
+            'company_name'        => 'required|string|max:255|unique:customers,company_name',
+            'industry'            => 'nullable|string|max:100',
+            'phone'               => ['nullable', 'string', 'max:20', 'regex:/^[\d\-\+\(\)\s]+$/'],
+            'fax'                 => ['nullable', 'string', 'max:20', 'regex:/^[\d\-\+\(\)\s]+$/'],
+            'address'             => 'nullable|string|max:500',
+            'employee_count'      => 'nullable|integer|min:0|max:9999999',
+            'website'             => 'nullable|url|max:255',
+            'notes'               => 'nullable|string|max:2000',
+            'is_supplier'         => 'nullable|boolean',
+            'is_customer'         => 'nullable|boolean',
+            'invoice_number'      => 'nullable|string|max:20',
+            'payment_site'        => 'nullable|integer|min:0|max:365',
+            'vendor_payment_site' => 'nullable|integer|min:0|max:365',
+            'primary_contact_id'  => 'nullable|integer|exists:contacts,id',
         ], $this->messages());
 
         $customer = Customer::create($validated);
@@ -104,7 +117,7 @@ class CustomerController extends Controller
     )]
     public function show(Customer $customer)
     {
-        $customer->load(['contacts', 'deals']);
+        $customer->load(['contacts', 'deals', 'primaryContact']);
         return new CustomerResource($customer);
     }
 
@@ -140,13 +153,20 @@ class CustomerController extends Controller
     public function update(Request $request, Customer $customer)
     {
         $validated = $request->validate([
-            'company_name'   => 'required|string|max:255|unique:customers,company_name,' . $customer->id,
-            'industry'       => 'nullable|string|max:100',
-            'phone'          => ['nullable', 'string', 'max:20', 'regex:/^[\d\-\+\(\)\s]+$/'],
-            'address'        => 'nullable|string|max:500',
-            'employee_count' => 'nullable|integer|min:0|max:9999999',
-            'website'        => 'nullable|url|max:255',
-            'notes'          => 'nullable|string|max:2000',
+            'company_name'        => 'required|string|max:255|unique:customers,company_name,' . $customer->id,
+            'industry'            => 'nullable|string|max:100',
+            'phone'               => ['nullable', 'string', 'max:20', 'regex:/^[\d\-\+\(\)\s]+$/'],
+            'fax'                 => ['nullable', 'string', 'max:20', 'regex:/^[\d\-\+\(\)\s]+$/'],
+            'address'             => 'nullable|string|max:500',
+            'employee_count'      => 'nullable|integer|min:0|max:9999999',
+            'website'             => 'nullable|url|max:255',
+            'notes'               => 'nullable|string|max:2000',
+            'is_supplier'         => 'nullable|boolean',
+            'is_customer'         => 'nullable|boolean',
+            'invoice_number'      => 'nullable|string|max:20',
+            'payment_site'        => 'nullable|integer|min:0|max:365',
+            'vendor_payment_site' => 'nullable|integer|min:0|max:365',
+            'primary_contact_id'  => 'nullable|integer|exists:contacts,id',
         ], $this->messages());
 
         $customer->update($validated);

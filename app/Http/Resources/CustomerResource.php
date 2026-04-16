@@ -10,16 +10,28 @@ class CustomerResource extends JsonResource
     public function toArray(Request $request): array
     {
         return [
-            'id'             => $this->id,
-            'company_name'   => $this->company_name,
-            'industry'       => $this->industry,
-            'employee_count' => $this->employee_count,  // ★ 追加
-            'phone'          => $this->phone,
-            'address'        => $this->address,
-            'website'        => $this->website,          // ★ 追加
-            'notes'          => $this->notes,            // ★ 追加
-            'created_at'     => $this->created_at?->toDateTimeString(),
-            'updated_at'     => $this->updated_at?->toDateTimeString(),
+            'id'                   => $this->id,
+            'company_name'         => $this->company_name,
+            'industry'             => $this->industry,
+            'employee_count'       => $this->employee_count,
+            'phone'                => $this->phone,
+            'fax'                  => $this->fax,
+            'address'              => $this->address,
+            'website'              => $this->website,
+            'notes'                => $this->notes,
+            'is_supplier'          => (bool) $this->is_supplier,
+            'is_customer'          => (bool) $this->is_customer,
+            'invoice_number'       => $this->invoice_number,
+            'payment_site'         => $this->payment_site,
+            'vendor_payment_site'  => $this->vendor_payment_site,
+            'primary_contact_id'   => $this->primary_contact_id,
+            'primary_contact'      => $this->whenLoaded('primaryContact', fn() => $this->primaryContact ? [
+                'id'    => $this->primaryContact->id,
+                'name'  => $this->primaryContact->name,
+                'email' => $this->primaryContact->email,
+            ] : null),
+            'created_at'           => $this->created_at?->toDateTimeString(),
+            'updated_at'           => $this->updated_at?->toDateTimeString(),
 
             // ★ 詳細ページ用（リレーション）
             'contacts' => $this->whenLoaded('contacts', fn() =>

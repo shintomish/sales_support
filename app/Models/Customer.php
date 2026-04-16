@@ -17,13 +17,30 @@ class Customer extends Model
         'employee_count',
         'address',
         'phone',
+        'fax',
         'website',
         'notes',
+        'is_supplier',
+        'is_customer',
+        'invoice_number',
+        'payment_site',
+        'vendor_payment_site',
+        'primary_contact_id',
+    ];
+
+    protected $casts = [
+        'is_supplier' => 'boolean',
+        'is_customer' => 'boolean',
     ];
 
     public function contacts()
     {
         return $this->hasMany(Contact::class);
+    }
+
+    public function primaryContact()
+    {
+        return $this->belongsTo(Contact::class, 'primary_contact_id');
     }
 
     public function deals()
