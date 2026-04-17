@@ -77,7 +77,7 @@ docker exec sales_support_app php artisan config:clear
 ## 事業概要（確認省略のための固定知識）
 - **事業内容**: SES企業。IT技術者と発注企業（IT会社）をマッチング・提案
 - **主なフロー**: 技術者紹介メール受信 → スコアリング → マッチ案件を特定 → 提案メール送信
-- **目標**: 月1,200社への一括配信（現在AWS SES本番審査待ち・東京リージョン）
+- **目標**: 日次12,000件・月次240,000件の一括配信
 - **送信メール**: B2Bトランザクションメール（取引先IT企業の担当者宛）
 
 ## 確定済み設計判断
@@ -85,7 +85,7 @@ docker exec sales_support_app php artisan config:clear
 - マッチ案件表示条件: `案件.unit_price_max >= 技術者.unit_price_max`
 - 送信履歴は `delivery_campaigns` + `delivery_send_histories` で一元管理
   - send_type: `delivery` / `proposal` / `matching_proposal` / `engineer_proposal`
-- メール送信: Brevo（SMTP）DKIM検証済み（AWS SESは本番アクセス拒否のため不採用）
+- メール送信: AWS SES（東京リージョン・本番承認済み）50,000件/日・14件/秒（2026-04-17承認）
 - 全件再スコア: 添付解析スキップ・上限なし・600秒タイムアウト
 - `storage/api-docs/` はgitignore済み（自動生成ファイル）
 
