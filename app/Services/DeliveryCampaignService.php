@@ -66,7 +66,12 @@ class DeliveryCampaignService
 
         Cache::put("campaign_sending_{$campaign->id}", true, now()->addHours(2));
 
-        foreach ($addresses as $address) {
+        foreach ($addresses as $index => $address) {
+            // SES レート制限対策: 14件/秒 → 71ms間隔
+            if ($index > 0) {
+                usleep(71_000);
+            }
+
             $toEmail   = $testTo ?: $address->email;
             $messageId = '<' . Str::uuid() . '@aizen-sol.co.jp>';
 
