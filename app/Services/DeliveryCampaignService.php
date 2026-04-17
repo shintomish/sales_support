@@ -67,9 +67,9 @@ class DeliveryCampaignService
         Cache::put("campaign_sending_{$campaign->id}", true, now()->addHours(2));
 
         foreach ($addresses as $index => $address) {
-            // SES レート制限対策: 14件/秒 → 71ms間隔
+            // SES レート制限対策: 14件/秒 → 100ms間隔（余裕込み）
             if ($index > 0) {
-                usleep(71_000);
+                usleep(100_000);
             }
 
             $toEmail   = $testTo ?: $address->email;
