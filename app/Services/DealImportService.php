@@ -2,11 +2,11 @@
 
 namespace App\Services;
 
-use App\Models\Contact;
 use App\Models\Customer;
 use App\Models\Deal;
 use App\Models\DealAssignee;
 use App\Models\DealImportLog;
+use App\Models\Engineer;
 use App\Models\SesContract;
 use App\Models\User;
 use App\Models\WorkRecord;
@@ -20,12 +20,12 @@ use PhpOffice\PhpSpreadsheet\Shared\Date as ExcelDate;
  * DealImportService
  *
  * 販売システム.xlsm（または .xlsx）を読み込み、
- * customers / contacts / deals / ses_contracts / work_records
+ * customers / engineers / deals / ses_contracts / work_records
  * に一括インポートする。
  *
  * 列マッピング（台帳シート、5行目がヘッダー）:
  *   [0]  項番
- *   [1]  氏名（技術者名 → contact.name）
+ *   [1]  氏名（技術者名 → engineer.name）
  *   [2]  新・変更者・条件変更等
  *   [3]  担当者（自社営業担当）
  *   [4]  所属
@@ -216,7 +216,7 @@ class DealImportService
 
     /**
      * 1行分のデータを処理する
-     * customers → contacts → deals → ses_contracts → work_records の順で upsert する
+     * customers → engineers → deals → ses_contracts → work_records の順で upsert する
      */
     private function processRow(array $row, int $rowNum): void
     {
@@ -248,24 +248,26 @@ class DealImportService
             ]
         );
 
-        // ── 2. Contact（技術者）の upsert ─────────────────
+        // ── 2. Engineer（技術者）の upsert ─────────────────
         // メールがある場合は メール＋氏名 の組み合わせをキーにする
-        // （同じメールアドレスでも氏名が異なれば別人として扱う）
-        // メールがない場合は 氏名＋顧客ID で突合
+        // メールがない場合は 氏名＋tenant_id で突合
         $email = $this->cleanString($row[6] ?? '');
-        $contactData = [
-            'tenant_id'   => $this->tenantId,
-            'customer_id' => $customer->id,
-            'name'        => $engineerName,
-            'email'       => $email,
-            'phone'       => $this->cleanString($row[7] ?? ''),
+        $affiliation = $this->cleanString($row[4] ?? '');
+        $engineerData = [
+            'tenant_id'           => $this->tenantId,
+            'name'                => $engineerName,
+            'email'               => $email,
+            'phone'               => $this->cleanString($row[7] ?? ''),
+            'affiliation'         => $affiliation,
+            'affiliation_contact' => $this->cleanString($row[5] ?? ''),
+            'affiliation_type'    => $this->resolveAffiliationType($affiliation),
         ];
 
-        $contactKey = !empty($email)
+        $engineerKey = !empty($email)
             ? ['tenant_id' => $this->tenantId, 'email' => $email, 'name' => $engineerName]
-            : ['tenant_id' => $this->tenantId, 'name'  => $engineerName, 'customer_id' => $customer->id];
+            : ['tenant_id' => $this->tenantId, 'name'  => $engineerName];
 
-        $contact = Contact::updateOrCreate($contactKey, $contactData);
+        $engineer = Engineer::updateOrCreate($engineerKey, $engineerData);
 
         // ── 3. Deal の upsert ─────────────────────────────
         // project_number があれば突合キーにする
@@ -276,7 +278,8 @@ class DealImportService
         $dealData = [
             'tenant_id'           => $this->tenantId,
             'customer_id'         => $customer->id,
-            'contact_id'          => $contact->id,
+            'engineer_id'         => $engineer->id,
+            'contact_id'          => null,
             'title'               => $this->cleanString($row[10] ?? '') ?: "{$engineerName} / {$customerName}",
             'deal_type'           => 'ses',
             'project_number'      => $projectNumber ?: null,
@@ -498,6 +501,24 @@ class DealImportService
     {
         $decimal = $this->toDecimal($value);
         return $decimal !== null ? (int) $decimal : null;
+    }
+
+    /**
+     * 所属（E列）から engineer.affiliation_type を推測する
+     * 「社員」 → self、「個人事業主」 → freelance、その他（BP社名）→ bp
+     */
+    private function resolveAffiliationType(?string $affiliation): string
+    {
+        if ($affiliation === null || $affiliation === '') {
+            return 'self';
+        }
+        if (str_contains($affiliation, '個人事業主')) {
+            return 'freelance';
+        }
+        if ($affiliation === '社員') {
+            return 'self';
+        }
+        return 'bp';
     }
 
     /**

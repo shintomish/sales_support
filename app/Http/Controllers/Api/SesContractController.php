@@ -3,9 +3,9 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use App\Models\Contact;
 use App\Models\Customer;
 use App\Models\Deal;
+use App\Models\Engineer;
 use App\Models\SesContract;
 use App\Services\DealImportService;
 use Illuminate\Http\JsonResponse;
@@ -19,7 +19,7 @@ class SesContractController extends Controller
     private function formatDeal(Deal $deal): array
     {
         $sc = $deal->sesContract;
-        $c  = $deal->contact;
+        $eg = $deal->engineer;
         $cu = $deal->customer;
         $wr = $deal->latestWorkRecord;
         $daysUntilExpiry = null;
@@ -29,14 +29,14 @@ class SesContractController extends Controller
         return [
             'id'                           => $deal->id,
             'project_number'               => $deal->project_number,
-            'engineer_name'                => $c?->name,
+            'engineer_name'                => $eg?->name,
             'change_type'                  => $deal->change_type,
             'affiliation'                  => $deal->affiliation,
             'affiliation_contact'          => $deal->affiliation_contact,
             'sales_person'                 => $deal->sales_person,
             'assignees'                    => $deal->assignees->map(fn($u) => ['id' => $u->id, 'name' => $u->name])->values(),
-            'email'                        => $c?->email,
-            'phone'                        => $c?->phone,
+            'email'                        => $eg?->email,
+            'phone'                        => $eg?->phone,
             'customer_name'                => $cu?->company_name,
             'end_client'                   => $deal->end_client,
             'project_name'                 => $deal->title,
@@ -84,7 +84,7 @@ class SesContractController extends Controller
         $tenantId = auth()->user()->tenant_id;
         $userFilter = $this->resolveUserFilter($request);
 
-        $query = Deal::with(['sesContract', 'contact', 'customer', 'latestWorkRecord', 'assignees'])
+        $query = Deal::with(['sesContract', 'engineer', 'customer', 'latestWorkRecord', 'assignees'])
             ->where('deals.tenant_id', $tenantId)
             ->where('deals.deal_type', 'ses')
             ->whereNull('deals.deleted_at');
@@ -95,7 +95,7 @@ class SesContractController extends Controller
         if ($search = $request->get('search')) {
             $query->where(function ($q) use ($search) {
                 $q->where('deals.title', 'ilike', "%{$search}%")
-                  ->orWhereHas('contact', fn($q) => $q->where('name', 'ilike', "%{$search}%"))
+                  ->orWhereHas('engineer', fn($q) => $q->where('name', 'ilike', "%{$search}%"))
                   ->orWhereHas('customer', fn($q) => $q->where('company_name', 'ilike', "%{$search}%"));
             });
         }
@@ -109,7 +109,7 @@ class SesContractController extends Controller
         }
         // 氏名ソート用 JOIN
         if ($request->get('sort_by') === 'engineer_name') {
-            $query->leftJoin('contacts', 'deals.contact_id', '=', 'contacts.id');
+            $query->leftJoin('engineers', 'deals.engineer_id', '=', 'engineers.id');
         }
         if ($request->get('sort_by')) {
             [$sortCol, $sortDir] = $this->resolveSort($request, [
@@ -119,7 +119,7 @@ class SesContractController extends Controller
                 'status'              => 'deals.status',
                 'customer_name'       => 'customers.company_name',
                 'project_name'        => 'deals.title',
-                'engineer_name'       => 'contacts.name',
+                'engineer_name'       => 'engineers.name',
                 'change_type'         => 'deals.change_type',
                 'affiliation'         => 'deals.affiliation',
                 'end_client'          => 'deals.end_client',
@@ -141,7 +141,7 @@ class SesContractController extends Controller
     public function show(int $id): JsonResponse
     {
         $tenantId = auth()->user()->tenant_id;
-        $deal = Deal::with(['sesContract', 'contact', 'customer', 'latestWorkRecord'])
+        $deal = Deal::with(['sesContract', 'engineer', 'customer', 'latestWorkRecord'])
             ->where('tenant_id', $tenantId)->where('deal_type', 'ses')->findOrFail($id);
         return response()->json(['data' => $this->formatDeal($deal)]);
     }
@@ -193,16 +193,21 @@ class SesContractController extends Controller
                 ['tenant_id' => $tenantId, 'company_name' => $v['customer_name']],
                 ['tenant_id' => $tenantId, 'company_name' => $v['customer_name']]
             );
-            $contactKey = !empty($v['email'])
-                ? ['tenant_id' => $tenantId, 'email' => $v['email']]
-                : ['tenant_id' => $tenantId, 'name' => $v['engineer_name'], 'customer_id' => $customer->id];
-            $contact = Contact::updateOrCreate($contactKey, [
-                'tenant_id' => $tenantId, 'customer_id' => $customer->id,
-                'name' => $v['engineer_name'], 'email' => $v['email'] ?? null, 'phone' => $v['phone'] ?? null,
+            $engineerKey = !empty($v['email'])
+                ? ['tenant_id' => $tenantId, 'email' => $v['email'], 'name' => $v['engineer_name']]
+                : ['tenant_id' => $tenantId, 'name' => $v['engineer_name']];
+            $engineer = Engineer::updateOrCreate($engineerKey, [
+                'tenant_id'           => $tenantId,
+                'name'                => $v['engineer_name'],
+                'email'               => $v['email'] ?? null,
+                'phone'               => $v['phone'] ?? null,
+                'affiliation'         => $v['affiliation'] ?? null,
+                'affiliation_contact' => $v['affiliation_contact'] ?? null,
+                'affiliation_type'    => $this->resolveAffiliationType($v['affiliation'] ?? null),
             ]);
             $deal = Deal::create([
                 'tenant_id' => $tenantId, 'user_id' => $userId,
-                'customer_id' => $customer->id, 'contact_id' => $contact->id,
+                'customer_id' => $customer->id, 'engineer_id' => $engineer->id, 'contact_id' => null,
                 'title'               => $v['project_name'] ?? ($v['engineer_name'] . ' / ' . $v['customer_name']),
                 'deal_type'           => 'ses',
                 'status'              => $v['status'] ?? '稼働中',
@@ -242,7 +247,7 @@ class SesContractController extends Controller
             ]);
         });
         if ($deal->id) {
-            $deal->load(['sesContract', 'contact', 'customer', 'latestWorkRecord']);
+            $deal->load(['sesContract', 'engineer', 'customer', 'latestWorkRecord']);
         }
         return response()->json(['data' => $this->formatDeal($deal)], 201);
     }
@@ -329,7 +334,7 @@ class SesContractController extends Controller
                 );
             }
         });
-        $deal->load(['sesContract', 'contact', 'customer', 'latestWorkRecord']);
+        $deal->load(['sesContract', 'engineer', 'customer', 'latestWorkRecord']);
         return response()->json(['data' => $this->formatDeal($deal)]);
     }
 
@@ -399,6 +404,23 @@ class SesContractController extends Controller
             'message' => '商談管理に登録しました',
             'deal_id' => $newDeal->id,
         ], 201);
+    }
+
+    /**
+     * 所属（affiliation）から engineer.affiliation_type を推測する
+     */
+    private function resolveAffiliationType(?string $affiliation): string
+    {
+        if ($affiliation === null || $affiliation === '') {
+            return 'self';
+        }
+        if (str_contains($affiliation, '個人事業主')) {
+            return 'freelance';
+        }
+        if ($affiliation === '社員') {
+            return 'self';
+        }
+        return 'bp';
     }
 
     public function summary(): JsonResponse

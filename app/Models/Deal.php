@@ -15,7 +15,7 @@ class Deal extends Model
     use HasFactory, SoftDeletes, BelongsToTenant;
 
     protected $fillable = [
-        'customer_id', 'contact_id', 'user_id',
+        'customer_id', 'contact_id', 'engineer_id', 'user_id',
         'title', 'amount', 'status', 'probability',
         'expected_close_date', 'actual_close_date', 'notes',
         // SES拡張フィールド
@@ -44,6 +44,7 @@ class Deal extends Model
     // ── 既存リレーション ──────────────────────────────
     public function customer()   { return $this->belongsTo(Customer::class); }
     public function contact()    { return $this->belongsTo(Contact::class); }
+    public function engineer()   { return $this->belongsTo(Engineer::class); }
     public function user()       { return $this->belongsTo(User::class); }
     public function activities() { return $this->hasMany(Activity::class); }
     public function tasks()      { return $this->hasMany(Task::class); }
