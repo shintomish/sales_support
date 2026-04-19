@@ -48,6 +48,10 @@ class SesContract extends Model
     protected $fillable = [
         'tenant_id',
         'deal_id',
+        // 技術者情報（engineers テーブルとは独立）
+        'engineer_name',
+        'engineer_email',
+        'engineer_phone',
         // 金額系
         'income_amount',
         'billing_plus_22',

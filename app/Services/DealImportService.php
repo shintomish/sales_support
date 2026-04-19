@@ -298,6 +298,10 @@ class DealImportService
             [
                 'tenant_id'                    => $this->tenantId,
                 'deal_id'                      => $deal->id,
+                // 技術者情報（engineers テーブルとは独立）
+                'engineer_name'                => $engineerName,
+                'engineer_email'               => $this->cleanString($row[6] ?? ''),
+                'engineer_phone'               => $this->cleanString($row[7] ?? ''),
                 // 金額系
                 'income_amount'                => $this->toDecimal($row[15] ?? null),
                 'billing_plus_22'              => $this->toDecimal($row[16] ?? null),

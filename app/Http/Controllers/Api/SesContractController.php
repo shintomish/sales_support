@@ -18,7 +18,6 @@ class SesContractController extends Controller
     private function formatDeal(Deal $deal): array
     {
         $sc = $deal->sesContract;
-        $eg = $deal->engineer;
         $cu = $deal->customer;
         $wr = $deal->latestWorkRecord;
         $daysUntilExpiry = null;
@@ -28,14 +27,14 @@ class SesContractController extends Controller
         return [
             'id'                           => $deal->id,
             'project_number'               => $deal->project_number,
-            'engineer_name'                => $eg?->name,
+            'engineer_name'                => $sc?->engineer_name,
             'change_type'                  => $deal->change_type,
             'affiliation'                  => $deal->affiliation,
             'affiliation_contact'          => $deal->affiliation_contact,
             'sales_person'                 => $deal->sales_person,
             'assignees'                    => $deal->assignees->map(fn($u) => ['id' => $u->id, 'name' => $u->name])->values(),
-            'email'                        => $eg?->email,
-            'phone'                        => $eg?->phone,
+            'email'                        => $sc?->engineer_email,
+            'phone'                        => $sc?->engineer_phone,
             'customer_name'                => $cu?->company_name,
             'end_client'                   => $deal->end_client,
             'project_name'                 => $deal->title,
@@ -83,7 +82,7 @@ class SesContractController extends Controller
         $tenantId = auth()->user()->tenant_id;
         $userFilter = $this->resolveUserFilter($request);
 
-        $query = Deal::with(['sesContract', 'engineer', 'customer', 'latestWorkRecord', 'assignees'])
+        $query = Deal::with(['sesContract', 'customer', 'latestWorkRecord', 'assignees'])
             ->where('deals.tenant_id', $tenantId)
             ->where('deals.deal_type', 'ses')
             ->whereNull('deals.deleted_at');
@@ -94,7 +93,7 @@ class SesContractController extends Controller
         if ($search = $request->get('search')) {
             $query->where(function ($q) use ($search) {
                 $q->where('deals.title', 'ilike', "%{$search}%")
-                  ->orWhereHas('engineer', fn($q) => $q->where('name', 'ilike', "%{$search}%"))
+                  ->orWhereHas('sesContract', fn($q) => $q->where('engineer_name', 'ilike', "%{$search}%"))
                   ->orWhereHas('customer', fn($q) => $q->where('company_name', 'ilike', "%{$search}%"));
             });
         }
@@ -106,10 +105,7 @@ class SesContractController extends Controller
         if ($request->get('sort_by') === 'customer_name') {
             $query->leftJoin('customers', 'deals.customer_id', '=', 'customers.id');
         }
-        // 氏名ソート用 JOIN
-        if ($request->get('sort_by') === 'engineer_name') {
-            $query->leftJoin('engineers', 'deals.engineer_id', '=', 'engineers.id');
-        }
+        // 氏名ソート: ses_contracts は既に LEFT JOIN 済み
         if ($request->get('sort_by')) {
             [$sortCol, $sortDir] = $this->resolveSort($request, [
                 'project_number'      => 'deals.project_number',
@@ -118,7 +114,7 @@ class SesContractController extends Controller
                 'status'              => 'deals.status',
                 'customer_name'       => 'customers.company_name',
                 'project_name'        => 'deals.title',
-                'engineer_name'       => 'engineers.name',
+                'engineer_name'       => 'ses_contracts.engineer_name',
                 'change_type'         => 'deals.change_type',
                 'affiliation'         => 'deals.affiliation',
                 'end_client'          => 'deals.end_client',
@@ -140,7 +136,7 @@ class SesContractController extends Controller
     public function show(int $id): JsonResponse
     {
         $tenantId = auth()->user()->tenant_id;
-        $deal = Deal::with(['sesContract', 'engineer', 'customer', 'latestWorkRecord'])
+        $deal = Deal::with(['sesContract', 'customer', 'latestWorkRecord'])
             ->where('tenant_id', $tenantId)->where('deal_type', 'ses')->findOrFail($id);
         return response()->json(['data' => $this->formatDeal($deal)]);
     }
@@ -209,6 +205,9 @@ class SesContractController extends Controller
             ]);
             SesContract::create([
                 'tenant_id' => $tenantId, 'deal_id' => $deal->id,
+                'engineer_name'               => $v['engineer_name'],
+                'engineer_email'              => $v['email'] ?? null,
+                'engineer_phone'              => $v['phone'] ?? null,
                 'income_amount'               => $v['income_amount'] ?? null,
                 'billing_plus_22'             => $v['billing_plus_22'] ?? null,
                 'billing_plus_29'             => $v['billing_plus_29'] ?? null,
@@ -235,7 +234,7 @@ class SesContractController extends Controller
             ]);
         });
         if ($deal->id) {
-            $deal->load(['sesContract', 'engineer', 'customer', 'latestWorkRecord']);
+            $deal->load(['sesContract', 'customer', 'latestWorkRecord']);
         }
         return response()->json(['data' => $this->formatDeal($deal)], 201);
     }
@@ -269,6 +268,9 @@ class SesContractController extends Controller
 
             // ── ses_contracts テーブル更新 ────────────────────
             $scData = array_filter([
+                'engineer_name'               => $request->input('engineer_name'),
+                'engineer_email'              => $request->input('email'),
+                'engineer_phone'              => $request->input('phone'),
                 'income_amount'               => $request->input('income_amount'),
                 'billing_plus_22'             => $request->input('billing_plus_22'),
                 'billing_plus_29'             => $request->input('billing_plus_29'),
@@ -322,7 +324,7 @@ class SesContractController extends Controller
                 );
             }
         });
-        $deal->load(['sesContract', 'engineer', 'customer', 'latestWorkRecord']);
+        $deal->load(['sesContract', 'customer', 'latestWorkRecord']);
         return response()->json(['data' => $this->formatDeal($deal)]);
     }
 
