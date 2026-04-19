@@ -5,7 +5,6 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Customer;
 use App\Models\Deal;
-use App\Models\Engineer;
 use App\Models\SesContract;
 use App\Services\DealImportService;
 use Illuminate\Http\JsonResponse;
@@ -193,21 +192,10 @@ class SesContractController extends Controller
                 ['tenant_id' => $tenantId, 'company_name' => $v['customer_name']],
                 ['tenant_id' => $tenantId, 'company_name' => $v['customer_name']]
             );
-            $engineerKey = !empty($v['email'])
-                ? ['tenant_id' => $tenantId, 'email' => $v['email'], 'name' => $v['engineer_name']]
-                : ['tenant_id' => $tenantId, 'name' => $v['engineer_name']];
-            $engineer = Engineer::updateOrCreate($engineerKey, [
-                'tenant_id'           => $tenantId,
-                'name'                => $v['engineer_name'],
-                'email'               => $v['email'] ?? null,
-                'phone'               => $v['phone'] ?? null,
-                'affiliation'         => $v['affiliation'] ?? null,
-                'affiliation_contact' => $v['affiliation_contact'] ?? null,
-                'affiliation_type'    => $this->resolveAffiliationType($v['affiliation'] ?? null),
-            ]);
+            // 技術者情報は engineers テーブルに登録/更新しない（手動管理）
             $deal = Deal::create([
                 'tenant_id' => $tenantId, 'user_id' => $userId,
-                'customer_id' => $customer->id, 'engineer_id' => $engineer->id, 'contact_id' => null,
+                'customer_id' => $customer->id, 'engineer_id' => null, 'contact_id' => null,
                 'title'               => $v['project_name'] ?? ($v['engineer_name'] . ' / ' . $v['customer_name']),
                 'deal_type'           => 'ses',
                 'status'              => $v['status'] ?? '稼働中',
@@ -404,23 +392,6 @@ class SesContractController extends Controller
             'message' => '商談管理に登録しました',
             'deal_id' => $newDeal->id,
         ], 201);
-    }
-
-    /**
-     * 所属（affiliation）から engineer.affiliation_type を推測する
-     */
-    private function resolveAffiliationType(?string $affiliation): string
-    {
-        if ($affiliation === null || $affiliation === '') {
-            return 'self';
-        }
-        if (str_contains($affiliation, '個人事業主')) {
-            return 'freelance';
-        }
-        if ($affiliation === '社員') {
-            return 'self';
-        }
-        return 'bp';
     }
 
     public function summary(): JsonResponse

@@ -6,7 +6,6 @@ use App\Models\Customer;
 use App\Models\Deal;
 use App\Models\DealAssignee;
 use App\Models\DealImportLog;
-use App\Models\Engineer;
 use App\Models\SesContract;
 use App\Models\User;
 use App\Models\WorkRecord;
@@ -20,7 +19,7 @@ use PhpOffice\PhpSpreadsheet\Shared\Date as ExcelDate;
  * DealImportService
  *
  * 販売システム.xlsm（または .xlsx）を読み込み、
- * customers / engineers / deals / ses_contracts / work_records
+ * customers / deals / ses_contracts / work_records
  * に一括インポートする。
  *
  * 列マッピング（台帳シート、5行目がヘッダー）:
@@ -216,7 +215,8 @@ class DealImportService
 
     /**
      * 1行分のデータを処理する
-     * customers → engineers → deals → ses_contracts → work_records の順で upsert する
+     * customers → deals → ses_contracts → work_records の順で upsert する
+     * 技術者情報（氏名・メール・電話・所属）は engineers テーブルには登録しない
      */
     private function processRow(array $row, int $rowNum): void
     {
@@ -248,26 +248,8 @@ class DealImportService
             ]
         );
 
-        // ── 2. Engineer（技術者）の upsert ─────────────────
-        // メールがある場合は メール＋氏名 の組み合わせをキーにする
-        // メールがない場合は 氏名＋tenant_id で突合
-        $email = $this->cleanString($row[6] ?? '');
-        $affiliation = $this->cleanString($row[4] ?? '');
-        $engineerData = [
-            'tenant_id'           => $this->tenantId,
-            'name'                => $engineerName,
-            'email'               => $email,
-            'phone'               => $this->cleanString($row[7] ?? ''),
-            'affiliation'         => $affiliation,
-            'affiliation_contact' => $this->cleanString($row[5] ?? ''),
-            'affiliation_type'    => $this->resolveAffiliationType($affiliation),
-        ];
-
-        $engineerKey = !empty($email)
-            ? ['tenant_id' => $this->tenantId, 'email' => $email, 'name' => $engineerName]
-            : ['tenant_id' => $this->tenantId, 'name'  => $engineerName];
-
-        $engineer = Engineer::updateOrCreate($engineerKey, $engineerData);
+        // ── 2. 技術者情報は engineers テーブルに登録しない ────
+        // engineers は手動管理（顧客管理 / マスタ）。Excel取込では参照のみで登録/更新しない。
 
         // ── 3. Deal の upsert ─────────────────────────────
         // project_number があれば突合キーにする
@@ -278,7 +260,7 @@ class DealImportService
         $dealData = [
             'tenant_id'           => $this->tenantId,
             'customer_id'         => $customer->id,
-            'engineer_id'         => $engineer->id,
+            'engineer_id'         => null,
             'contact_id'          => null,
             'title'               => $this->cleanString($row[10] ?? '') ?: "{$engineerName} / {$customerName}",
             'deal_type'           => 'ses',
@@ -501,24 +483,6 @@ class DealImportService
     {
         $decimal = $this->toDecimal($value);
         return $decimal !== null ? (int) $decimal : null;
-    }
-
-    /**
-     * 所属（E列）から engineer.affiliation_type を推測する
-     * 「社員」 → self、「個人事業主」 → freelance、その他（BP社名）→ bp
-     */
-    private function resolveAffiliationType(?string $affiliation): string
-    {
-        if ($affiliation === null || $affiliation === '') {
-            return 'self';
-        }
-        if (str_contains($affiliation, '個人事業主')) {
-            return 'freelance';
-        }
-        if ($affiliation === '社員') {
-            return 'self';
-        }
-        return 'bp';
     }
 
     /**
