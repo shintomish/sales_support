@@ -181,6 +181,8 @@ Route::prefix('v1')->middleware(['supabase.auth'])->group(function () {
     Route::put('public-projects/{id}',   [PublicProjectController::class, 'update']);
     Route::delete('public-projects/{id}',[PublicProjectController::class, 'destroy']);
     Route::post('public-projects/{id}/favorite', [PublicProjectController::class, 'toggleFavorite']);
+    Route::post('public-projects/{id}/generate-appeal', [PublicProjectController::class, 'generateAppeal']);
+    Route::post('public-projects/{id}/send-proposal', [PublicProjectController::class, 'sendProposal']);
     // 案件へのおすすめ技術者
     Route::get('matching/projects/{id}/engineers', [MatchingController::class, 'recommendEngineers']);
     // 案件への応募一覧

@@ -228,15 +228,28 @@ class ProjectMailController extends Controller
         ProjectMailSource::where('tenant_id', $tenantId)->findOrFail($id);
 
         $v = $request->validate([
-            'to'      => 'required|email',
-            'to_name' => 'nullable|string|max:255',
-            'subject' => 'required|string|max:500',
-            'body'    => 'required|string',
+            'to'            => 'required|email',
+            'to_name'       => 'nullable|string|max:255',
+            'subject'       => 'required|string|max:500',
+            'body'          => 'required|string',
+            'attachments'   => 'nullable|array',
+            'attachments.*' => 'file|max:10240',
         ]);
 
         $userId      = auth()->id();
         $senderName  = auth()->user()->name  ?? '';
         $senderEmail = $this->replyToAddress();
+
+        $attachmentPaths = [];
+        if ($request->hasFile('attachments')) {
+            $dir = storage_path('app/temp/proposals/' . uniqid());
+            @mkdir($dir, 0755, true);
+            foreach ($request->file('attachments') as $file) {
+                $dest = $dir . '/' . $file->getClientOriginalName();
+                $file->move($dir, $file->getClientOriginalName());
+                $attachmentPaths[] = $dest;
+            }
+        }
 
         $campaign = DeliveryCampaign::create([
             'tenant_id'       => $tenantId,
@@ -253,7 +266,7 @@ class ProjectMailController extends Controller
 
         $messageId = '<' . Str::uuid() . '@aizen-sol.co.jp>';
         try {
-            Mail::to($v['to'])->send(new ProposalMail($v['subject'], $v['body'], $senderName, $senderEmail, [], $messageId));
+            Mail::to($v['to'])->send(new ProposalMail($v['subject'], $v['body'], $senderName, $senderEmail, $attachmentPaths, $messageId));
             DeliverySendHistory::create([
                 'tenant_id'      => $tenantId,
                 'campaign_id'    => $campaign->id,
@@ -278,6 +291,12 @@ class ProjectMailController extends Controller
             $campaign->update(['failed_count' => 1]);
             Log::error("提案メール送信失敗 project_mail_id={$id}: " . $e->getMessage());
             return response()->json(['message' => 'メール送信に失敗しました'], 500);
+        } finally {
+            foreach ($attachmentPaths as $path) { if (is_file($path)) @unlink($path); }
+            if ($attachmentPaths) {
+                $dir = dirname($attachmentPaths[0]);
+                if (is_dir($dir) && count(array_diff(scandir($dir), ['.', '..'])) === 0) @rmdir($dir);
+            }
         }
     }
 

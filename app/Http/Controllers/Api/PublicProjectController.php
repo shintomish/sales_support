@@ -3,12 +3,15 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\Engineer;
 use App\Models\PublicProject;
 use App\Models\ProjectRequiredSkill;
 use App\Models\FavoriteProject;
+use App\Services\ClaudeService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 class PublicProjectController extends Controller
 {
@@ -21,6 +24,11 @@ class PublicProjectController extends Controller
             'end_client'               => $p->end_client,
             'posted_by_customer_id'    => $p->posted_by_customer_id,
             'posted_by_customer_name'  => $p->postedByCustomer?->company_name,
+            'project_mail_source_id'   => $p->project_mail_source_id,
+            'mail_from_address'        => $p->projectMailSource?->email?->from_address,
+            'mail_from_name'           => $p->projectMailSource?->email?->from_name,
+            'mail_sales_contact'       => $p->projectMailSource?->sales_contact,
+            'mail_body_text'           => $p->projectMailSource?->email?->body_text,
             'unit_price_min'           => $p->unit_price_min,
             'unit_price_max'           => $p->unit_price_max,
             'contract_type'            => $p->contract_type,
@@ -120,7 +128,7 @@ class PublicProjectController extends Controller
         $tenantId = auth()->user()->tenant_id;
         $userId   = auth()->id();
 
-        $project = PublicProject::with(['requiredSkills.skill', 'postedByCustomer', 'favoriteByUsers'])
+        $project = PublicProject::with(['requiredSkills.skill', 'postedByCustomer', 'favoriteByUsers', 'projectMailSource.email'])
             ->where('tenant_id', $tenantId)
             ->findOrFail($id);
 
@@ -145,6 +153,7 @@ class PublicProjectController extends Controller
             'description'              => 'nullable|string',
             'end_client'               => 'nullable|string|max:200',
             'posted_by_customer_id'    => 'nullable|integer|exists:customers,id',
+            'project_mail_source_id'   => 'nullable|integer|exists:project_mail_sources,id',
             'unit_price_min'           => 'nullable|numeric|min:0',
             'unit_price_max'           => 'nullable|numeric|min:0',
             'contract_type'            => 'nullable|in:準委任,派遣,請負',
@@ -174,6 +183,7 @@ class PublicProjectController extends Controller
             $project = PublicProject::create(array_merge(
                 array_filter([
                     'posted_by_customer_id'     => $v['posted_by_customer_id'] ?? null,
+                    'project_mail_source_id'    => $v['project_mail_source_id'] ?? null,
                     'title'                     => $v['title'],
                     'description'               => $v['description'] ?? null,
                     'end_client'                => $v['end_client'] ?? null,
@@ -307,5 +317,157 @@ class PublicProjectController extends Controller
         ]);
 
         return response()->json(['favorited' => true]);
+    }
+
+    /**
+     * 提案メール送信
+     * POST /v1/public-projects/{id}/send-proposal
+     */
+    public function sendProposal(Request $request, int $id): JsonResponse
+    {
+        $tenantId = auth()->user()->tenant_id;
+        PublicProject::where('tenant_id', $tenantId)->findOrFail($id);
+
+        $v = $request->validate([
+            'to'          => 'required|email',
+            'to_name'     => 'nullable|string|max:255',
+            'subject'     => 'required|string|max:500',
+            'body'        => 'required|string',
+            'attachments' => 'nullable|array',
+            'attachments.*' => 'file|max:10240',
+        ]);
+
+        $userId      = auth()->id();
+        $senderName  = auth()->user()->name ?? '';
+        $senderEmail = config('mail.from.address') ?? '';
+
+        $attachmentPaths = [];
+        if ($request->hasFile('attachments')) {
+            $dir = storage_path('app/temp/proposals/' . uniqid());
+            @mkdir($dir, 0755, true);
+            foreach ($request->file('attachments') as $file) {
+                $dest = $dir . '/' . $file->getClientOriginalName();
+                $file->move($dir, $file->getClientOriginalName());
+                $attachmentPaths[] = $dest;
+            }
+        }
+
+        $messageId = '<' . \Illuminate\Support\Str::uuid() . '@aizen-sol.co.jp>';
+
+        $campaign = \App\Models\DeliveryCampaign::create([
+            'tenant_id'       => $tenantId,
+            'send_type'       => 'proposal',
+            'user_id'         => $userId,
+            'subject'         => $v['subject'],
+            'body'            => $v['body'],
+            'total_count'     => 1,
+            'success_count'   => 0,
+            'failed_count'    => 0,
+            'sent_at'         => now(),
+        ]);
+
+        try {
+            \Illuminate\Support\Facades\Mail::to($v['to'])->send(
+                new \App\Mail\DeliveryMail(
+                    mailSubject:     $v['subject'],
+                    body:            $v['body'],
+                    senderName:      $senderName,
+                    senderEmail:     $senderEmail,
+                    messageId:       $messageId,
+                    attachmentPaths: $attachmentPaths,
+                )
+            );
+
+            \App\Models\DeliverySendHistory::create([
+                'tenant_id'      => $tenantId,
+                'campaign_id'    => $campaign->id,
+                'email'          => $v['to'],
+                'name'           => $v['to_name'],
+                'status'         => 'sent',
+                'ses_message_id' => $messageId,
+            ]);
+            $campaign->update(['success_count' => 1]);
+
+            Log::info("公開案件提案メール送信 project_id={$id} to={$v['to']}");
+            return response()->json(['message' => '送信しました']);
+        } catch (\Exception $e) {
+            \App\Models\DeliverySendHistory::create([
+                'tenant_id'      => $tenantId,
+                'campaign_id'    => $campaign->id,
+                'email'          => $v['to'],
+                'name'           => $v['to_name'],
+                'status'         => 'failed',
+                'ses_message_id' => $messageId,
+                'error_message'  => $e->getMessage(),
+            ]);
+            $campaign->update(['failed_count' => 1]);
+            Log::error("公開案件提案メール送信失敗 project_id={$id}: " . $e->getMessage());
+            return response()->json(['message' => 'メール送信に失敗しました'], 500);
+        } finally {
+            foreach ($attachmentPaths as $path) { if (is_file($path)) @unlink($path); }
+            if ($attachmentPaths) {
+                $dir = dirname($attachmentPaths[0]);
+                if (is_dir($dir) && count(array_diff(scandir($dir), ['.', '..'])) === 0) @rmdir($dir);
+            }
+        }
+    }
+
+    /**
+     * 応募用アピールメッセージ草稿を生成
+     * POST /v1/public-projects/{id}/generate-appeal
+     */
+    public function generateAppeal(Request $request, int $id): JsonResponse
+    {
+        $tenantId = auth()->user()->tenant_id;
+        $project  = PublicProject::with('requiredSkills.skill')
+            ->where('tenant_id', $tenantId)->findOrFail($id);
+
+        $v = $request->validate(['engineer_id' => 'required|integer']);
+
+        $engineer = Engineer::with(['profile', 'engineerSkills.skill'])
+            ->where('tenant_id', $tenantId)->findOrFail($v['engineer_id']);
+
+        $projectInfo = "案件名: {$project->title}\n"
+            . "必須スキル: " . $project->requiredSkills->pluck('skill.name')->implode(', ') . "\n"
+            . "勤務地: {$project->work_location}\n"
+            . "単価: {$project->unit_price_min}〜{$project->unit_price_max}万円\n"
+            . "開始: {$project->start_date}";
+
+        $engineerInfo = "氏名: {$engineer->name}\n"
+            . "年齢: {$engineer->age}歳\n"
+            . "スキル: " . $engineer->engineerSkills->map(fn($es) =>
+                $es->skill?->name . ($es->experience_years ? "({$es->experience_years}年)" : '')
+            )->implode(', ') . "\n"
+            . "稼働可能日: " . ($engineer->profile?->available_from ?? '未定') . "\n"
+            . "希望単価: " . ($engineer->profile?->desired_unit_price_min ?? '?') . "〜" . ($engineer->profile?->desired_unit_price_max ?? '?') . "万円\n"
+            . "自己PR: " . ($engineer->profile?->self_introduction ?? 'なし');
+
+        $prompt = <<<PROMPT
+あなたはSES営業担当です。以下の技術者をこの案件に提案するためのアピールメッセージを作成してください。
+
+重要なルール:
+- この技術者は社内マッチングシステムで候補として選出済みです。提案を前提に書いてください。
+- マッチング判断や「難しい」「お勧めしない」といった否定的な表現は絶対に使わないでください。
+- 技術者の強み・経験・実績を最大限にアピールしてください。
+- 案件に直接関連するスキルがない場合でも、関連する経験や学習意欲、適応力をアピールしてください。
+- 簡潔に3〜5文で書いてください。
+
+【案件情報】
+{$projectInfo}
+
+【技術者情報】
+{$engineerInfo}
+
+アピールメッセージのみを出力してください（挨拶や署名は不要）。
+PROMPT;
+
+        try {
+            $claude = app(ClaudeService::class);
+            $message = $claude->ask($prompt);
+            return response()->json(['message' => $message]);
+        } catch (\Exception $e) {
+            Log::error("generateAppeal failed project_id={$id}: " . $e->getMessage());
+            return response()->json(['message' => ''], 500);
+        }
     }
 }

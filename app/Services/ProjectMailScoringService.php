@@ -506,6 +506,16 @@ class ProjectMailScoringService
             }
         }
 
+        // フォールバック: 本文冒頭の自己紹介パターン
+        // 例: "インテグレートの小玉でございます" / "テックの山田です"
+        $headBody = mb_substr($body, 0, 500);
+        if (preg_match('/[\p{Han}\p{Katakana}a-zA-Z]{2,}の([\p{Han}]{2,4})(?:でございます|です|と申します)/u', $headBody, $m)) {
+            $candidate = trim($m[1]);
+            if ($this->looksLikePersonName($candidate) && !preg_match('/部|課|設計|構築|開発|営業|紹介|担当|管理/u', $candidate)) {
+                return $candidate;
+            }
+        }
+
         return null;
     }
 

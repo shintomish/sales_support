@@ -18,6 +18,7 @@ class PublicProject extends Model
         'tenant_id',
         'posted_by_customer_id',
         'posted_by_user_id',
+        'project_mail_source_id',
         'title',
         'description',
         'end_client',
@@ -53,6 +54,11 @@ class PublicProject extends Model
         'published_at'             => 'datetime',
         'expires_at'               => 'datetime',
     ];
+
+    public function projectMailSource(): BelongsTo
+    {
+        return $this->belongsTo(\App\Models\ProjectMailSource::class);
+    }
 
     public function postedByCustomer(): BelongsTo
     {

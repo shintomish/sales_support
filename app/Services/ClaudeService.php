@@ -15,6 +15,28 @@ class ClaudeService
     }
 
     /**
+     * 汎用プロンプト送信（テキスト応答を返す）
+     */
+    public function ask(string $prompt): string
+    {
+        $response = Http::withHeaders([
+            'anthropic-version' => '2023-06-01',
+            'x-api-key'         => $this->apiKey,
+            'content-type'      => 'application/json',
+        ])->timeout(30)->post($this->apiUrl, [
+            'model'      => 'claude-haiku-4-5-20251001',
+            'max_tokens' => 1024,
+            'messages'   => [['role' => 'user', 'content' => $prompt]],
+        ]);
+
+        if ($response->failed()) {
+            throw new \Exception('Claude API error: ' . $response->body());
+        }
+
+        return $response->json('content.0.text') ?? '';
+    }
+
+    /**
      * 提案メール草稿を生成
      */
     public function generateProposal(array $mail, array $engineer): array

@@ -56,10 +56,18 @@ class ProposalMail extends Mailable
     public function attachments(): array
     {
         return collect($this->uploadedFiles)
-            ->filter(fn($f) => $f instanceof UploadedFile)
-            ->map(fn(UploadedFile $f) => Attachment::fromPath($f->getRealPath())
-                ->as($f->getClientOriginalName())
-                ->withMime($f->getMimeType() ?? 'application/octet-stream'))
+            ->map(function ($f) {
+                if ($f instanceof UploadedFile) {
+                    return Attachment::fromPath($f->getRealPath())
+                        ->as($f->getClientOriginalName())
+                        ->withMime($f->getMimeType() ?? 'application/octet-stream');
+                }
+                if (is_string($f) && is_file($f)) {
+                    return Attachment::fromPath($f);
+                }
+                return null;
+            })
+            ->filter()
             ->all();
     }
 }
