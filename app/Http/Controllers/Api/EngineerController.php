@@ -41,6 +41,8 @@ class EngineerController extends Controller
                 'desired_unit_price_max' => $p->desired_unit_price_max,
                 'available_from'         => $p->available_from?->format('Y-m-d'),
                 'availability_status'    => $p->availability_status,
+                'current_project'        => $p->current_project,
+                'current_customer'       => $p->current_customer,
                 'past_client_count'      => $p->past_client_count,
                 'work_style'             => $p->work_style,
                 'preferred_location'     => $p->preferred_location,
@@ -211,6 +213,8 @@ class EngineerController extends Controller
             'desired_unit_price_max'  => 'nullable|numeric|min:0',
             'available_from'          => 'nullable|date',
             'availability_status'     => 'nullable|in:available,working,scheduled',
+            'current_project'         => 'nullable|string|max:200',
+            'current_customer'        => 'nullable|string|max:200',
             'past_client_count'       => 'nullable|integer|min:0',
             'work_style'              => 'nullable|in:remote,office,hybrid',
             'preferred_location'      => 'nullable|string|max:100',
@@ -253,6 +257,8 @@ class EngineerController extends Controller
                 'desired_unit_price_max' => $v['desired_unit_price_max'] ?? null,
                 'available_from'         => $v['available_from'] ?? null,
                 'availability_status'    => $v['availability_status'] ?? 'available',
+                'current_project'        => $v['current_project'] ?? null,
+                'current_customer'       => $v['current_customer'] ?? null,
                 'past_client_count'      => $v['past_client_count'] ?? null,
                 'work_style'             => $v['work_style'] ?? null,
                 'preferred_location'     => $v['preferred_location'] ?? null,
@@ -319,6 +325,8 @@ class EngineerController extends Controller
             'desired_unit_price_max'  => 'nullable|numeric|min:0',
             'available_from'          => 'nullable|date',
             'availability_status'     => 'nullable|in:available,working,scheduled',
+            'current_project'         => 'nullable|string|max:200',
+            'current_customer'        => 'nullable|string|max:200',
             'past_client_count'       => 'nullable|integer|min:0',
             'work_style'              => 'nullable|in:remote,office,hybrid',
             'preferred_location'      => 'nullable|string|max:100',
@@ -357,6 +365,8 @@ class EngineerController extends Controller
                 'desired_unit_price_max' => $v['desired_unit_price_max'] ?? null,
                 'available_from'         => $v['available_from'] ?? null,
                 'availability_status'    => $v['availability_status'] ?? null,
+                'current_project'        => $v['current_project'] ?? null,
+                'current_customer'       => $v['current_customer'] ?? null,
                 'past_client_count'      => $v['past_client_count'] ?? null,
                 'work_style'             => $v['work_style'] ?? null,
                 'preferred_location'     => $v['preferred_location'] ?? null,
@@ -440,7 +450,7 @@ class EngineerController extends Controller
     public function parseSkillSheet(Request $request): JsonResponse
     {
         $request->validate([
-            'file' => 'required|file|max:10240|mimes:pdf,xlsx,xls,docx,doc',
+            'file' => 'required|file|max:10240|mimetypes:application/pdf,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,application/vnd.ms-excel.sheet.macroEnabled.12,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/msword',
         ]);
 
         $file = $request->file('file');
@@ -495,7 +505,7 @@ class EngineerController extends Controller
             return $pdf->getText();
         }
 
-        if (in_array($ext, ['xlsx', 'xls'])) {
+        if (in_array($ext, ['xlsx', 'xls', 'xlsm'])) {
             $spreadsheet = SpreadsheetIOFactory::load($file->getPathname());
             $text = '';
             // 最初の2シートまで抽出（基本情報シートを優先）

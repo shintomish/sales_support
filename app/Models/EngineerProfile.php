@@ -17,6 +17,8 @@ class EngineerProfile extends Model
         'desired_unit_price_max',
         'available_from',
         'availability_status',
+        'current_project',
+        'current_customer',
         'past_client_count',
         'work_style',
         'preferred_location',
