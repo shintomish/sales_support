@@ -54,6 +54,8 @@ class MatchingController extends Controller
                 'engineer_id'              => $item['engineer']->id,
                 'engineer_name'            => $item['engineer']->name,
                 'affiliation'              => $item['engineer']->affiliation,
+                'affiliation_type'         => $item['engineer']->affiliation_type,
+                'engineer_mail_source_id'  => $item['engineer']->engineer_mail_source_id,
                 'score'                    => $item['score'],
                 'score_badge'              => $this->scoreBadge($item['score']),
                 'skill_match_score'        => $item['skill_match_score'],

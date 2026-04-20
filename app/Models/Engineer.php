@@ -28,7 +28,13 @@ class Engineer extends Model
         'nationality',
         'nearest_station',
         'affiliation_type',
+        'engineer_mail_source_id',
     ];
+
+    public function engineerMailSource(): \Illuminate\Database\Eloquent\Relations\BelongsTo
+    {
+        return $this->belongsTo(EngineerMailSource::class);
+    }
 
     public function profile(): HasOne
     {

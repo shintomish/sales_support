@@ -379,6 +379,7 @@ class ProjectMailController extends Controller
                 'affiliation_contact' => $r['engineer']->affiliation_contact,
                 'affiliation_email'   => $r['engineer']->affiliation_email,
                 'affiliation_type'    => $r['engineer']->affiliation_type,
+                'engineer_mail_source_id' => $r['engineer']->engineer_mail_source_id,
                 'age'                 => $r['engineer']->age,
                 'score'            => $r['score'],
                 'breakdown'        => $r['breakdown'],

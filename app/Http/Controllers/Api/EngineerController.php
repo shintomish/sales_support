@@ -35,6 +35,7 @@ class EngineerController extends Controller
             'nationality'             => $e->nationality,
             'nearest_station'         => $e->nearest_station,
             'affiliation_type'        => $e->affiliation_type,
+            'engineer_mail_source_id' => $e->engineer_mail_source_id,
             'profile' => $p ? [
                 'desired_unit_price_min' => $p->desired_unit_price_min,
                 'desired_unit_price_max' => $p->desired_unit_price_max,
@@ -101,6 +102,15 @@ class EngineerController extends Controller
 
         if ($request->boolean('available_only')) {
             $query->whereHas('profile', fn($q) => $q->where('available_from', '<=', now()->toDateString()));
+        }
+
+        if ($source = $request->get('source')) {
+            match ($source) {
+                'self' => $query->where('affiliation_type', 'self'),
+                'bp'   => $query->where('affiliation_type', '!=', 'self')->whereNull('engineer_mail_source_id'),
+                'mail' => $query->whereNotNull('engineer_mail_source_id'),
+                default => null,
+            };
         }
 
         // 稼働可能日ソート: サブクエリで取得（JOIN は tenant_id 曖昧エラーになるため）
@@ -195,6 +205,7 @@ class EngineerController extends Controller
             'nationality'             => 'nullable|string|max:100',
             'nearest_station'         => 'nullable|string|max:100',
             'affiliation_type'        => 'nullable|in:self,first_sub,bp,bp_member,contract,freelance,joining,hiring',
+            'engineer_mail_source_id' => 'nullable|integer|exists:engineer_mail_sources,id',
             // プロフィール
             'desired_unit_price_min'  => 'nullable|numeric|min:0',
             'desired_unit_price_max'  => 'nullable|numeric|min:0',
@@ -232,6 +243,7 @@ class EngineerController extends Controller
                 'nationality'         => $v['nationality'] ?? null,
                 'nearest_station'     => $v['nearest_station'] ?? null,
                 'affiliation_type'    => $v['affiliation_type'] ?? null,
+                'engineer_mail_source_id' => $v['engineer_mail_source_id'] ?? null,
             ]);
 
             EngineerProfile::create([
