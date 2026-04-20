@@ -154,6 +154,7 @@ Route::prefix('v1')->middleware(['supabase.auth'])->group(function () {
         Route::get('/{id}/matched-projects',          [EngineerMailController::class, 'matchedProjects']);
         Route::post('/{id}/generate-proposal',        [EngineerMailController::class, 'generateProposal']);
         Route::post('/{id}/send-proposal',            [EngineerMailController::class, 'sendProposal']);
+        Route::post('/{id}/generate-comment',         [EngineerMailController::class, 'generateComment']);
     });
 
     // ── マッチング機能 ───────────────────────────────────

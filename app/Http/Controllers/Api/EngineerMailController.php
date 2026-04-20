@@ -437,6 +437,46 @@ class EngineerMailController extends Controller
         }
     }
 
+    /**
+     * 技術者メールの前向きコメント生成
+     * POST /v1/engineer-mails/{id}/generate-comment
+     */
+    public function generateComment(int $id): JsonResponse
+    {
+        $tenantId = auth()->user()->tenant_id;
+        $em = EngineerMailSource::where('tenant_id', $tenantId)->findOrFail($id);
+
+        $info = "氏名：{$em->name}\n"
+            . "年齢：{$em->age}歳\n"
+            . "スキル：" . implode('、', $em->skills ?? []) . "\n"
+            . "最寄駅：{$em->nearest_station}\n"
+            . "稼働可能日：{$em->available_from}";
+
+        $prompt = <<<PROMPT
+あなたはSES営業担当です。以下の技術者を取引先に紹介する配信メールに添える、前向きな推薦コメントを2〜3文で作成してください。
+
+重要なルール:
+- 技術者の強みや経験を最大限にアピールしてください
+- 否定的な表現は絶対に使わないでください
+- 「即戦力」「豊富な経験」「高いコミュニケーション力」など、前向きな表現を使ってください
+- 敬体（です・ます）で書いてください
+
+【技術者情報】
+{$info}
+
+コメントのみを出力してください。
+PROMPT;
+
+        try {
+            $claude = app(\App\Services\ClaudeService::class);
+            $comment = $claude->ask($prompt);
+            return response()->json(['comment' => $comment]);
+        } catch (\Exception $e) {
+            Log::error("generateComment failed engineer_mail_id={$id}: " . $e->getMessage());
+            return response()->json(['comment' => ''], 500);
+        }
+    }
+
     private function replyToAddress(): string
     {
         return config('mail.reply_to.address', config('mail.from.address')) ?? '';
