@@ -10,7 +10,7 @@ Artisan::command('inspire', function () {
     $this->comment(Inspiring::quote());
 })->purpose('Display an inspiring quote');
 
-// ── メール自動同期（15分毎）
+// ── メール自動同期（15分毎）— Gmail API
 Schedule::call(function () {
     (new SyncEmailsJob())->handle(app(\App\Services\GmailService::class));
 })
@@ -19,6 +19,20 @@ Schedule::call(function () {
     ->withoutOverlapping()
     ->onFailure(function () {
         \Illuminate\Support\Facades\Log::error('[Schedule] SyncEmailsJob 失敗');
+    });
+
+// ── メール自動同期（15分毎）— KAGOYA POP3 直接受信
+Schedule::call(function () {
+    $count = app(\App\Services\KagoyaMailService::class)->syncEmails();
+    if ($count > 0) {
+        Log::info("[Schedule] KagoyaPOP3 同期完了: {$count}件");
+    }
+})
+    ->everyFifteenMinutes()
+    ->name('sync-kagoya-pop3')
+    ->withoutOverlapping()
+    ->onFailure(function () {
+        Log::error('[Schedule] KagoyaPOP3 同期失敗');
     });
 
 // ── メール自動分類（15分毎）
