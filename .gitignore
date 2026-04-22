@@ -52,3 +52,7 @@ docs/*.pdf
 .claude/settings.local.json
 .agents/
 skills-lock.json
+
+# Windows のセキュリティマーカー (WSL でコピー時に自動生成)
+*:Zone.Identifier
+*Zone.Identifier
