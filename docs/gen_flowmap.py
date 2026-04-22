@@ -1,7 +1,16 @@
 """
-docs/200_Flowmap.pptx 生成スクリプト
-sales_support システムの業務フローマップを PowerPoint で作成する
+scripts/output/200_Flowmap.pptx 生成スクリプト
+
+sales_support システムの業務フローマップを PowerPoint で作成する。
+出力先: scripts/output/200_Flowmap.pptx (このスクリプトと同じ階層の output/)
+
+使い方:
+    cd ~/sales_support
+    python3 scripts/gen_flowmap.py
+
+出力ディレクトリが存在しない場合は自動作成される。
 """
+from pathlib import Path
 from pptx import Presentation
 from pptx.util import Inches, Pt, Emu
 from pptx.dml.color import RGBColor
@@ -631,8 +640,12 @@ def main():
     slide_flow_d(prs)
     slide_issues(prs)
 
-    out = "/home/shintomi/sales_support/docs/200_Flowmap.pptx"
-    prs.save(out)
+    # スクリプト自身の位置から output/ を解決(ポータブル)
+    output_dir = Path(__file__).resolve().parent / "output"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    out = output_dir / "200_Flowmap.pptx"
+
+    prs.save(str(out))
     print(f"✅ 保存完了: {out}")
 
 
