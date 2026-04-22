@@ -29,7 +29,13 @@ class DeliveryAddressController extends Controller
             $query->where('is_active', filter_var($request->input('is_active'), FILTER_VALIDATE_BOOLEAN));
         }
 
-        $addresses = $query->orderBy('name')->paginate(100);
+        $sortBy = $request->input('sort_by', 'id');
+        $sortOrder = $request->input('sort_order', 'asc');
+        $allowedSorts = ['id', 'name', 'email', 'occupation', 'is_active'];
+        if (!in_array($sortBy, $allowedSorts)) $sortBy = 'id';
+        if (!in_array($sortOrder, ['asc', 'desc'])) $sortOrder = 'asc';
+
+        $addresses = $query->orderBy($sortBy, $sortOrder)->paginate($request->input('per_page', 100));
 
         return response()->json($addresses);
     }
