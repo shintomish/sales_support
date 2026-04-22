@@ -143,6 +143,20 @@ class GmailService
 
 	[$fromName, $fromAddress] = $this->parseFrom($from);
 
+        // バウンスメール（不達通知）を除外
+        $lcFrom = strtolower($fromAddress);
+        $lcSubject = strtolower($subject);
+        if (str_contains($lcFrom, 'mailer-daemon') ||
+            str_contains($lcFrom, 'postmaster') ||
+            str_contains($lcSubject, 'undelivered') ||
+            str_contains($lcSubject, 'returned mail') ||
+            str_contains($lcSubject, 'delivery status') ||
+            str_contains($lcSubject, 'undeliverable') ||
+            str_contains($lcSubject, 'failure notice') ||
+            str_contains($lcSubject, 'mail delivery failed')) {
+            return;
+        }
+
         $receivedAt = isset($data['internalDate'])
             ? Carbon::createFromTimestampMs((int)$data['internalDate'])->utc()
             : ($dateStr ? Carbon::parse($dateStr)->utc() : Carbon::now()->utc());
