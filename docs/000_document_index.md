@@ -73,9 +73,10 @@
 |---|---|---|---|
 | 510 | 052_emaiflo.md | メール保持・削除フロー補足 | Drive + ローカル |
 | 520 | 053_matchingflo.md | マッチングフロー Q&A | ローカル |
-| 530 | 055_engineers_flo.md | 技術者メール フロー説明書 | ローカル |
+| 530 | 055_engineers_flo.md + 057_engineers_email.md | 技術者メール フロー説明書 (550統合版) | ローカル |
 | 540 | 056_project_mail_flo.md | 案件メール フロー説明書 | ローカル |
-| 550 | 057_engineers_email.md | 技術者メール 追加機能説明書 | ローカル |
+
+> **2026-04-22 統合**: `550_engineer_mail_features.md` を `530` に統合し削除。550の内容は 530 の 9〜14章として取り込み済み。
 
 ### 600番台: 運用記録
 
@@ -95,7 +96,9 @@
 
 | ファイル | 理由 |
 |---|---|
-| `055_engineers_flo_tmp.html` | `055_engineers_flo.md` の一時HTML版・確定md版に統合済み |
+| `055_engineers_flo_tmp.html` | `055_engineers_flo.md` の一時HTML版・確定md版に統合済み (2026-04-22 削除完了) |
+| `200_Flowmap.pptx` | 生成物。`scripts/gen_flowmap.py` で再生成可能 (2026-04-22 削除完了) |
+| `550_engineer_mail_features.md` | `530_engineer_mail_flow.md` に統合 (2026-04-22 統合完了・9〜14章) |
 
 ---
 
