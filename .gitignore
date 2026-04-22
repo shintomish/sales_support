@@ -56,3 +56,7 @@ skills-lock.json
 # Windows のセキュリティマーカー (WSL でコピー時に自動生成)
 *:Zone.Identifier
 *Zone.Identifier
+
+# Windows のセキュリティマーカー (WSL でファイルコピー時に自動生成)
+*:Zone.Identifier
+*Zone.Identifier
