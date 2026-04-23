@@ -199,8 +199,23 @@ class KagoyaMailService
 
     private function decodeHeader(string $value): string
     {
-        if (empty($value)) return $value;
-        return mb_decode_mimeheader($value);
+        if (empty($value) || !str_contains($value, '=?')) return $value;
+
+        // 同一charset+encodingの連続エンコードワードを結合してからデコード
+        // (RFC 2047のマルチバイト文字分割に対応)
+        return preg_replace_callback(
+            '/=\?([^?]+)\?(B|Q)\?([^?]*)\?=/i',
+            function ($m) {
+                $charset  = $m[1];
+                $encoding = strtoupper($m[2]);
+                $text     = $m[3];
+                $decoded  = $encoding === 'B'
+                    ? base64_decode($text)
+                    : quoted_printable_decode(str_replace('_', ' ', $text));
+                return @mb_convert_encoding($decoded, 'UTF-8', $charset) ?: $decoded;
+            },
+            preg_replace('/\?=\s+=\?([^?]+)\?(B|Q)\?/i', '', $value)
+        );
     }
 
     private function parseFrom(string $from): array
