@@ -434,7 +434,7 @@ class EngineerMailController extends Controller
         EngineerMailSource::where('tenant_id', $tenantId)->findOrFail($id);
 
         $v = $request->validate([
-            'project_id'    => 'required|integer',
+            'project_id'    => 'nullable|integer',
             'to'            => 'required|email',
             'to_name'       => 'nullable|string|max:255',
             'subject'       => 'required|string|max:500',
