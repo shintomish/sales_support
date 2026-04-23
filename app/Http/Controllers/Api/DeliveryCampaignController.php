@@ -4,10 +4,12 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\DeliveryCampaign;
+use App\Models\DeliverySendHistory;
 use App\Services\DeliveryCampaignService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 
 class DeliveryCampaignController extends Controller
 {
@@ -194,6 +196,233 @@ class DeliveryCampaignController extends Controller
                     'reply_body_snippet'   => $h->replyEmail ? mb_substr(strip_tags($h->replyEmail->body_text ?? $h->replyEmail->body_html ?? ''), 0, 300) : null,
                 ];
             }),
+        ]);
+    }
+
+    /**
+     * 提案スレッド一覧
+     * delivery_campaigns を project_mail_id / engineer_mail_source_id でグループ化し、
+     * スレッド単位で最新アクティビティ・返信有無を返す。
+     */
+    public function proposalThreads(Request $request): JsonResponse
+    {
+        $status  = $request->input('status');
+        $search  = $request->input('search');
+        $type    = $request->input('type'); // 'project' | 'engineer'
+        $perPage = $request->integer('per_page', 20);
+
+        // ── スレッド単位の集計サブクエリ ──
+        // project_mail_id / engineer_mail_source_id でグループ化し、
+        // 各グループの最新 sent_at、合計件数、返信有無を取得
+        $threadsQuery = DeliveryCampaign::query()
+            ->whereIn('send_type', ['proposal', 'engineer_proposal'])
+            ->select([
+                DB::raw("COALESCE(project_mail_id::text, 'e_' || engineer_mail_source_id::text) as thread_key"),
+                DB::raw('MIN(id) as first_campaign_id'),
+                'project_mail_id',
+                'engineer_mail_source_id',
+                DB::raw('MAX(sent_at) as latest_sent_at'),
+            ])
+            ->groupBy('project_mail_id', 'engineer_mail_source_id');
+
+        // type フィルタ
+        if ($type === 'project') {
+            $threadsQuery->whereNotNull('project_mail_id')->whereNull('engineer_mail_source_id');
+        } elseif ($type === 'engineer') {
+            $threadsQuery->whereNotNull('engineer_mail_source_id');
+        }
+
+        // スレッドサブクエリをベースに完全なクエリを組み立て
+        $threads = DB::table(DB::raw("({$threadsQuery->toSql()}) as threads"))
+            ->mergeBindings($threadsQuery->getQuery())
+            ->leftJoin('project_mail_sources', 'project_mail_sources.id', '=', 'threads.project_mail_id')
+            ->leftJoin('engineer_mail_sources', 'engineer_mail_sources.id', '=', 'threads.engineer_mail_source_id')
+            ->select([
+                'threads.thread_key',
+                'threads.first_campaign_id',
+                'threads.project_mail_id',
+                'threads.engineer_mail_source_id',
+                'threads.latest_sent_at',
+                DB::raw("CASE WHEN threads.project_mail_id IS NOT NULL THEN 'project' ELSE 'engineer' END as type"),
+                DB::raw('COALESCE(threads.project_mail_id, threads.engineer_mail_source_id) as source_id'),
+                'project_mail_sources.customer_name',
+                'project_mail_sources.title as project_title',
+                'project_mail_sources.status as project_status',
+                'engineer_mail_sources.name as engineer_name',
+                'engineer_mail_sources.status as engineer_status',
+            ]);
+
+        // status フィルタ
+        if ($status) {
+            $threads->where(function ($q) use ($status) {
+                $q->where('project_mail_sources.status', $status)
+                  ->orWhere('engineer_mail_sources.status', $status);
+            });
+        }
+
+        // search フィルタ
+        if ($search) {
+            $threads->where(function ($q) use ($search) {
+                $q->where('project_mail_sources.customer_name', 'ilike', "%{$search}%")
+                  ->orWhere('project_mail_sources.title', 'ilike', "%{$search}%")
+                  ->orWhere('engineer_mail_sources.name', 'ilike', "%{$search}%");
+            });
+        }
+
+        // ソート: 最新送信日時の降順
+        $threads->orderByDesc('threads.latest_sent_at');
+
+        // ページネーション
+        $paginated = $threads->paginate($perPage);
+
+        // ── 各スレッドに対して送信/返信情報を付加 ──
+        $threadItems = collect($paginated->items());
+        $projectMailIds  = $threadItems->pluck('project_mail_id')->filter()->unique()->values()->all();
+        $engineerMailIds = $threadItems->pluck('engineer_mail_source_id')->filter()->unique()->values()->all();
+
+        // 各スレッドに紐づくキャンペーンIDを一括取得
+        $campaignsByThread = DeliveryCampaign::query()
+            ->whereIn('send_type', ['proposal', 'engineer_proposal'])
+            ->where(function ($q) use ($projectMailIds, $engineerMailIds) {
+                if ($projectMailIds) {
+                    $q->orWhereIn('project_mail_id', $projectMailIds);
+                }
+                if ($engineerMailIds) {
+                    $q->orWhereIn('engineer_mail_source_id', $engineerMailIds);
+                }
+            })
+            ->select('id', 'project_mail_id', 'engineer_mail_source_id', 'sent_at', 'success_count')
+            ->get()
+            ->groupBy(function ($c) {
+                return $c->project_mail_id
+                    ? (string) $c->project_mail_id
+                    : 'e_' . $c->engineer_mail_source_id;
+            });
+
+        // 全キャンペーンIDを収集して送信履歴を一括取得
+        $allCampaignIds = $campaignsByThread->flatten()->pluck('id')->unique()->values()->all();
+
+        $sendHistories = DeliverySendHistory::query()
+            ->whereIn('campaign_id', $allCampaignIds)
+            ->select('id', 'campaign_id', 'email', 'name', 'status', 'replied_at', 'reply_email_id')
+            ->get()
+            ->groupBy('campaign_id');
+
+        // 返信メール情報を一括取得
+        $replyEmailIds = DeliverySendHistory::query()
+            ->whereIn('campaign_id', $allCampaignIds)
+            ->whereNotNull('reply_email_id')
+            ->pluck('reply_email_id')
+            ->unique()
+            ->values()
+            ->all();
+
+        $replyEmails = [];
+        if ($replyEmailIds) {
+            $replyEmails = DB::table('emails')
+                ->whereIn('id', $replyEmailIds)
+                ->select('id', 'subject', 'received_at', 'is_read')
+                ->get()
+                ->keyBy('id');
+        }
+
+        // ── レスポンスデータ構築 ──
+        $data = $threadItems->map(function ($thread) use ($campaignsByThread, $sendHistories, $replyEmails) {
+            $threadKey = $thread->thread_key;
+            $campaigns = $campaignsByThread->get($threadKey, collect());
+            $campaignIds = $campaigns->pluck('id')->all();
+
+            // スレッド内の全送信履歴
+            $histories = collect();
+            foreach ($campaignIds as $cid) {
+                if ($sendHistories->has($cid)) {
+                    $histories = $histories->merge($sendHistories->get($cid));
+                }
+            }
+
+            // 送信成功件数
+            $sentCount = $campaigns->sum('success_count');
+
+            // 返信を持つ履歴
+            $repliedHistories = $histories->whereNotNull('reply_email_id');
+            $replyCount = $repliedHistories->count();
+
+            // thread_count = 送信件数 + 返信件数
+            $threadCount = $sentCount + $replyCount;
+
+            // has_unread_reply: 返信メールのうち未読があるか
+            $hasUnreadReply = false;
+            foreach ($repliedHistories as $h) {
+                $replyEmail = $replyEmails[$h->reply_email_id] ?? null;
+                if ($replyEmail && !$replyEmail->is_read) {
+                    $hasUnreadReply = true;
+                    break;
+                }
+            }
+
+            // last_activity: 最新の送信 or 返信
+            $lastActivity = null;
+
+            // 最新返信
+            $latestReply = $repliedHistories->sortByDesc('replied_at')->first();
+            $latestReplyEmail = $latestReply ? ($replyEmails[$latestReply->reply_email_id] ?? null) : null;
+
+            // 最新送信
+            $latestSentAt = $campaigns->max('sent_at');
+
+            if ($latestReplyEmail && $latestReplyEmail->received_at) {
+                $replyDatetime = $latestReplyEmail->received_at;
+                // 返信が最新送信より後なら返信を表示
+                if (!$latestSentAt || $replyDatetime > $latestSentAt) {
+                    $lastActivity = [
+                        'type'     => 'received',
+                        'subject'  => $latestReplyEmail->subject,
+                        'datetime' => $replyDatetime,
+                    ];
+                }
+            }
+
+            if (!$lastActivity) {
+                $latestCampaign = $campaigns->sortByDesc('sent_at')->first();
+                if ($latestCampaign) {
+                    $lastActivity = [
+                        'type'     => 'sent',
+                        'subject'  => null,
+                        'datetime' => $latestCampaign->sent_at instanceof \Carbon\Carbon
+                            ? $latestCampaign->sent_at->toIso8601String()
+                            : $latestCampaign->sent_at,
+                    ];
+                }
+            }
+
+            // partner情報: 最新の送信履歴の宛先
+            $latestHistory = $histories->sortByDesc('id')->first();
+            $partnerEmail = $latestHistory->email ?? null;
+            $partnerName  = $latestHistory->name ?? null;
+
+            // type別の情報
+            $isProject = $thread->project_mail_id !== null;
+
+            return [
+                'id'             => (int) ($isProject ? $thread->project_mail_id : $thread->engineer_mail_source_id),
+                'type'           => $isProject ? 'project' : 'engineer',
+                'source_id'      => (int) $thread->source_id,
+                'customer_name'  => $isProject ? $thread->customer_name : null,
+                'title'          => $isProject ? $thread->project_title : $thread->engineer_name,
+                'status'         => $isProject ? $thread->project_status : $thread->engineer_status,
+                'partner_email'  => $partnerEmail,
+                'partner_name'   => $partnerName,
+                'last_activity'  => $lastActivity,
+                'thread_count'   => $threadCount,
+                'has_unread_reply' => $hasUnreadReply,
+            ];
+        })->values();
+
+        return response()->json([
+            'data'         => $data,
+            'current_page' => $paginated->currentPage(),
+            'last_page'    => $paginated->lastPage(),
+            'total'        => $paginated->total(),
         ]);
     }
 }

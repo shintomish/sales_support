@@ -215,6 +215,9 @@ Route::prefix('v1')->middleware(['supabase.auth'])->group(function () {
         Route::delete('/{id}',         [DeliveryAddressController::class, 'destroy']);
     });
 
+    // ── 提案スレッド一覧 ──────────────────────────────────
+    Route::get('proposal-threads', [DeliveryCampaignController::class, 'proposalThreads']);
+
     // ── 配信キャンペーン（送信履歴を統合）───────────────────
     Route::prefix('delivery-campaigns')->group(function () {
         Route::get('/',              [DeliveryCampaignController::class, 'index']);
