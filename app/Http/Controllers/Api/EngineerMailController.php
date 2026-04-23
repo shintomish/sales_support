@@ -56,10 +56,7 @@ class EngineerMailController extends Controller
                 $q->where('name', 'like', "%{$search}%")
                   ->orWhere('nearest_station', 'like', "%{$search}%")
                   ->orWhere('affiliation_type', 'like', "%{$search}%")
-                  ->orWhereHas('email', fn($eq) =>
-                      $eq->where('subject', 'like', "%{$search}%")
-                         ->orWhere('from_name', 'like', "%{$search}%")
-                  );
+                  ->orWhere('skills', 'like', "%{$search}%");
             });
         }
 

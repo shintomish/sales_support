@@ -42,8 +42,7 @@ class EmailController extends Controller
             $query->where(function ($q) use ($search) {
                 $q->where('subject', 'like', "%{$search}%")
                   ->orWhere('from_address', 'like', "%{$search}%")
-                  ->orWhere('from_name', 'like', "%{$search}%")
-                  ->orWhere('body_text', 'like', "%{$search}%");
+                  ->orWhere('from_name', 'like', "%{$search}%");
             });
         }
         if ($unread) {
