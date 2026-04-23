@@ -32,17 +32,21 @@ class EmailController extends Controller
     // メール一覧
     public function index(Request $request)
     {
-        $perPage  = $request->integer('per_page', 30);
-        $search   = $request->string('search');
-        $unread   = $request->boolean('unread');
-        $category = $request->string('category');   // engineer / project / ''
+        $perPage    = $request->integer('per_page', 30);
+        $search     = $request->string('search');
+        $searchBody = $request->boolean('search_body');
+        $unread     = $request->boolean('unread');
+        $category   = $request->string('category');   // engineer / project / ''
         $query = Email::query()
             ->orderBy('received_at', 'desc');
         if ($search) {
-            $query->where(function ($q) use ($search) {
+            $query->where(function ($q) use ($search, $searchBody) {
                 $q->where('subject', 'like', "%{$search}%")
                   ->orWhere('from_address', 'like', "%{$search}%")
                   ->orWhere('from_name', 'like', "%{$search}%");
+                if ($searchBody) {
+                    $q->orWhere('body_text', 'like', "%{$search}%");
+                }
             });
         }
         if ($unread) {
