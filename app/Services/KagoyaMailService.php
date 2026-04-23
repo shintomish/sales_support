@@ -201,20 +201,23 @@ class KagoyaMailService
     {
         if (empty($value) || !str_contains($value, '=?')) return $value;
 
-        // 同一charset+encodingの連続エンコードワードを結合してからデコード
-        // (RFC 2047のマルチバイト文字分割に対応)
+        // 同一charset+encodingの連続エンコードワードをグループ化してデコード
         return preg_replace_callback(
-            '/=\?([^?]+)\?(B|Q)\?([^?]*)\?=/i',
+            '/(=\?([^?]+)\?(B|Q)\?([^?]*)\?=)(\s+=\?\2\?\3\?([^?]*)\?=)*/i',
             function ($m) {
-                $charset  = $m[1];
-                $encoding = strtoupper($m[2]);
-                $text     = $m[3];
-                $decoded  = $encoding === 'B'
-                    ? base64_decode($text)
-                    : quoted_printable_decode(str_replace('_', ' ', $text));
+                $charset  = $m[2];
+                $encoding = strtoupper($m[3]);
+                preg_match_all('/=\?[^?]+\?(B|Q)\?([^?]*)\?=/i', $m[0], $all);
+                $parts = $all[2];
+
+                if ($encoding === 'Q') {
+                    $decoded = quoted_printable_decode(str_replace('_', ' ', implode('', $parts)));
+                } else {
+                    $decoded = implode('', array_map('base64_decode', $parts));
+                }
                 return @mb_convert_encoding($decoded, 'UTF-8', $charset) ?: $decoded;
             },
-            preg_replace('/\?=\s+=\?([^?]+)\?(B|Q)\?/i', '', $value)
+            $value
         );
     }
 

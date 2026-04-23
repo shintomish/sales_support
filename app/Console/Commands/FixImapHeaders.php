@@ -17,10 +17,14 @@ class FixImapHeaders extends Command
     {
         $dryRun = $this->option('dry-run');
 
+        // 文字化けパターン: ???, ﾉ?ﾟ, jZ?, X?? など
+        $garbledPatterns = ['%???%', '%ﾉ?%', '%jZ?%', '%X??%', '%ﾊ?%', '%ﾆﾉ?%'];
         $emails = Email::where('gmail_message_id', 'like', 'imap-%')
-            ->where(function ($q) {
-                $q->where('from_name', 'like', '%???%')
-                  ->orWhere('subject', 'like', '%???%');
+            ->where(function ($q) use ($garbledPatterns) {
+                foreach ($garbledPatterns as $p) {
+                    $q->orWhere('from_name', 'like', $p)
+                      ->orWhere('subject', 'like', $p);
+                }
             })->get(['id', 'gmail_message_id', 'from_name', 'subject']);
 
         $this->info("対象: {$emails->count()}件" . ($dryRun ? ' (DRY-RUN)' : ''));
@@ -95,17 +99,21 @@ class FixImapHeaders extends Command
     {
         if (empty($value) || !str_contains($value, '=?')) return $value;
         return preg_replace_callback(
-            '/=\?([^?]+)\?(B|Q)\?([^?]*)\?=/i',
+            '/(=\?([^?]+)\?(B|Q)\?([^?]*)\?=)(\s+=\?\2\?\3\?([^?]*)\?=)*/i',
             function ($m) {
-                $charset  = $m[1];
-                $encoding = strtoupper($m[2]);
-                $text     = $m[3];
-                $decoded  = $encoding === 'B'
-                    ? base64_decode($text)
-                    : quoted_printable_decode(str_replace('_', ' ', $text));
+                $charset  = $m[2];
+                $encoding = strtoupper($m[3]);
+                preg_match_all('/=\?[^?]+\?(B|Q)\?([^?]*)\?=/i', $m[0], $all);
+                $parts = $all[2];
+
+                if ($encoding === 'Q') {
+                    $decoded = quoted_printable_decode(str_replace('_', ' ', implode('', $parts)));
+                } else {
+                    $decoded = implode('', array_map('base64_decode', $parts));
+                }
                 return @mb_convert_encoding($decoded, 'UTF-8', $charset) ?: $decoded;
             },
-            preg_replace('/\?=\s+=\?([^?]+)\?(B|Q)\?/i', '', $value)
+            $value
         );
     }
 
