@@ -26,8 +26,8 @@ class KagoyaMailService
         }
 
         try {
-            // SELECT INBOX
-            $selectResp = $this->imapCommand('SELECT INBOX');
+            // EXAMINE INBOX（読み取り専用 — \Recentフラグに影響しない）
+            $selectResp = $this->imapCommand('EXAMINE INBOX');
             $exists = 0;
             foreach ($selectResp['lines'] as $line) {
                 if (preg_match('/\*\s+(\d+)\s+EXISTS/', $line, $m)) {
