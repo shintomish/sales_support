@@ -37,10 +37,11 @@ class FixImapHeaders extends Command
 
             foreach ($emails as $email) {
                 $uid = (int) str_replace('imap-', '', $email->gmail_message_id);
-                $lines = $this->imapCommand("UID FETCH {$uid} (BODY.PEEK[HEADER.FIELDS (FROM SUBJECT)])");
+                $resp = $this->imapCommand("UID FETCH {$uid} (BODY.PEEK[HEADER.FIELDS (FROM SUBJECT)])");
                 $headerBlock = '';
                 $inLiteral = false;
-                foreach ($lines as $line) {
+                foreach ($resp['lines'] as $line) {
+                    if (!is_string($line)) continue;
                     if (preg_match('/\{(\d+)\}/', $line) && !$inLiteral) {
                         $inLiteral = true;
                         continue;
