@@ -74,20 +74,25 @@ class EmailController extends Controller
     // メール詳細（自動既読）
     public function show(int $id)
     {
-        $email = Email::findOrFail($id);
-        // 既読にする（Gmailトークン失効時もDB更新は行う）
+        $email = Email::with(['contact', 'deal', 'customer', 'attachments'])
+            ->findOrFail($id);
+
         if (!$email->is_read) {
-            $token = GmailToken::where('tenant_id', auth()->user()->tenant_id)->first();
-            if ($token) {
-                try {
-                    $this->gmailService->markAsRead($token, $email->gmail_message_id);
-                } catch (\Exception $e) {
-                    \Illuminate\Support\Facades\Log::warning("markAsRead失敗（トークン失効の可能性）: " . $e->getMessage());
-                }
-            }
             $email->update(['is_read' => true]);
+            // Gmail既読はレスポンス後に非同期実行
+            defer(function () use ($email) {
+                $token = GmailToken::where('tenant_id', $email->tenant_id)->first();
+                if ($token && !str_starts_with($email->gmail_message_id, 'imap-')) {
+                    try {
+                        $this->gmailService->markAsRead($token, $email->gmail_message_id);
+                    } catch (\Exception $e) {
+                        Log::warning("markAsRead失敗: " . $e->getMessage());
+                    }
+                }
+            });
         }
-        return response()->json($email->load(['contact', 'deal', 'customer', 'attachments']));
+
+        return response()->json($email);
     }
 
     #[OA\Post(
