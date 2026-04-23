@@ -136,6 +136,7 @@ Route::prefix('v1')->middleware(['supabase.auth'])->group(function () {
         Route::patch('/{id}',        [ProjectMailController::class, 'update']);
         Route::patch('/{id}/status', [ProjectMailController::class, 'updateStatus']);
         Route::post('/{id}/rescore',              [ProjectMailController::class, 'rescore']);
+        Route::get('/{id}/thread',                [ProjectMailController::class, 'thread']);
         Route::get('/{id}/matched-engineers',     [ProjectMailController::class, 'matchedEngineers']);
         Route::post('/{id}/generate-proposal',    [ProjectMailController::class, 'generateProposal']);
         Route::post('/{id}/send-proposal',        [ProjectMailController::class, 'sendProposal']);
@@ -151,6 +152,7 @@ Route::prefix('v1')->middleware(['supabase.auth'])->group(function () {
         Route::put('/{id}',                           [EngineerMailController::class, 'update']);
         Route::put('/{id}/status',                    [EngineerMailController::class, 'updateStatus']);
         Route::post('/{id}/register-engineer',        [EngineerMailController::class, 'registerEngineer']);
+        Route::get('/{id}/thread',                    [EngineerMailController::class, 'thread']);
         Route::get('/{id}/matched-projects',          [EngineerMailController::class, 'matchedProjects']);
         Route::post('/{id}/generate-proposal',        [EngineerMailController::class, 'generateProposal']);
         Route::post('/{id}/send-proposal',            [EngineerMailController::class, 'sendProposal']);

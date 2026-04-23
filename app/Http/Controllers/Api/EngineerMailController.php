@@ -327,6 +327,65 @@ class EngineerMailController extends Controller
         ]);
     }
 
+    /**
+     * スレッド会話履歴
+     * GET /v1/engineer-mails/{id}/thread
+     */
+    public function thread(int $id): JsonResponse
+    {
+        $tenantId = auth()->user()->tenant_id;
+        EngineerMailSource::where('tenant_id', $tenantId)->findOrFail($id);
+
+        $campaigns = DeliveryCampaign::with(['sendHistories.replyEmail'])
+            ->where('tenant_id', $tenantId)
+            ->where('engineer_mail_source_id', $id)
+            ->where('send_type', 'engineer_proposal')
+            ->orderBy('sent_at')
+            ->get();
+
+        $thread = [];
+
+        foreach ($campaigns as $campaign) {
+            foreach ($campaign->sendHistories as $history) {
+                // 送信メッセージ
+                $thread[] = [
+                    'type'        => 'sent',
+                    'campaign_id' => $campaign->id,
+                    'history_id'  => $history->id,
+                    'to'          => $history->email,
+                    'to_name'     => $history->name,
+                    'subject'     => $campaign->subject,
+                    'body'        => $campaign->body,
+                    'sent_at'     => $campaign->sent_at?->toIso8601String(),
+                    'status'      => $history->status,
+                ];
+
+                // 返信メッセージ
+                if ($history->replyEmail) {
+                    $reply = $history->replyEmail;
+                    $thread[] = [
+                        'type'        => 'received',
+                        'email_id'    => $reply->id,
+                        'from'        => $reply->from_address,
+                        'from_name'   => $reply->from_name,
+                        'subject'     => $reply->subject,
+                        'body_text'   => $reply->body_text,
+                        'received_at' => $reply->received_at?->toIso8601String(),
+                    ];
+                }
+            }
+        }
+
+        // 時系列ソート
+        usort($thread, function ($a, $b) {
+            $aTime = $a['sent_at'] ?? $a['received_at'] ?? '';
+            $bTime = $b['sent_at'] ?? $b['received_at'] ?? '';
+            return strcmp($aTime, $bTime);
+        });
+
+        return response()->json(['thread' => $thread]);
+    }
+
     // ── 技術者メール → マッチ案件への提案文生成 ─────────────────────────────
 
     public function generateProposal(Request $request, int $id): JsonResponse
