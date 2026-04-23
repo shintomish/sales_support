@@ -69,10 +69,10 @@ class KagoyaMailService
             // UID FETCH で本文取得（一件ずつ）
             foreach ($newUids as $uid) {
                 try {
-                    $raw = $this->fetchMessageByUid($uid);
-                    if (empty($raw)) continue;
+                    $result = $this->fetchMessageByUid($uid);
+                    if (empty($result['body'])) continue;
 
-                    $this->storeRawMessage($raw, $tenantId, "imap-{$uid}");
+                    $this->storeRawMessage($result['body'], $tenantId, "imap-{$uid}", $result['internaldate']);
                     $stored++;
                 } catch (\Throwable $e) {
                     Log::warning("[KagoyaIMAP] UID {$uid} 処理失敗: " . $e->getMessage());
@@ -87,7 +87,7 @@ class KagoyaMailService
         }
     }
 
-    private function storeRawMessage(string $raw, int $tenantId, string $uid): void
+    private function storeRawMessage(string $raw, int $tenantId, string $uid, ?string $internalDate = null): void
     {
         $parts = preg_split('/\r?\n\r?\n/', $raw, 2);
         $headerBlock = $parts[0] ?? '';
@@ -98,7 +98,6 @@ class KagoyaMailService
         $subject = $this->decodeHeader($headers['subject'] ?? '(件名なし)');
         $from = $this->decodeHeader($headers['from'] ?? '');
         $to = $this->decodeHeader($headers['to'] ?? '');
-        $dateStr = $headers['date'] ?? null;
 
         [$fromName, $fromAddress] = $this->parseFrom($from);
 
@@ -116,9 +115,12 @@ class KagoyaMailService
             return;
         }
 
-        $receivedAt = $dateStr
-            ? Carbon::parse($dateStr)->utc()
-            : Carbon::now()->utc();
+        // INTERNALDATE（サーバー受信時刻）を優先、なければDateヘッダー
+        $receivedAt = $internalDate
+            ? Carbon::parse($internalDate)->utc()
+            : ($headers['date'] ?? null
+                ? Carbon::parse($headers['date'])->utc()
+                : Carbon::now()->utc());
 
         $contentType = $headers['content-type'] ?? 'text/plain';
         $cte = strtolower($headers['content-transfer-encoding'] ?? '7bit');
@@ -355,12 +357,16 @@ class KagoyaMailService
         return ['ok' => false, 'line' => '', 'lines' => $lines];
     }
 
-    private function fetchMessageByUid(int $uid): string
+    /**
+     * @return array{body: string, internaldate: string|null}
+     */
+    private function fetchMessageByUid(int $uid): array
     {
         $tag = 'A' . (++$this->tagSeq);
-        fwrite($this->socket, "{$tag} UID FETCH {$uid} (BODY.PEEK[])\r\n");
+        fwrite($this->socket, "{$tag} UID FETCH {$uid} (BODY.PEEK[] INTERNALDATE)\r\n");
 
         $data = '';
+        $internalDate = null;
         $inBody = false;
         $remaining = 0;
 
@@ -369,6 +375,10 @@ class KagoyaMailService
             if ($line === false) break;
 
             if (!$inBody) {
+                // INTERNALDATE 検出: INTERNALDATE "23-Apr-2026 18:27:00 +0900"
+                if (preg_match('/INTERNALDATE\s+"([^"]+)"/i', $line, $dm)) {
+                    $internalDate = $dm[1];
+                }
                 // リテラルサイズ検出: * N FETCH (BODY[] {12345}
                 if (preg_match('/\{(\d+)\}/', $line, $m)) {
                     $remaining = (int) $m[1];
@@ -394,6 +404,6 @@ class KagoyaMailService
             }
         }
 
-        return $data;
+        return ['body' => $data, 'internaldate' => $internalDate];
     }
 }
