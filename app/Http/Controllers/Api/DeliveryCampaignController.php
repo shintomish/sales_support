@@ -40,6 +40,10 @@ class DeliveryCampaignController extends Controller
             $query->where('send_type', $sendType);
         }
 
+        if ($request->boolean('exclude_proposals')) {
+            $query->whereNotIn('send_type', ['proposal', 'engineer_proposal', 'matching_proposal']);
+        }
+
         if ($userId) {
             $query->where('user_id', $userId);
         }
