@@ -18,6 +18,10 @@ class EmailClassificationService
         'ご紹介', '弊社直', '弊社要員', '弊社社員',
     ];
 
+    // 件名がイニシャル＠地名パターンの場合は技術者メールと判定
+    // 例: 【Python】IY＠京王多摩センター【リモート/5月～】
+    private const ENGINEER_SUBJECT_PATTERN = '/[A-Z]{2,3}＠/u';
+
     // 本文にこれらが含まれる場合は技術者メールと判定
     private const ENGINEER_BODY_KEYWORDS = [
         '弊社要員をご紹介',
@@ -120,6 +124,11 @@ class EmailClassificationService
             if (mb_strpos($subject, $kw) !== false) {
                 return ['engineer', 'subject_human_keyword:' . $kw, $urls];
             }
+        }
+
+        // 3.5. 件名にイニシャル＠地名パターン（例: IY＠京王多摩センター）
+        if (preg_match(self::ENGINEER_SUBJECT_PATTERN, $subject)) {
+            return ['engineer', 'subject_initial_location', $urls];
         }
 
         // 4. 本文に技術者キーワード
