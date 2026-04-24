@@ -152,30 +152,50 @@ class KagoyaMailService
 
         // 返信紐づけ
         $inReplyTo = trim($headers['in-reply-to'] ?? '');
+        $history = null;
+
+        // ① In-Reply-To → ses_message_id 完全一致
         if ($inReplyTo) {
             $history = DeliverySendHistory::where('ses_message_id', $inReplyTo)
                 ->whereNull('reply_email_id')
                 ->first();
 
+            // ② < > 除去してのフォールバック
             if (!$history) {
                 $clean = trim($inReplyTo, '<>');
                 $history = DeliverySendHistory::where('ses_message_id', 'like', "%{$clean}%")
                     ->whereNull('reply_email_id')
                     ->first();
             }
+        }
 
-            if ($history) {
-                $history->update([
-                    'reply_email_id' => $email->id,
-                    'replied_at'     => $email->received_at,
-                    'status'         => 'replied',
-                ]);
-                if ($history->campaign_id) {
-                    DeliveryCampaign::where('id', $history->campaign_id)
-                        ->increment('replied_count');
+        // ③ 差出人メール + 件名（Re:除去）で最新の送信履歴を探す
+        if (!$history && $fromAddress) {
+            $originalSubject = trim(preg_replace('/^(Re:\s*|RE:\s*|Fwd:\s*|FW:\s*)*/iu', '', $subject));
+            if ($originalSubject) {
+                $history = DeliverySendHistory::where('email', $fromAddress)
+                    ->whereNull('reply_email_id')
+                    ->where('status', 'sent')
+                    ->whereHas('campaign', fn($q) => $q->where('subject', 'like', '%' . $originalSubject . '%'))
+                    ->latest()
+                    ->first();
+                if ($history) {
+                    Log::info("[KagoyaIMAP] フォールバック紐づけ(件名+差出人) history_id={$history->id} email_id={$email->id}");
                 }
-                Log::info("[KagoyaIMAP] 返信紐づけ完了 history_id={$history->id} email_id={$email->id}");
             }
+        }
+
+        if ($history) {
+            $history->update([
+                'reply_email_id' => $email->id,
+                'replied_at'     => $email->received_at,
+                'status'         => 'replied',
+            ]);
+            if ($history->campaign_id) {
+                DeliveryCampaign::where('id', $history->campaign_id)
+                    ->increment('replied_count');
+            }
+            Log::info("[KagoyaIMAP] 返信紐づけ完了 history_id={$history->id} email_id={$email->id}");
         }
     }
 
