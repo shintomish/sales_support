@@ -22,12 +22,17 @@ class EmailClassificationService
     // 例: 【Python】IY＠京王多摩センター【リモート/5月～】
     private const ENGINEER_SUBJECT_PATTERN = '/[A-Z]{2,3}＠/u';
 
+    // 件名に年齢＋単価パターンがある場合は技術者メールと判定
+    // 例: 【AWS・28歳】インフラ歴6年／70万
+    private const ENGINEER_AGE_PRICE_PATTERN = '/\d{2}歳.*[\/／]\d{2,3}万/u';
+
     // 本文にこれらが含まれる場合は技術者メールと判定
     private const ENGINEER_BODY_KEYWORDS = [
         '弊社要員をご紹介',
         '弊社社員をご紹介',
         '弊社エンジニアをご紹介',
         '弊社技術者をご紹介',
+        '要員のご紹介',
         'スキルシートを添付',
         '経歴書を添付',
     ];
@@ -129,6 +134,11 @@ class EmailClassificationService
         // 3.5. 件名にイニシャル＠地名パターン（例: IY＠京王多摩センター）
         if (preg_match(self::ENGINEER_SUBJECT_PATTERN, $subject)) {
             return ['engineer', 'subject_initial_location', $urls];
+        }
+
+        // 3.6. 件名に年齢＋単価パターン（例: 28歳／...／70万）
+        if (preg_match(self::ENGINEER_AGE_PRICE_PATTERN, $subject)) {
+            return ['engineer', 'subject_age_price', $urls];
         }
 
         // 4. 本文に技術者キーワード
