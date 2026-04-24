@@ -33,7 +33,7 @@ class ProjectMailController extends Controller
         $scoreMax  = $request->integer('score_max', 100);
         $search    = $request->string('search');
 
-        $query = ProjectMailSource::with(['email:id,subject,from_name,from_address,body_text,received_at'])
+        $query = ProjectMailSource::with(['email:id,subject,from_name,from_address,received_at'])
             ->whereBetween('score', [$scoreMin, $scoreMax])
             ->orderByDesc('received_at');
 
