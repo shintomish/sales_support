@@ -213,6 +213,7 @@ Route::prefix('v1')->middleware(['supabase.auth'])->group(function () {
         Route::get('/import-progress', [DeliveryAddressController::class, 'importProgress']);
         Route::post('/bulk-set-active',[DeliveryAddressController::class, 'bulkSetActive']);
         Route::post('/save-state',     [DeliveryAddressController::class, 'saveState']);
+        Route::post('/restore-state',  [DeliveryAddressController::class, 'restoreState']);
         Route::patch('/{id}',          [DeliveryAddressController::class, 'update']);
         Route::delete('/{id}',         [DeliveryAddressController::class, 'destroy']);
     });

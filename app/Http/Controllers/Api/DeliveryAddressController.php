@@ -16,16 +16,22 @@ class DeliveryAddressController extends Controller
 {
     public function index(Request $request): JsonResponse
     {
-        $query = DeliveryAddress::query();
+        $tenantId = auth()->user()->tenant_id;
 
+        $baseQuery = DeliveryAddress::query();
         if ($request->filled('search')) {
             $search = $request->input('search');
-            $query->where(function ($q) use ($search) {
+            $baseQuery->where(function ($q) use ($search) {
                 $q->where('email', 'like', "%{$search}%")
                   ->orWhere('name', 'like', "%{$search}%");
             });
         }
 
+        // 件数表示用（is_active フィルタは無視して、検索条件下の全件 / 有効件数）
+        $totalCount  = (clone $baseQuery)->count();
+        $activeCount = (clone $baseQuery)->where('is_active', true)->count();
+
+        $query = clone $baseQuery;
         if ($request->has('is_active')) {
             $query->where('is_active', filter_var($request->input('is_active'), FILTER_VALIDATE_BOOLEAN));
         }
@@ -38,7 +44,18 @@ class DeliveryAddressController extends Controller
 
         $addresses = $query->orderBy($sortBy, $sortOrder)->paginate($request->input('per_page', 100));
 
-        return response()->json($addresses);
+        $snapshot = DeliveryAddressStateSnapshot::where('tenant_id', $tenantId)->first();
+
+        return response()->json([
+            ...$addresses->toArray(),
+            'all_count'    => $totalCount,
+            'active_count' => $activeCount,
+            'saved_state'  => $snapshot ? [
+                'label'      => $snapshot->label,
+                'created_at' => $snapshot->created_at?->toIso8601String(),
+                'count'      => is_array($snapshot->data) ? count($snapshot->data) : 0,
+            ] : null,
+        ]);
     }
 
     public function import(Request $request): JsonResponse
@@ -154,7 +171,7 @@ class DeliveryAddressController extends Controller
         ]);
     }
 
-    /** 現在の有効/無効状態をスナップショット保存 */
+    /** 現在の有効/無効状態をスナップショット保存（テナントあたり1件のみ・上書き） */
     public function saveState(Request $request): JsonResponse
     {
         $validated = $request->validate([
@@ -171,6 +188,9 @@ class DeliveryAddressController extends Controller
             ->values()
             ->all();
 
+        // 単一スナップショット運用: 既存を削除して再作成
+        DeliveryAddressStateSnapshot::where('tenant_id', $tenantId)->delete();
+
         $snapshot = DeliveryAddressStateSnapshot::create([
             'tenant_id'  => $tenantId,
             'label'      => $label,
@@ -180,10 +200,48 @@ class DeliveryAddressController extends Controller
         ]);
 
         return response()->json([
-            'message'     => "状態「{$label}」を保存しました（{$snapshot->id}）",
+            'message'     => "状態「{$label}」を保存しました",
             'snapshot_id' => $snapshot->id,
             'label'       => $label,
             'count'       => count($rows),
         ], 201);
+    }
+
+    /** 保存済みスナップショットを一括復元 */
+    public function restoreState(): JsonResponse
+    {
+        $tenantId = auth()->user()->tenant_id;
+        $snapshot = DeliveryAddressStateSnapshot::where('tenant_id', $tenantId)->first();
+
+        if (!$snapshot) {
+            return response()->json(['message' => '保存された状態がありません'], 404);
+        }
+
+        $data = is_array($snapshot->data) ? $snapshot->data : [];
+        $activeIds   = [];
+        $inactiveIds = [];
+        foreach ($data as $row) {
+            if (!isset($row['id'])) continue;
+            if (!empty($row['is_active'])) $activeIds[]   = (int) $row['id'];
+            else                            $inactiveIds[] = (int) $row['id'];
+        }
+
+        $updated = 0;
+        if ($activeIds) {
+            $updated += DeliveryAddress::where('tenant_id', $tenantId)
+                ->whereIn('id', $activeIds)
+                ->update(['is_active' => true]);
+        }
+        if ($inactiveIds) {
+            $updated += DeliveryAddress::where('tenant_id', $tenantId)
+                ->whereIn('id', $inactiveIds)
+                ->update(['is_active' => false]);
+        }
+
+        return response()->json([
+            'message' => "状態「{$snapshot->label}」を復元しました（{$updated}件更新）",
+            'updated' => $updated,
+            'label'   => $snapshot->label,
+        ]);
     }
 }
