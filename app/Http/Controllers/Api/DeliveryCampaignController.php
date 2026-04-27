@@ -109,6 +109,16 @@ class DeliveryCampaignController extends Controller
             'attachments.*'           => 'file|max:10240',
         ]);
 
+        // 未置換プレースホルダ検出（<%Name%> は配信時にバックエンドで置換するため除外）
+        $unresolved = $this->findUnresolvedPlaceholders($validated['subject'] . "\n" . $validated['body']);
+        if (!empty($unresolved)) {
+            return response()->json([
+                'message'      => '未置換のプレースホルダがあります: ' . implode(' / ', $unresolved)
+                                  . ' 。メール署名設定を確認してください。',
+                'placeholders' => $unresolved,
+            ], 422);
+        }
+
         // アップロードファイルを一時ディレクトリに保存
         $attachmentPaths = [];
         if ($request->hasFile('attachments')) {
@@ -428,5 +438,18 @@ class DeliveryCampaignController extends Controller
             'last_page'    => $paginated->lastPage(),
             'total'        => $paginated->total(),
         ]);
+    }
+
+    /**
+     * 件名・本文から未置換プレースホルダを抽出。
+     * <%Name%> は配信時に per-recipient で置換されるため除外。
+     */
+    private function findUnresolvedPlaceholders(string $text): array
+    {
+        $found = [];
+        if (preg_match_all('/<送信者[^>]*>/u', $text, $m)) {
+            foreach (array_unique($m[0]) as $p) $found[] = $p;
+        }
+        return $found;
     }
 }
