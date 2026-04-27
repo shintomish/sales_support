@@ -129,9 +129,26 @@ class DeliveryAddressController extends Controller
         $address = DeliveryAddress::findOrFail($id);
 
         $validated = $request->validate([
-            'is_active' => 'sometimes|boolean',
-            'name'      => 'sometimes|nullable|string|max:255',
+            'email'      => 'sometimes|email|max:255',
+            'name'       => 'sometimes|nullable|string|max:255',
+            'zip_code'   => 'sometimes|nullable|string|max:20',
+            'prefecture' => 'sometimes|nullable|string|max:50',
+            'address'    => 'sometimes|nullable|string|max:500',
+            'tel'        => 'sometimes|nullable|string|max:50',
+            'occupation' => 'sometimes|nullable|string|max:255',
+            'is_active'  => 'sometimes|boolean',
         ]);
+
+        // メールアドレス変更時は同テナント内の重複を確認
+        if (isset($validated['email']) && $validated['email'] !== $address->email) {
+            $duplicate = DeliveryAddress::where('tenant_id', $address->tenant_id)
+                ->where('email', $validated['email'])
+                ->where('id', '!=', $id)
+                ->exists();
+            if ($duplicate) {
+                return response()->json(['message' => 'このメールアドレスはすでに登録されています。'], 422);
+            }
+        }
 
         $address->update($validated);
 
