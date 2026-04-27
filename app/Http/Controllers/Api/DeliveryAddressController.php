@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\DeliveryAddress;
+use App\Models\DeliveryAddressStateSnapshot;
 use App\Services\DeliveryAddressImportService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -134,5 +135,55 @@ class DeliveryAddressController extends Controller
         $address->delete();
 
         return response()->json(null, 204);
+    }
+
+    /** 全件の is_active を一括更新 */
+    public function bulkSetActive(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'is_active' => 'required|boolean',
+        ]);
+
+        $tenantId = auth()->user()->tenant_id;
+        $updated  = DeliveryAddress::where('tenant_id', $tenantId)
+            ->update(['is_active' => $validated['is_active']]);
+
+        return response()->json([
+            'message' => "{$updated}件を更新しました",
+            'updated' => $updated,
+        ]);
+    }
+
+    /** 現在の有効/無効状態をスナップショット保存 */
+    public function saveState(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'label' => 'nullable|string|max:100',
+        ]);
+
+        $tenantId = auth()->user()->tenant_id;
+        $label    = $validated['label'] ?? 'A';
+
+        $rows = DeliveryAddress::where('tenant_id', $tenantId)
+            ->select('id', 'is_active')
+            ->get()
+            ->map(fn($a) => ['id' => $a->id, 'is_active' => (bool) $a->is_active])
+            ->values()
+            ->all();
+
+        $snapshot = DeliveryAddressStateSnapshot::create([
+            'tenant_id'  => $tenantId,
+            'label'      => $label,
+            'data'       => $rows,
+            'created_by' => auth()->id(),
+            'created_at' => now(),
+        ]);
+
+        return response()->json([
+            'message'     => "状態「{$label}」を保存しました（{$snapshot->id}）",
+            'snapshot_id' => $snapshot->id,
+            'label'       => $label,
+            'count'       => count($rows),
+        ], 201);
     }
 }
