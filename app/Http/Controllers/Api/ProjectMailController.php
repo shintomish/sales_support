@@ -429,15 +429,18 @@ class ProjectMailController extends Controller
             foreach ($campaign->sendHistories as $history) {
                 // 個別提案: 従来通り
                 $thread[] = [
-                    'type'        => 'sent',
-                    'campaign_id' => $campaign->id,
-                    'history_id'  => $history->id,
-                    'to'          => $history->email,
-                    'to_name'     => $history->name,
-                    'subject'     => $campaign->subject,
-                    'body'        => $campaign->body,
-                    'sent_at'     => $campaign->sent_at?->toIso8601String(),
-                    'status'      => $history->status,
+                    'type'          => 'sent',
+                    'campaign_id'   => $campaign->id,
+                    'history_id'    => $history->id,
+                    'to'            => $history->email,
+                    'to_name'       => $history->name,
+                    'subject'       => $campaign->subject,
+                    'body'          => $campaign->body,
+                    'sent_at'       => $campaign->sent_at?->toIso8601String(),
+                    'status'        => $history->status,
+                    'total_count'   => $campaign->total_count,
+                    'success_count' => $campaign->success_count,
+                    'failed_count'  => $campaign->failed_count,
                 ];
 
                 if ($history->replyEmail) {
