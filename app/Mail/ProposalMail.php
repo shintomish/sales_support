@@ -34,7 +34,7 @@ class ProposalMail extends Mailable
         return new Envelope(
             from: new Address(
                 config('mail.from.address'),
-                $this->senderName ?: config('mail.from.name'),
+                config('mail.from.name'),
             ),
             replyTo: $replyTo,
             subject: $this->mailSubject,
