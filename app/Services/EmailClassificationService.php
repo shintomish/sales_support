@@ -117,9 +117,11 @@ class EmailClassificationService
         $body    = $email->body_text ?? $email->body_html ?? '';
         $urls    = $this->extractUrls($body);
 
-        // 0. 自社ドメインからのメールは除外（返信メール等）
+        // 0. 自社ドメインの個人/システム系アドレスは除外（営業担当の返信・社内通知）
+        //    outsource@ は外部SESパートナーからのML配信リレーで本物の案件情報を含むため除外しない
         $fromAddress = strtolower($email->from_address ?? '');
-        if (str_ends_with($fromAddress, '@aizen-sol.co.jp')) {
+        if (str_ends_with($fromAddress, '@aizen-sol.co.jp')
+            && !str_starts_with($fromAddress, 'outsource@')) {
             return ['other', 'own_domain', $urls];
         }
 
