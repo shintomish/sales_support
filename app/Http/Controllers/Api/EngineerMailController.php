@@ -272,7 +272,35 @@ class EngineerMailController extends Controller
             }
         }
 
-        // storage_pathなし or 破損検出 → Gmail APIから取得
+        // storage_pathなし or 破損検出 → IMAP経由で再取得（Kagoya受信メール）
+        if (str_starts_with($ems->email->gmail_message_id ?? '', 'imap-')) {
+            try {
+                $imapUid = (int) str_replace('imap-', '', $ems->email->gmail_message_id);
+                $kagoya  = app(\App\Services\KagoyaMailService::class);
+                $binary  = $kagoya->fetchAttachmentByUid($imapUid, $att->filename);
+                if ($binary) {
+                    // Storageに保存
+                    try {
+                        $base        = preg_replace('/[^\w\-\.]/u', '_', pathinfo($filename, PATHINFO_FILENAME));
+                        $base        = preg_replace('/[^\x00-\x7F]/u', '', $base) ?: substr(md5($filename), 0, 8);
+                        $storagePath = "attachments/{$ems->email->tenant_id}/{$ems->email_id}/{$base}.{$ext}";
+                        $storage     = app(SupabaseStorageService::class);
+                        $url         = $storage->uploadBinary($binary, $storagePath, $mimeType);
+                        $att->update(['storage_path' => $url]);
+                    } catch (\Throwable $e) {
+                        Log::debug("[EngineerMailController] IMAP添付Storage保存失敗 att_id={$att->id}: " . $e->getMessage());
+                    }
+                    return response($binary, 200, [
+                        'Content-Type'        => $mimeType,
+                        'Content-Disposition' => 'attachment; filename="' . rawurlencode($filename) . '"',
+                    ]);
+                }
+            } catch (\Throwable $e) {
+                Log::warning("[EngineerMailController] IMAP添付再取得失敗 att_id={$att->id}: " . $e->getMessage());
+            }
+        }
+
+        // Gmail APIから取得
         $gmailToken = GmailToken::where('tenant_id', $ems->email->tenant_id)->first();
         if (!$gmailToken || !$ems->email->gmail_message_id || !$att->gmail_attachment_id) {
             abort(404, '添付ファイルを取得できませんでした');

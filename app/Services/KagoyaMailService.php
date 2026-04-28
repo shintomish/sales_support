@@ -141,12 +141,26 @@ class KagoyaMailService
         ]);
 
         foreach ($attachments as $att) {
+            $storagePath = null;
+            if (!empty($att['binary'])) {
+                try {
+                    $ext  = strtolower(pathinfo($att['filename'], PATHINFO_EXTENSION)) ?: 'bin';
+                    $base = preg_replace('/[^\w\-\.]/u', '_', pathinfo($att['filename'], PATHINFO_FILENAME));
+                    $base = preg_replace('/[^\x00-\x7F]/u', '', $base) ?: substr(md5($att['filename']), 0, 8);
+                    $path = "attachments/{$tenantId}/{$email->id}/{$base}.{$ext}";
+                    $storage = app(\App\Services\SupabaseStorageService::class);
+                    $storagePath = $storage->uploadBinary($att['binary'], $path, $att['mime_type']);
+                } catch (\Throwable $e) {
+                    Log::warning("[KagoyaIMAP] 添付Storage保存失敗: {$att['filename']}: " . $e->getMessage());
+                }
+            }
             EmailAttachment::create([
                 'email_id'            => $email->id,
                 'filename'            => $att['filename'],
                 'mime_type'           => $att['mime_type'],
                 'size'                => $att['size'],
                 'gmail_attachment_id' => null,
+                'storage_path'        => $storagePath,
             ]);
         }
 
@@ -292,6 +306,7 @@ class KagoyaMailService
                             'filename'  => $filename,
                             'mime_type' => trim(explode(';', $partCt)[0]),
                             'size'      => strlen($decoded),
+                            'binary'    => $decoded,
                         ];
                         continue;
                     }
@@ -443,5 +458,44 @@ class KagoyaMailService
         }
 
         return ['body' => $data, 'internaldate' => $internalDate];
+    }
+
+    /**
+     * IMAP UIDを指定して添付ファイルのバイナリを取得
+     */
+    public function fetchAttachmentByUid(int $uid, string $targetFilename): ?string
+    {
+        if (!$this->connect()) {
+            return null;
+        }
+
+        try {
+            $this->imapCommand('EXAMINE INBOX');
+            $result = $this->fetchMessageByUid($uid);
+            if (empty($result['body'])) {
+                return null;
+            }
+
+            $raw = $result['body'];
+            $headerEnd = strpos($raw, "\r\n\r\n");
+            if ($headerEnd === false) return null;
+
+            $headerBlock = substr($raw, 0, $headerEnd);
+            $bodyRaw     = substr($raw, $headerEnd + 4);
+            $headers     = $this->parseHeaders($headerBlock);
+            $contentType = $headers['content-type'] ?? 'text/plain';
+
+            [$text, $html, $attachments] = $this->parseBody($bodyRaw, $contentType, strtolower($headers['content-transfer-encoding'] ?? '7bit'));
+
+            foreach ($attachments as $att) {
+                if (!empty($att['binary']) && $att['filename'] === $targetFilename) {
+                    return $att['binary'];
+                }
+            }
+
+            return null;
+        } finally {
+            $this->disconnect();
+        }
     }
 }
