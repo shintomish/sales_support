@@ -402,14 +402,17 @@ class ProjectMailController extends Controller
             if ($isDelivery) {
                 // 一斉配信: 送信サマリー1件 + 返信のみ
                 $thread[] = [
-                    'type'        => 'sent',
-                    'campaign_id' => $campaign->id,
-                    'to'          => "一斉配信（{$campaign->success_count}件）",
-                    'to_name'     => null,
-                    'subject'     => $campaign->subject,
-                    'body'        => str_replace('<%Name%>', '（各配信先名）', $campaign->body),
-                    'sent_at'     => $campaign->sent_at?->toIso8601String(),
-                    'status'      => 'sent',
+                    'type'          => 'sent',
+                    'campaign_id'   => $campaign->id,
+                    'to'            => "一斉配信（{$campaign->success_count}件）",
+                    'to_name'       => null,
+                    'subject'       => $campaign->subject,
+                    'body'          => str_replace('<%Name%>', '（各配信先名）', $campaign->body),
+                    'sent_at'       => $campaign->sent_at?->toIso8601String(),
+                    'status'        => 'sent',
+                    'total_count'   => $campaign->total_count,
+                    'success_count' => $campaign->success_count,
+                    'failed_count'  => $campaign->failed_count,
                 ];
                 foreach ($campaign->sendHistories->filter(fn($h) => $h->replyEmail) as $history) {
                     $reply = $history->replyEmail;
