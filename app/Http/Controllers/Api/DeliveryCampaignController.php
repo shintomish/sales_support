@@ -27,7 +27,7 @@ class DeliveryCampaignController extends Controller
         $sortBy  = in_array($request->input('sort_by'), $allowedSortBy) ? $request->input('sort_by') : 'sent_at';
         $sortDir = $request->input('sort_dir') === 'asc' ? 'asc' : 'desc';
 
-        $query = DeliveryCampaign::with(['user', 'projectMailSource', 'engineerMailSource']);
+        $query = DeliveryCampaign::with(['user', 'projectMailSource', 'engineerMailSource.email']);
 
         match ($sortBy) {
             'sent_at'       => $query->orderBy('sent_at', $sortDir),
@@ -84,7 +84,9 @@ class DeliveryCampaignController extends Controller
                 'project_mail_id'          => $campaign->project_mail_id,
                 'project_title'            => $campaign->projectMailSource?->title,
                 'engineer_mail_source_id'  => $campaign->engineer_mail_source_id,
-                'engineer_mail_title'      => $campaign->engineerMailSource?->title,
+                'engineer_mail_title'      => $campaign->engineerMailSource?->name
+                                              ? ($campaign->engineerMailSource->name . '｜' . ($campaign->engineerMailSource->email?->subject ?? ''))
+                                              : null,
                 'subject'                  => $campaign->subject,
                 'sent_at'                  => $campaign->sent_at?->toIso8601String(),
                 'sent_by'                  => $campaign->user?->name,
