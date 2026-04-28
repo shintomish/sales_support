@@ -210,6 +210,9 @@ class DeliveryCampaignController extends Controller
                     'reply_subject'        => $h->replyEmail?->subject,
                     'reply_received_at'    => $h->replyEmail?->received_at?->toIso8601String(),
                     'reply_body_snippet'   => $h->replyEmail ? mb_substr(strip_tags($h->replyEmail->body_text ?? $h->replyEmail->body_html ?? ''), 0, 300) : null,
+                    'reply_body_text'      => $h->replyEmail?->body_text,
+                    'reply_from'           => $h->replyEmail?->from_address,
+                    'reply_from_name'      => $h->replyEmail?->from_name,
                 ];
             }),
         ]);
