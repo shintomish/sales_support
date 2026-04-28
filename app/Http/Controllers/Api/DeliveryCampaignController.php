@@ -383,40 +383,37 @@ class DeliveryCampaignController extends Controller
                 }
             }
 
-            // last_activity: 最新の送信 or 返信
-            $lastActivity = null;
+            // last_sent / last_received
+            $lastSent = null;
+            $lastReceived = null;
 
-            // 最新返信
+            $latestCampaign = $campaigns->sortByDesc('sent_at')->first();
+            if ($latestCampaign) {
+                $lastSent = [
+                    'type'     => 'sent',
+                    'subject'  => $latestCampaign->subject,
+                    'datetime' => $latestCampaign->sent_at instanceof \Carbon\Carbon
+                        ? $latestCampaign->sent_at->toIso8601String()
+                        : $latestCampaign->sent_at,
+                ];
+            }
+
             $latestReply = $repliedHistories->sortByDesc('replied_at')->first();
             $latestReplyEmail = $latestReply ? ($replyEmails[$latestReply->reply_email_id] ?? null) : null;
-
-            // 最新送信
-            $latestSentAt = $campaigns->max('sent_at');
-
             if ($latestReplyEmail && $latestReplyEmail->received_at) {
-                $replyDatetime = $latestReplyEmail->received_at;
-                // 返信が最新送信より後なら返信を表示
-                if (!$latestSentAt || $replyDatetime > $latestSentAt) {
-                    $lastActivity = [
-                        'type'     => 'received',
-                        'subject'  => $latestReplyEmail->subject,
-                        'datetime' => $replyDatetime,
-                    ];
-                }
+                $lastReceived = [
+                    'type'     => 'received',
+                    'subject'  => $latestReplyEmail->subject,
+                    'datetime' => $latestReplyEmail->received_at instanceof \Carbon\Carbon
+                        ? $latestReplyEmail->received_at->toIso8601String()
+                        : (string) $latestReplyEmail->received_at,
+                ];
             }
 
-            if (!$lastActivity) {
-                $latestCampaign = $campaigns->sortByDesc('sent_at')->first();
-                if ($latestCampaign) {
-                    $lastActivity = [
-                        'type'     => 'sent',
-                        'subject'  => null,
-                        'datetime' => $latestCampaign->sent_at instanceof \Carbon\Carbon
-                            ? $latestCampaign->sent_at->toIso8601String()
-                            : $latestCampaign->sent_at,
-                    ];
-                }
-            }
+            // 後方互換: last_activity（最新のどちらか）
+            $lastActivity = $lastReceived
+                && (!$lastSent || ($lastReceived['datetime'] ?? '') > ($lastSent['datetime'] ?? ''))
+                ? $lastReceived : $lastSent;
 
             // partner情報: 最新の送信履歴の宛先
             $latestHistory = $histories->sortByDesc('id')->first();
@@ -436,6 +433,8 @@ class DeliveryCampaignController extends Controller
                 'partner_email'  => $partnerEmail,
                 'partner_name'   => $partnerName,
                 'last_activity'  => $lastActivity,
+                'last_sent'      => $lastSent,
+                'last_received'  => $lastReceived,
                 'thread_count'   => $threadCount,
                 'has_unread_reply' => $hasUnreadReply,
             ];
