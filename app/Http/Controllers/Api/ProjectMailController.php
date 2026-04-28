@@ -384,7 +384,10 @@ class ProjectMailController extends Controller
         $tenantId = auth()->user()->tenant_id;
         ProjectMailSource::where('tenant_id', $tenantId)->findOrFail($id);
 
-        $campaigns = DeliveryCampaign::with(['sendHistories.replyEmail'])
+        $campaigns = DeliveryCampaign::with(['sendHistories' => function ($q) {
+                // deliveryタイプは返信ありのみロード（大量送信履歴の対策）
+                $q->with('replyEmail');
+            }])
             ->where('tenant_id', $tenantId)
             ->where('project_mail_id', $id)
             ->whereIn('send_type', ['proposal', 'delivery'])
@@ -394,8 +397,37 @@ class ProjectMailController extends Controller
         $thread = [];
 
         foreach ($campaigns as $campaign) {
+            $isDelivery = $campaign->send_type === 'delivery';
+
+            if ($isDelivery) {
+                // 一斉配信: 送信サマリー1件 + 返信のみ
+                $thread[] = [
+                    'type'        => 'sent',
+                    'campaign_id' => $campaign->id,
+                    'to'          => "一斉配信（{$campaign->success_count}件）",
+                    'to_name'     => null,
+                    'subject'     => $campaign->subject,
+                    'body'        => $campaign->body,
+                    'sent_at'     => $campaign->sent_at?->toIso8601String(),
+                    'status'      => 'sent',
+                ];
+                foreach ($campaign->sendHistories->filter(fn($h) => $h->replyEmail) as $history) {
+                    $reply = $history->replyEmail;
+                    $thread[] = [
+                        'type'        => 'received',
+                        'email_id'    => $reply->id,
+                        'from'        => $reply->from_address,
+                        'from_name'   => $reply->from_name,
+                        'subject'     => $reply->subject,
+                        'body_text'   => $reply->body_text,
+                        'received_at' => $reply->received_at?->toIso8601String(),
+                    ];
+                }
+                continue;
+            }
+
             foreach ($campaign->sendHistories as $history) {
-                // 送信メッセージ
+                // 個別提案: 従来通り
                 $thread[] = [
                     'type'        => 'sent',
                     'campaign_id' => $campaign->id,
@@ -408,7 +440,6 @@ class ProjectMailController extends Controller
                     'status'      => $history->status,
                 ];
 
-                // 返信メッセージ
                 if ($history->replyEmail) {
                     $reply = $history->replyEmail;
                     $thread[] = [

@@ -364,7 +364,9 @@ class EngineerMailController extends Controller
         $tenantId = auth()->user()->tenant_id;
         EngineerMailSource::where('tenant_id', $tenantId)->findOrFail($id);
 
-        $campaigns = DeliveryCampaign::with(['sendHistories.replyEmail'])
+        $campaigns = DeliveryCampaign::with(['sendHistories' => function ($q) {
+                $q->with('replyEmail');
+            }])
             ->where('tenant_id', $tenantId)
             ->where('engineer_mail_source_id', $id)
             ->whereIn('send_type', ['engineer_proposal', 'delivery'])
@@ -374,8 +376,35 @@ class EngineerMailController extends Controller
         $thread = [];
 
         foreach ($campaigns as $campaign) {
+            $isDelivery = $campaign->send_type === 'delivery';
+
+            if ($isDelivery) {
+                $thread[] = [
+                    'type'        => 'sent',
+                    'campaign_id' => $campaign->id,
+                    'to'          => "一斉配信（{$campaign->success_count}件）",
+                    'to_name'     => null,
+                    'subject'     => $campaign->subject,
+                    'body'        => $campaign->body,
+                    'sent_at'     => $campaign->sent_at?->toIso8601String(),
+                    'status'      => 'sent',
+                ];
+                foreach ($campaign->sendHistories->filter(fn($h) => $h->replyEmail) as $history) {
+                    $reply = $history->replyEmail;
+                    $thread[] = [
+                        'type'        => 'received',
+                        'email_id'    => $reply->id,
+                        'from'        => $reply->from_address,
+                        'from_name'   => $reply->from_name,
+                        'subject'     => $reply->subject,
+                        'body_text'   => $reply->body_text,
+                        'received_at' => $reply->received_at?->toIso8601String(),
+                    ];
+                }
+                continue;
+            }
+
             foreach ($campaign->sendHistories as $history) {
-                // 送信メッセージ
                 $thread[] = [
                     'type'        => 'sent',
                     'campaign_id' => $campaign->id,
@@ -388,7 +417,6 @@ class EngineerMailController extends Controller
                     'status'      => $history->status,
                 ];
 
-                // 返信メッセージ
                 if ($history->replyEmail) {
                     $reply = $history->replyEmail;
                     $thread[] = [
