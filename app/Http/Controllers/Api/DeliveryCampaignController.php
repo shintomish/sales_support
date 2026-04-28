@@ -228,6 +228,7 @@ class DeliveryCampaignController extends Controller
         $status  = $request->input('status');
         $search  = $request->input('search');
         $type    = $request->input('type'); // 'project' | 'engineer'
+        $userId  = $request->input('user_id');
         $perPage = $request->integer('per_page', 20);
 
         // ── スレッド単位の集計サブクエリ ──
@@ -247,6 +248,11 @@ class DeliveryCampaignController extends Controller
                 DB::raw('MAX(sent_at) as latest_sent_at'),
             ])
             ->groupBy('project_mail_id', 'engineer_mail_source_id');
+
+        // user_id フィルタ
+        if ($userId) {
+            $threadsQuery->where('user_id', $userId);
+        }
 
         // type フィルタ
         if ($type === 'project') {
@@ -314,6 +320,7 @@ class DeliveryCampaignController extends Controller
                     $q->orWhereIn('engineer_mail_source_id', $engineerMailIds);
                 }
             })
+            ->when($userId, fn($q) => $q->where('user_id', $userId))
             ->select('id', 'project_mail_id', 'engineer_mail_source_id', 'sent_at', 'success_count')
             ->get()
             ->groupBy(function ($c) {
