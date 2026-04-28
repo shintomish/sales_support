@@ -117,6 +117,12 @@ class EmailClassificationService
         $body    = $email->body_text ?? $email->body_html ?? '';
         $urls    = $this->extractUrls($body);
 
+        // 0. 自社ドメインからのメールは除外（返信メール等）
+        $fromAddress = strtolower($email->from_address ?? '');
+        if (str_ends_with($fromAddress, '@aizen-sol.co.jp')) {
+            return ['other', 'own_domain', $urls];
+        }
+
         // 1. 添付ファイルあり
         if ($email->attachments->isNotEmpty()) {
             return ['engineer', 'has_attachment', $urls];
