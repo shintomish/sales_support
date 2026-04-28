@@ -387,7 +387,7 @@ class ProjectMailController extends Controller
         $campaigns = DeliveryCampaign::with(['sendHistories.replyEmail'])
             ->where('tenant_id', $tenantId)
             ->where('project_mail_id', $id)
-            ->where('send_type', 'proposal')
+            ->whereIn('send_type', ['proposal', 'delivery'])
             ->orderBy('sent_at')
             ->get();
 

@@ -367,7 +367,7 @@ class EngineerMailController extends Controller
         $campaigns = DeliveryCampaign::with(['sendHistories.replyEmail'])
             ->where('tenant_id', $tenantId)
             ->where('engineer_mail_source_id', $id)
-            ->where('send_type', 'engineer_proposal')
+            ->whereIn('send_type', ['engineer_proposal', 'delivery'])
             ->orderBy('sent_at')
             ->get();
 
