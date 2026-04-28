@@ -186,10 +186,60 @@ class EmailController extends Controller
     {
         $email      = Email::findOrFail($emailId);
         $attachment = $email->attachments()->findOrFail($attachmentId);
+        $filename   = $attachment->filename ?: 'attachment';
+        $mimeType   = $attachment->mime_type ?? 'application/octet-stream';
+        $ext        = strtolower(pathinfo($filename, PATHINFO_EXTENSION));
 
+        // Storage保存済み → Supabaseから取得
+        if ($attachment->storage_path) {
+            $supabaseUrl = config('services.supabase.url');
+            $serviceKey  = config('services.supabase.service_role_key');
+            $bucket      = config('services.supabase.bucket');
+
+            $pattern  = "/storage\/v1\/object\/public\/{$bucket}\//";
+            $path     = preg_replace($pattern, '', parse_url($attachment->storage_path, PHP_URL_PATH));
+            $response = \Illuminate\Support\Facades\Http::withHeaders(['Authorization' => "Bearer {$serviceKey}"])
+                ->get("{$supabaseUrl}/storage/v1/object/{$bucket}/{$path}");
+
+            if ($response->successful()) {
+                return response($response->body())
+                    ->header('Content-Type', $mimeType)
+                    ->header('Content-Disposition', 'attachment; filename="' . rawurlencode($filename) . '"')
+                    ->header('Content-Length', strlen($response->body()));
+            }
+        }
+
+        // IMAP経由メール → KagoyaMailServiceから再取得
+        if (str_starts_with($email->gmail_message_id ?? '', 'imap-')) {
+            try {
+                $imapUid = (int) str_replace('imap-', '', $email->gmail_message_id);
+                $kagoya  = app(\App\Services\KagoyaMailService::class);
+                $binary  = $kagoya->fetchAttachmentByUid($imapUid, $filename);
+                if ($binary) {
+                    try {
+                        $base        = preg_replace('/[^\w\-\.]/u', '_', pathinfo($filename, PATHINFO_FILENAME));
+                        $base        = preg_replace('/[^\x00-\x7F]/u', '', $base) ?: substr(md5($filename), 0, 8);
+                        $storagePath = "attachments/{$email->tenant_id}/{$email->id}/{$base}.{$ext}";
+                        $storage     = app(\App\Services\SupabaseStorageService::class);
+                        $url         = $storage->uploadBinary($binary, $storagePath, $mimeType);
+                        $attachment->update(['storage_path' => $url]);
+                    } catch (\Throwable $e) {
+                        Log::debug("[EmailController] IMAP添付Storage保存失敗 att_id={$attachment->id}: " . $e->getMessage());
+                    }
+                    return response($binary)
+                        ->header('Content-Type', $mimeType)
+                        ->header('Content-Disposition', 'attachment; filename="' . rawurlencode($filename) . '"')
+                        ->header('Content-Length', strlen($binary));
+                }
+            } catch (\Throwable $e) {
+                Log::warning("[EmailController] IMAP添付再取得失敗 att_id={$attachment->id}: " . $e->getMessage());
+            }
+        }
+
+        // Gmail APIから取得
         $token = GmailToken::where('tenant_id', auth()->user()->tenant_id)->first();
-        if (!$token) {
-            return response()->json(['message' => 'Gmail未接続です'], 422);
+        if (!$token || !$email->gmail_message_id || !$attachment->gmail_attachment_id) {
+            return response()->json(['message' => '添付ファイルを取得できませんでした'], 404);
         }
 
         try {
@@ -200,8 +250,8 @@ class EmailController extends Controller
             );
 
             return response($data)
-                ->header('Content-Type', $attachment->mime_type ?? 'application/octet-stream')
-                ->header('Content-Disposition', 'attachment; filename="' . rawurlencode($attachment->filename) . '"')
+                ->header('Content-Type', $mimeType)
+                ->header('Content-Disposition', 'attachment; filename="' . rawurlencode($filename) . '"')
                 ->header('Content-Length', strlen($data));
 
         } catch (\Exception $e) {
