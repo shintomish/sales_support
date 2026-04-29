@@ -14,11 +14,13 @@ return new class extends Migration
         });
 
         // 既存レコードの replied_count を delivery_send_histories から再計算
+        // 注: テーブル別名を使わない portable な書き方（PostgreSQL / SQLite 両対応）
         DB::statement("
-            UPDATE delivery_campaigns c
+            UPDATE delivery_campaigns
             SET replied_count = (
-                SELECT COUNT(*) FROM delivery_send_histories h
-                WHERE h.campaign_id = c.id AND h.status = 'replied'
+                SELECT COUNT(*) FROM delivery_send_histories
+                WHERE delivery_send_histories.campaign_id = delivery_campaigns.id
+                  AND delivery_send_histories.status = 'replied'
             )
         ");
     }
