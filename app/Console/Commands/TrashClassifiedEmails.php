@@ -55,36 +55,43 @@ class TrashClassifiedEmails extends Command
 
     private function processToken(GmailToken $token, bool $dryRun): array
     {
-        // 分類済み かつ まだゴミ箱に移動していないメールを取得
-        $emails = Email::where('tenant_id', $token->tenant_id)
+        // 分類済み かつ まだゴミ箱に移動していないメールを件数取得
+        $baseQuery = Email::where('tenant_id', $token->tenant_id)
             ->whereNotNull('classified_at')
             ->whereNull('gmail_trashed_at')
-            ->whereNotNull('gmail_message_id')
-            ->get();
+            ->whereNotNull('gmail_message_id');
 
-        if ($emails->isEmpty()) {
+        $total = $baseQuery->count();
+
+        if ($total === 0) {
             return [0, 0];
         }
 
-        $this->line("テナント={$token->tenant_id} ({$token->gmail_address}): 対象={$emails->count()}件");
+        $this->line("テナント={$token->tenant_id} ({$token->gmail_address}): 対象={$total}件");
 
         if ($dryRun) {
-            return [$emails->count(), 0];
+            return [$total, 0];
         }
 
         $trashed = 0;
         $failed  = 0;
 
-        foreach ($emails as $email) {
-            $success = $this->gmailService->trashEmail($token, $email->gmail_message_id);
+        // 全件メモリ展開を避けるため chunkById でストリーム処理
+        // body_text 等の大きなカラムは select しない
+        $baseQuery
+            ->select(['id', 'gmail_message_id'])
+            ->chunkById(500, function ($emails) use ($token, &$trashed, &$failed) {
+                foreach ($emails as $email) {
+                    $success = $this->gmailService->trashEmail($token, $email->gmail_message_id);
 
-            if ($success) {
-                $email->update(['gmail_trashed_at' => now()]);
-                $trashed++;
-            } else {
-                $failed++;
-            }
-        }
+                    if ($success) {
+                        Email::where('id', $email->id)->update(['gmail_trashed_at' => now()]);
+                        $trashed++;
+                    } else {
+                        $failed++;
+                    }
+                }
+            });
 
         return [$trashed, $failed];
     }
