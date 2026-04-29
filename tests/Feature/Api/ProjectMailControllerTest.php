@@ -6,7 +6,6 @@ use App\Mail\ProposalMail;
 use App\Models\Email;
 use App\Models\Engineer;
 use App\Models\EngineerProfile;
-use App\Models\MailSendHistory;
 use App\Models\ProjectMailSource;
 use Illuminate\Support\Facades\Mail;
 use Tests\TestCase;
@@ -141,13 +140,20 @@ class ProjectMailControllerTest extends TestCase
                 && $mail->mailSubject === '技術者提案の件';
         });
 
-        // 送信履歴が記録されている
-        $this->assertDatabaseHas('mail_send_histories', [
+        // キャンペーンが記録されている
+        $this->assertDatabaseHas('delivery_campaigns', [
             'project_mail_id' => $pms->id,
             'send_type'       => 'proposal',
-            'to_address'      => 'recipient@example.com',
             'subject'         => '技術者提案の件',
-            'status'          => 'sent',
+            'total_count'     => 1,
+            'success_count'   => 1,
+            'failed_count'    => 0,
+        ]);
+
+        // 送信履歴が記録されている
+        $this->assertDatabaseHas('delivery_send_histories', [
+            'email'  => 'recipient@example.com',
+            'status' => 'sent',
         ]);
     }
 
@@ -248,8 +254,16 @@ class ProjectMailControllerTest extends TestCase
 
         Mail::assertSentCount(3);
 
-        // 送信履歴が3件記録されている
-        $this->assertDatabaseCount('mail_send_histories', 3);
+        // キャンペーン1件 + 送信履歴3件が記録されている
+        $this->assertDatabaseHas('delivery_campaigns', [
+            'project_mail_id' => $pms->id,
+            'send_type'       => 'bulk',
+            'subject'         => '一斉配信テスト',
+            'total_count'     => 3,
+            'success_count'   => 3,
+            'failed_count'    => 0,
+        ]);
+        $this->assertDatabaseCount('delivery_send_histories', 3);
     }
 
     public function test_send_bulk_requires_at_least_one_recipient(): void
