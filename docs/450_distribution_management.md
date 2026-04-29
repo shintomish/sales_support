@@ -1,6 +1,6 @@
-# 配信管理 — AWS SES 本番申請・配信停止機能・バウンス処理
+# 配信管理 — AWS SES 本番運用・配信停止機能・バウンス処理
 
-> 作成日: 2026-04-15 / 最終更新: 2026-04-22(バウンス処理セクション追加)
+> 作成日: 2026-04-15 / 最終更新: 2026-04-29(AWS SES 本番承認・運用反映)
 
 ---
 
@@ -13,17 +13,21 @@
 | 2026-04-13 | SES 第2回申請（追加情報提供）→ 却下 |
 | 2026-04-13 | Brevo → SendGrid SMTP に切り替え |
 | 2026-04-15 | `aizen-sol.co.jp` の DKIM 検証済み・SPF 設定完了 |
-| 2026-04-15 | AWS SES 第3回申請 → 審査中 |
+| 2026-04-15 | AWS SES 第3回申請 |
 | 2026-04-15 | 配信停止（unsubscribe）機能を実装・本番デプロイ |
+| **2026-04-17** | **AWS SES 本番アクセス承認**（ap-northeast-1 / 日次12,000通・14通/秒） |
+| 2026-04-17 | SendGrid SMTP → AWS SES に切り替え・本番運用開始 |
+| 2026-04-22 | バウンス自動処理を実装 |
 
 ---
 
 ## 2. 現在のメール送信構成
 
-- **送信サービス**: SendGrid SMTP
+- **送信サービス**: AWS SES（ap-northeast-1 / 本番承認済 2026-04-17）
 - **送信元アドレス**: `outsource@aizen-sol.co.jp`
 - **送信先**: `delivery_addresses` テーブルの `is_active = true` のアドレス
 - **本番 APP_URL**: `https://app.ai-mon.net`
+- **送信枠**: 日次 12,000通 / 月次 240,000通 / 14通/秒（コード上は安全マージン込みで 100ms 間隔 ≒ 10通/秒）
 
 ### DNS 設定（カゴヤ）
 
@@ -31,11 +35,15 @@
 |------|------|
 | SPF | `v=spf1 a:mss-g2-140.kagoya.net include:amazonses.com ~all` |
 | DKIM | SES 用 CNAME × 3（`aizen-sol.co.jp` 検証済み） |
-| DKIM | SendGrid 用 CNAME × 3（`em4827` / `s1._domainkey` / `s2._domainkey`） |
+
+> SendGrid 用 DKIM CNAME（`em4827` / `s1._domainkey` / `s2._domainkey`）は移行完了後、不要となったが
+> 履歴として残置（削除可）。
 
 ---
 
-## 3. AWS SES 第3回申請（2026-04-15）
+## 3. AWS SES 第3回申請（2026-04-15）→ 承認（2026-04-17）
+
+> 2026-04-17 に **本番アクセス承認**。以下は申請時の記録（履歴）。
 
 ### 申請フォーム設定
 
@@ -153,9 +161,9 @@ outsource@aizen-sol.co.jp
 https://aizen-sol.co.jp
 ```
 
-### SES 承認後の切り替え手順
+### SES 承認後の切り替え手順（2026-04-17 実施済み）
 
-`.env` の変更のみ。Brevo/SendGrid の SMTP 設定を削除し、SES 設定に戻す。
+`.env` の変更のみ。SendGrid の SMTP 設定を削除し、SES 設定に切替。
 
 ```env
 MAIL_MAILER=ses
@@ -164,6 +172,8 @@ AWS_SECRET_ACCESS_KEY=xxxxx
 AWS_DEFAULT_REGION=ap-northeast-1
 # MAIL_HOST / MAIL_PORT / MAIL_USERNAME / MAIL_PASSWORD は削除
 ```
+
+`config/services.php` の `ses` ブロックで上記 env を参照する。Laravel の `mail` ドライバは `ses` を選択。
 
 ---
 
@@ -206,13 +216,14 @@ https://app.ai-mon.net/unsubscribe/{token}
 
 ---
 
-## 5. 送信量目標
+## 5. 送信量目標と SES 枠
 
-| フェーズ | 送信量 |
-|----------|--------|
-| 初期（ウォームアップ） | 1,000 通/日 |
-| 目標 | 3,000 通/日 |
-| 長期スケール目標 | 36万通/月（1,200社 × 10回） |
+| 項目 | 値 |
+|------|----|
+| AWS SES 本番承認枠 | 日次 12,000通 / 月次 240,000通 / 14通/秒（2026-04-17 承認） |
+| 送信レート（実装） | 100ms 間隔（≒10通/秒、SES の 14通/秒に対し安全マージン込み） |
+| 当面の目標 | 日次 12,000通・月次 240,000通（一括配信） |
+| 長期スケール目標 | 36万通/月（必要時に SES 枠の追加申請） |
 
 ---
 
@@ -244,5 +255,5 @@ postmaster(`mailer-daemon`)等からのバウンスメールをGmail側で受信
 ### 運用ルール
 
 - 不達検出時は配信先マスタを自動で `is_active=false` に更新
-- 無効化されたアドレスの手動復活が必要な場合は、一時的に `is_active=true` に戻す(配信管理画面の管理機能は未実装・現状はDB直接更新)
-- AWS SES 本番移行後は SES Suppression List との連携も検討
+- 無効化されたアドレスの手動復活が必要な場合は、配信管理画面の **配信先一覧タブ** で個別 or 一括有効化可能（一括有効/無効・スナップショット保存/復元 2026-04-26 実装）
+- AWS SES 本番運用中（2026-04-17〜）。SES Suppression List との連携は今後検討
