@@ -76,20 +76,21 @@ class TrashClassifiedEmails extends Command
         $trashed = 0;
         $failed  = 0;
 
-        // 全件メモリ展開を避けるため chunkById でストリーム処理
-        // body_text 等の大きなカラムは select しない
+        // Gmail API batchModify は1リクエストで最大1000件処理可能
+        // チャンクサイズを 1000 に揃えて API call 数を削減
         $baseQuery
             ->select(['id', 'gmail_message_id'])
-            ->chunkById(500, function ($emails) use ($token, &$trashed, &$failed) {
-                foreach ($emails as $email) {
-                    $success = $this->gmailService->trashEmail($token, $email->gmail_message_id);
+            ->chunkById(1000, function ($emails) use ($token, &$trashed, &$failed) {
+                $messageIds = $emails->pluck('gmail_message_id')->all();
+                $emailIds   = $emails->pluck('id')->all();
 
-                    if ($success) {
-                        Email::where('id', $email->id)->update(['gmail_trashed_at' => now()]);
-                        $trashed++;
-                    } else {
-                        $failed++;
-                    }
+                $success = $this->gmailService->batchTrashEmails($token, $messageIds);
+
+                if ($success) {
+                    Email::whereIn('id', $emailIds)->update(['gmail_trashed_at' => now()]);
+                    $trashed += count($messageIds);
+                } else {
+                    $failed += count($messageIds);
                 }
             });
 

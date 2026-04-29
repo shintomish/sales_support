@@ -331,4 +331,38 @@ class GmailService
 
         return true;
     }
+
+    /**
+     * 複数メッセージをまとめてゴミ箱に移動 (Gmail API batchModify)
+     *
+     * @param array<int, string> $gmailMessageIds 最大1000件
+     * @return bool すべて成功なら true。1件でも失敗扱いなら false
+     */
+    public function batchTrashEmails(GmailToken $gmailToken, array $gmailMessageIds): bool
+    {
+        if (empty($gmailMessageIds)) {
+            return true;
+        }
+
+        if (count($gmailMessageIds) > 1000) {
+            Log::warning('[GmailService] batchTrashEmails: 1000件上限を超過 count=' . count($gmailMessageIds) . ' → 切り詰め');
+            $gmailMessageIds = array_slice($gmailMessageIds, 0, 1000);
+        }
+
+        $accessToken = $this->getValidAccessToken($gmailToken);
+
+        $response = Http::withToken($accessToken)
+            ->post("{$this->apiBase}/users/me/messages/batchModify", [
+                'ids'            => array_values($gmailMessageIds),
+                'addLabelIds'    => ['TRASH'],
+                'removeLabelIds' => ['INBOX'],
+            ]);
+
+        if ($response->failed()) {
+            Log::warning('[GmailService] batchTrashEmails 失敗 count=' . count($gmailMessageIds) . ': ' . $response->body());
+            return false;
+        }
+
+        return true;
+    }
 }
