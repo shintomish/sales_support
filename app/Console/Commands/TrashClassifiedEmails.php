@@ -56,10 +56,13 @@ class TrashClassifiedEmails extends Command
     private function processToken(GmailToken $token, bool $dryRun): array
     {
         // 分類済み かつ まだゴミ箱に移動していないメールを件数取得
+        // KAGOYA IMAP 由来のメール (gmail_message_id が "imap-..." プレフィックス) は
+        // Gmail に存在しないため除外する
         $baseQuery = Email::where('tenant_id', $token->tenant_id)
             ->whereNotNull('classified_at')
             ->whereNull('gmail_trashed_at')
-            ->whereNotNull('gmail_message_id');
+            ->whereNotNull('gmail_message_id')
+            ->where('gmail_message_id', 'NOT LIKE', 'imap-%');
 
         $total = $baseQuery->count();
 
