@@ -1,5 +1,9 @@
 FROM php:8.2-fpm
 
+# Trixie の xz が landlock/seccomp sandbox を使うが、古い Docker daemon の
+# seccomp プロファイルでブロックされて apt 解凍が失敗するため無効化
+ENV XZ_DEFAULTS=--no-sandbox
+
 # システム依存 + Browsershot (Chromium + Node.js + 日本語フォント)
 # nodesource の setup スクリプトは Debian 13 (trixie) に未対応のため、
 # Debian 公式の nodejs/npm パッケージを使用 (trixie に Node 20 が含まれる)
