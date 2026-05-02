@@ -42,6 +42,22 @@ class UserFactory extends Factory
         ]);
     }
 
+    public function tenantAdmin(\App\Models\Tenant $tenant): static
+    {
+        return $this->state(fn () => [
+            'tenant_id' => $tenant->id,
+            'role'      => 'tenant_admin',
+        ]);
+    }
+
+    public function superAdmin(?\App\Models\Tenant $tenant = null): static
+    {
+        return $this->state(fn () => [
+            'tenant_id' => $tenant?->id,
+            'role'      => 'super_admin',
+        ]);
+    }
+
     /**
      * Indicate that the model's email address should be unverified.
      */
