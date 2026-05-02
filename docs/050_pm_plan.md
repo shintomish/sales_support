@@ -146,7 +146,7 @@ Assertions: 216
 | **forgot password (パスワード再設定)** | 高 | 中 | Phase 1 | ✅ 完了(2026-05-01) | [#13](https://github.com/shintomish/sales_support/issues/13) |
 | **管理画面: テナント別ユーザー管理(CRUD)** | 高 | 中 | Phase 1 | ✅ 完了(2026-05-02) | [#14](https://github.com/shintomish/sales_support/issues/14) |
 | **管理画面: 機能別データ統計ダッシュボード** | 中 | 低 | Phase 1 | ✅ 完了(2026-05-02) | [#15](https://github.com/shintomish/sales_support/issues/15) |
-| **管理画面: メール署名設定** | 中 | 低 | Phase 1 | 未着手 | [#16](https://github.com/shintomish/sales_support/issues/16) |
+| **管理画面: メール署名設定** | 中 | 低 | Phase 1 | ✅ 完了(既存実装) | [#16](https://github.com/shintomish/sales_support/issues/16) |
 | マルチテナント本番検証 | 高 | 中 | Phase 1-2 | 未着手 | [#2](https://github.com/shintomish/sales_support/issues/2) |
 | オンコール体制整備 | 中 | 中 | Phase 2 | 未着手 | [#5](https://github.com/shintomish/sales_support/issues/5) |
 | 課金・契約フロー | 高 | 低 | Phase 3 | 未着手 | [#6](https://github.com/shintomish/sales_support/issues/6) |
@@ -160,5 +160,6 @@ Assertions: 216
 - 5/1: forgot password 完了(本番=新Supabaseプロジェクト smzoqpvaxznqcwrsgjju への完全移行込み)。パスワード強度チェッカー(8文字+大小文字+数字)+漏洩検出(HIBP)も実装
 - 5/2: テナント別ユーザー管理 CRUD (#14) 完了。Supabase Auth Admin 連携で招待→パスワード設定→ログインまで一気通貫で動作。Invite テンプレも日本語化
 - 5/2: 機能別データ統計ダッシュボード (#15) 完了。13 カード + 期間切替(7/30/90/365日) + テナント切替 + Storage 容量(business_cards JOIN でテナント別) + 15 分キャッシュ
-- Phase 1 残タスクは **5件**: 勤務表・請求書管理 / バックアップ手順書 / 追加テスト実装 / メール署名設定 / マルチテナント本番検証
+- Phase 1 残タスクは **4件**: 勤務表・請求書管理 / バックアップ手順書 / 追加テスト実装 / マルチテナント本番検証
+- メール署名設定 (#16) は既存実装済（`/settings/email-template`）と判明・クローズ予定
 - **βユーザー獲得** が最優先(重要度:高×緊急度:高)のまま未着手。技術面はリリース可能水準に達しており、次はビジネス面の進捗が律速
