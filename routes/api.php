@@ -21,6 +21,7 @@ use App\Http\Controllers\Api\EngineerMailController;
 use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\TenantController;
 use App\Http\Controllers\Api\AdminStatsController;
+use App\Http\Controllers\Api\WorkRecordController;
 use App\Http\Controllers\Api\EmailBodyTemplateController;
 use App\Http\Controllers\Api\DeliveryAddressController;
 use App\Http\Controllers\Api\DeliveryCampaignController;
@@ -48,6 +49,9 @@ Route::prefix('v1')->middleware(['supabase.auth'])->group(function () {
     Route::post('users/{id}/resend-invite',   [UserController::class, 'resendInvite']);
     Route::get('tenants',                     [TenantController::class, 'index']);
     Route::get('admin/stats',                 [AdminStatsController::class, 'index']);
+    Route::get('deals/{deal}/work-records',                  [WorkRecordController::class, 'index']);
+    Route::put('deals/{deal}/work-records/{yearMonth}',      [WorkRecordController::class, 'upsert']);
+    Route::delete('deals/{deal}/work-records/{yearMonth}',   [WorkRecordController::class, 'destroy']);
     Route::get('email-body-templates/me',  [EmailBodyTemplateController::class, 'show']);
     Route::put('email-body-templates/me',  [EmailBodyTemplateController::class, 'upsert']);
     Route::get('dashboard', [DashboardController::class, 'index']);

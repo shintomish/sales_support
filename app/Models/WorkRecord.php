@@ -38,6 +38,7 @@ class WorkRecord extends Model
         'transportation_fee',
         'absence_days',
         'paid_leave_days',
+        'actual_hours',
         'invoice_exists',
         'invoice_received_date',
         'notes',
@@ -48,6 +49,7 @@ class WorkRecord extends Model
         'transportation_fee'      => 'decimal:2',
         'absence_days'            => 'decimal:1',
         'paid_leave_days'         => 'decimal:1',
+        'actual_hours'            => 'decimal:2',
         'invoice_exists'          => 'boolean',
         'invoice_received_date'   => 'date:Y-m-d',
     ];
