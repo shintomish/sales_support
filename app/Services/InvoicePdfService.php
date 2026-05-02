@@ -56,12 +56,18 @@ class InvoicePdfService
         // PHP-FPM の www-data は HOME=/var/www で書き込み不可。
         // Chromium は HOME に crashpad のディレクトリを作ろうとして失敗するため、
         // Node プロセスの環境変数として明示的に HOME=/tmp を渡す。
+        // また PHP-FPM ワーカーは Docker ENV を継承しないため、
+        // PUPPETEER_CACHE_DIR を明示しないと puppeteer が Chromium を見つけられず
+        // "Class not found" → Chromium 起動失敗になる。
         $shot = Browsershot::html($html)
             ->format('A4')
             ->showBackground()
             ->margins(0, 0, 0, 0)
             ->noSandbox()
-            ->setNodeEnv(['HOME' => '/tmp'])
+            ->setNodeEnv([
+                'HOME'                => '/tmp',
+                'PUPPETEER_CACHE_DIR' => '/var/www/.cache/puppeteer',
+            ])
             ->setOption('args', [
                 '--no-sandbox',
                 '--disable-dev-shm-usage',
