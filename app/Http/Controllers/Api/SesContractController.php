@@ -245,8 +245,22 @@ class SesContractController extends Controller
         $deal = Deal::where('tenant_id', $tenantId)->where('deal_type', 'ses')->findOrFail($id);
         DB::transaction(function () use ($request, $deal, $tenantId) {
 
+            // ── 顧客の差し替え（顧客名が指定されていれば find or create） ────
+            // 既存顧客の company_name を直接書き換えると他案件にも影響するため、
+            // 同名顧客が無ければ新規作成し、deal.customer_id を切り替える。
+            $customerName = $request->input('customer_name');
+            $customerId = null;
+            if ($customerName !== null && trim($customerName) !== '') {
+                $customer = Customer::firstOrCreate(
+                    ['tenant_id' => $tenantId, 'company_name' => $customerName],
+                    ['tenant_id' => $tenantId, 'company_name' => $customerName]
+                );
+                $customerId = $customer->id;
+            }
+
             // ── deals テーブル更新 ────────────────────────────
             $dealFields = array_filter([
+                'customer_id'         => $customerId,
                 'title'               => $request->input('project_name'),
                 'status'              => $request->input('status'),
                 'end_client'          => $request->input('end_client'),

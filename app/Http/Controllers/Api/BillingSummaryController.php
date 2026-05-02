@@ -110,7 +110,11 @@ class BillingSummaryController extends Controller
      */
     private function buildDealRows(array $params): array
     {
-        $records = WorkRecord::with(['deal.customer', 'deal.sesContract'])
+        $records = WorkRecord::with([
+                'deal.customer',
+                'deal.sesContract',
+                'deal.invoices' => fn($q) => $q->where('year_month', $params['year_month']),
+            ])
             ->where('year_month', $params['year_month'])
             ->whereHas('deal', function ($q) use ($params) {
                 $q->where('deal_type', 'ses');
@@ -133,6 +137,7 @@ class BillingSummaryController extends Controller
             if (!$deal) continue;
 
             $calc = $this->calculator->calculate($deal->sesContract, $record);
+            $existingInvoice = $deal->invoices->first();
 
             $rows[] = [
                 'deal_id'        => $deal->id,
@@ -150,6 +155,8 @@ class BillingSummaryController extends Controller
                 'tax'            => $calc['tax'],
                 'total'          => $calc['total'],
                 'tax_rate'       => $calc['tax_rate'],
+                'invoice_id'     => $existingInvoice?->id,
+                'invoice_status' => $existingInvoice?->status,
             ];
         }
 

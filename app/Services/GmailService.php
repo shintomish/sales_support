@@ -20,9 +20,10 @@ class GmailService
 
     public function __construct()
     {
-        $this->clientId     = config('services.gmail.client_id');
-        $this->clientSecret = config('services.gmail.client_secret');
-        $this->redirectUri  = config('services.gmail.redirect_uri');
+        // ビルド時など env 未設定環境でもインスタンス化可能にする（実 API 呼び出し時にのみ必要）
+        $this->clientId     = (string) (config('services.gmail.client_id') ?? '');
+        $this->clientSecret = (string) (config('services.gmail.client_secret') ?? '');
+        $this->redirectUri  = (string) (config('services.gmail.redirect_uri') ?? '');
     }
 
     // ── OAuth ──────────────────────────────────────────

@@ -19,6 +19,7 @@
         "phpoffice/phpword": "^1.4",
         "sentry/sentry-laravel": "^4.25",
         "smalot/pdfparser": "^2.12",
+        "spatie/browsershot": "^5.3",
         "symfony/amazon-mailer": "^7.4",
         "webklex/php-imap": "^6.2"
     },

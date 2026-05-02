@@ -23,6 +23,8 @@ use App\Http\Controllers\Api\TenantController;
 use App\Http\Controllers\Api\AdminStatsController;
 use App\Http\Controllers\Api\WorkRecordController;
 use App\Http\Controllers\Api\BillingSummaryController;
+use App\Http\Controllers\Api\InvoiceController;
+use App\Http\Controllers\Api\InvoiceIssuerController;
 use App\Http\Controllers\Api\EmailBodyTemplateController;
 use App\Http\Controllers\Api\DeliveryAddressController;
 use App\Http\Controllers\Api\DeliveryCampaignController;
@@ -55,6 +57,16 @@ Route::prefix('v1')->middleware(['supabase.auth'])->group(function () {
     Route::delete('deals/{deal}/work-records/{yearMonth}',   [WorkRecordController::class, 'destroy']);
     Route::get('billing-summaries',             [BillingSummaryController::class, 'index']);
     Route::get('billing-summaries/export.csv',  [BillingSummaryController::class, 'export']);
+
+    Route::get('settings/invoice-issuer', [InvoiceIssuerController::class, 'show']);
+    Route::put('settings/invoice-issuer', [InvoiceIssuerController::class, 'update']);
+
+    Route::get('invoices',                [InvoiceController::class, 'index']);
+    Route::post('invoices',               [InvoiceController::class, 'store']);
+    Route::get('invoices/{invoice}',      [InvoiceController::class, 'show']);
+    Route::put('invoices/{invoice}',      [InvoiceController::class, 'update']);
+    Route::delete('invoices/{invoice}',   [InvoiceController::class, 'destroy']);
+    Route::post('invoices/{invoice}/pdf', [InvoiceController::class, 'generatePdf']);
     Route::get('email-body-templates/me',  [EmailBodyTemplateController::class, 'show']);
     Route::put('email-body-templates/me',  [EmailBodyTemplateController::class, 'upsert']);
     Route::get('dashboard', [DashboardController::class, 'index']);

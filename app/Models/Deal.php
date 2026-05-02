@@ -63,6 +63,12 @@ class Deal extends Model
         return $this->hasMany(WorkRecord::class)->orderByDesc('year_month');
     }
 
+    /** 月次請求書（1:N、deal × year_month で1請求書） */
+    public function invoices(): HasMany
+    {
+        return $this->hasMany(Invoice::class);
+    }
+
     /** 最新月の WorkRecord */
     public function latestWorkRecord(): HasOne
     {
