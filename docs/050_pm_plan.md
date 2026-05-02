@@ -144,7 +144,7 @@ Assertions: 216
 | バックアップ手順書 | 高 | 中 | Phase 1 | 🟡 進行中(2026-04-29 ドラフト完了 + Pro昇格) | [#1](https://github.com/shintomish/sales_support/issues/1) |
 | 追加テスト実装(Contact/Task他) | 中 | 中 | Phase 1 | 未着手 | [#4](https://github.com/shintomish/sales_support/issues/4) |
 | **forgot password (パスワード再設定)** | 高 | 中 | Phase 1 | ✅ 完了(2026-05-01) | [#13](https://github.com/shintomish/sales_support/issues/13) |
-| **管理画面: テナント別ユーザー管理(CRUD)** | 高 | 中 | Phase 1 | 未着手 | [#14](https://github.com/shintomish/sales_support/issues/14) |
+| **管理画面: テナント別ユーザー管理(CRUD)** | 高 | 中 | Phase 1 | ✅ 完了(2026-05-02) | [#14](https://github.com/shintomish/sales_support/issues/14) |
 | **管理画面: 機能別データ統計ダッシュボード** | 中 | 低 | Phase 1 | 未着手 | [#15](https://github.com/shintomish/sales_support/issues/15) |
 | **管理画面: メール署名設定** | 中 | 低 | Phase 1 | 未着手 | [#16](https://github.com/shintomish/sales_support/issues/16) |
 | マルチテナント本番検証 | 高 | 中 | Phase 1-2 | 未着手 | [#2](https://github.com/shintomish/sales_support/issues/2) |
@@ -158,5 +158,6 @@ Assertions: 216
 - 4/22以降の1週間は **配信機能の磨き込み** が中心(提案スレッドAPI・配信先管理UI改善・メール検索/詳細の性能改善・メール分類精度向上)
 - 4/30: GitHub Issue/Projectでタスクを可視化開始(Project ID 2)。新たに4項目をPhase 1に追加 — forgot password / ユーザー管理CRUD / 機能別データ統計 / メール署名設定
 - 5/1: forgot password 完了(本番=新Supabaseプロジェクト smzoqpvaxznqcwrsgjju への完全移行込み)。パスワード強度チェッカー(8文字+大小文字+数字)+漏洩検出(HIBP)も実装
-- Phase 1 残タスクは **7件**: 勤務表・請求書管理 / バックアップ手順書 / 追加テスト実装 / ユーザー管理CRUD / データ統計ダッシュボード / メール署名設定 / マルチテナント本番検証
+- 5/2: テナント別ユーザー管理 CRUD (#14) 完了。Supabase Auth Admin 連携で招待→パスワード設定→ログインまで一気通貫で動作。Invite テンプレも日本語化
+- Phase 1 残タスクは **6件**: 勤務表・請求書管理 / バックアップ手順書 / 追加テスト実装 / データ統計ダッシュボード / メール署名設定 / マルチテナント本番検証
 - **βユーザー獲得** が最優先(重要度:高×緊急度:高)のまま未着手。技術面はリリース可能水準に達しており、次はビジネス面の進捗が律速
