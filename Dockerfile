@@ -1,9 +1,10 @@
-FROM php:8.2-fpm
+# Trixie の xz が landlock sandbox を使うが、本番 Docker daemon の
+# 古い seccomp プロファイルでブロックされて apt 展開が失敗するため、
+# 安定版の Bookworm (Debian 12) を明示的に使用
+FROM php:8.2-fpm-bookworm
 
-# システム依存 + Browsershot 用 Node + 日本語フォント
-# Chromium は apt から入れず、後段の puppeteer 経由で取得する
-# (本番 Docker daemon の古い seccomp プロファイルが Trixie の xz sandbox を
-#  ブロックして chromium 関連パッケージの apt 展開が失敗するため)
+# システム依存 + Browsershot 用 Node + 日本語フォント + Chromium ランタイム依存
+# Chromium 本体は apt ではなく puppeteer 内蔵版を使用 (バージョン固定のため)
 RUN apt-get update && apt-get install -y \
     git \
     curl \
