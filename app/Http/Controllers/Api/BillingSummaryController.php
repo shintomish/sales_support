@@ -155,8 +155,9 @@ class BillingSummaryController extends Controller
                 'tax'            => $calc['tax'],
                 'total'          => $calc['total'],
                 'tax_rate'       => $calc['tax_rate'],
-                'invoice_id'     => $existingInvoice?->id,
-                'invoice_status' => $existingInvoice?->status,
+                'invoice_id'       => $existingInvoice?->id,
+                'invoice_status'   => $existingInvoice?->status,
+                'invoice_pdf_path' => $existingInvoice?->pdf_path,
             ];
         }
 
