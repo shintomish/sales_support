@@ -60,6 +60,7 @@ class WorkRecordController extends Controller
                 'customer_id'             => $deal->customer?->id,
                 'customer_name'           => $deal->customer?->company_name,
                 'engineer_name'           => $deal->sesContract?->engineer_name,
+                'category'                => $deal->sesContract?->effective_category ?? 'project',
                 'timesheet_received_date' => $r?->timesheet_received_date,
                 'actual_hours'            => $r?->actual_hours,
                 'absence_days'            => $r?->absence_days,

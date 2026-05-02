@@ -52,6 +52,8 @@ class SesContract extends Model
         'engineer_name',
         'engineer_email',
         'engineer_phone',
+        // 分類: 'engineer' (技術者付き) / 'project' (案件のみ)
+        'category',
         // 金額系
         'income_amount',
         'billing_plus_22',
@@ -158,5 +160,17 @@ class SesContract extends Model
             return null;
         }
         return (int) now()->diffInDays($this->contract_period_end, false);
+    }
+
+    /**
+     * 分類の実効値: 明示的に設定された category を優先、無ければ engineer_name から判定
+     * 戻り値: 'engineer' | 'project'
+     */
+    public function getEffectiveCategoryAttribute(): string
+    {
+        if ($this->category === 'engineer' || $this->category === 'project') {
+            return $this->category;
+        }
+        return \App\Support\EngineerCategoryClassifier::classify($this->engineer_name);
     }
 }
