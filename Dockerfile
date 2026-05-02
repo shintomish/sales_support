@@ -1,12 +1,9 @@
 FROM php:8.2-fpm
 
-# Trixie の xz が landlock/seccomp sandbox を使うが、古い Docker daemon の
-# seccomp プロファイルでブロックされて apt 解凍が失敗するため無効化
-ENV XZ_DEFAULTS=--no-sandbox
-
-# システム依存 + Browsershot (Chromium + Node.js + 日本語フォント)
-# nodesource の setup スクリプトは Debian 13 (trixie) に未対応のため、
-# Debian 公式の nodejs/npm パッケージを使用 (trixie に Node 20 が含まれる)
+# システム依存 + Browsershot 用 Node + 日本語フォント
+# Chromium は apt から入れず、後段の puppeteer 経由で取得する
+# (本番 Docker daemon の古い seccomp プロファイルが Trixie の xz sandbox を
+#  ブロックして chromium 関連パッケージの apt 展開が失敗するため)
 RUN apt-get update && apt-get install -y \
     git \
     curl \
@@ -20,11 +17,23 @@ RUN apt-get update && apt-get install -y \
     libzip-dev \
     zip \
     unzip \
-    chromium \
     fonts-noto-cjk \
-    fonts-noto-cjk-extra \
     nodejs \
     npm \
+    libnss3 \
+    libatk1.0-0 \
+    libatk-bridge2.0-0 \
+    libcups2 \
+    libdrm2 \
+    libxkbcommon0 \
+    libxcomposite1 \
+    libxdamage1 \
+    libxfixes3 \
+    libxrandr2 \
+    libgbm1 \
+    libpango-1.0-0 \
+    libcairo2 \
+    libasound2 \
     && docker-php-ext-install \
         zip \
         pdo \
@@ -47,17 +56,19 @@ COPY . .
 # 実際の値はランタイムに env_file から読み込まれるため問題なし。
 RUN if [ ! -f .env ]; then cp .env.example .env; fi \
     && composer install --no-interaction --prefer-dist --optimize-autoloader
-# Browsershot 用 puppeteer (Chromium 本体は OS パッケージを使うのでダウンロードスキップ)
-RUN PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true npm install puppeteer
-RUN chown -R www-data:www-data /var/www/storage /var/www/bootstrap/cache
+# Browsershot 用 puppeteer (Chromium 自動ダウンロード)
+# キャッシュは /var/www/.cache/puppeteer に置かれ、ランタイムで HOME=/tmp に切替えても
+# Browsershot が PUPPETEER_CACHE_DIR を見るため動作する
+ENV PUPPETEER_CACHE_DIR=/var/www/.cache/puppeteer
+RUN npm install puppeteer && chmod -R 755 /var/www/.cache
+RUN chown -R www-data:www-data /var/www/storage /var/www/bootstrap/cache /var/www/.cache
 
 # Laravel スケジューラーを毎分実行するcron設定
 RUN echo "* * * * * www-data /usr/local/bin/php /var/www/artisan schedule:run >> /var/www/storage/logs/schedule.log 2>&1" > /etc/cron.d/laravel-scheduler \
     && chmod 0644 /etc/cron.d/laravel-scheduler
 
-# Browsershot/Puppeteer に OS パッケージの Chromium を使わせる
-ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
-ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
+# Browsershot は puppeteer がダウンロードした Chromium を自動検出して使う
+# PUPPETEER_EXECUTABLE_PATH を未指定にしておくことで puppeteer のキャッシュを参照
 
 EXPOSE 9000
 CMD ["sh", "-c", "mkdir -p /tmp/chromium-data && chmod 777 /tmp/chromium-data && chown -R www-data:www-data /var/www/storage /var/www/bootstrap/cache && service cron start && php-fpm"]
