@@ -1,6 +1,8 @@
 FROM php:8.2-fpm
 
 # システム依存 + Browsershot (Chromium + Node.js + 日本語フォント)
+# nodesource の setup スクリプトは Debian 13 (trixie) に未対応のため、
+# Debian 公式の nodejs/npm パッケージを使用 (trixie に Node 20 が含まれる)
 RUN apt-get update && apt-get install -y \
     git \
     curl \
@@ -17,8 +19,8 @@ RUN apt-get update && apt-get install -y \
     chromium \
     fonts-noto-cjk \
     fonts-noto-cjk-extra \
-    && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
-    && apt-get install -y nodejs \
+    nodejs \
+    npm \
     && docker-php-ext-install \
         zip \
         pdo \
