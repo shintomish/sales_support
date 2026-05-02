@@ -108,11 +108,20 @@ class GmailService
         $messages = $listResponse->json('messages', []);
         $stored   = 0;
 
+        // 既存メッセージIDを事前に一括取得して N+1 を回避
+        $allIds = array_column($messages, 'id');
+        $existingSet = $allIds
+            ? array_flip(
+                Email::whereIn('gmail_message_id', $allIds)
+                    ->pluck('gmail_message_id')
+                    ->all()
+            )
+            : [];
+
         foreach ($messages as $msg) {
             $gmailId = $msg['id'];
 
-            // 既存チェック
-            if (Email::where('gmail_message_id', $gmailId)->exists()) {
+            if (isset($existingSet[$gmailId])) {
                 continue;
             }
 
