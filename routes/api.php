@@ -32,7 +32,8 @@ use App\Http\Controllers\Api\HealthController;
 
 // ── 認証不要 ────────────────────────────────────────
 Route::prefix('v1')->group(function () {
-    Route::get('health', HealthController::class);
+    Route::get('health',      HealthController::class);
+    Route::get('health/deep', [HealthController::class, 'deep']);
 
     Route::post('login', [AuthController::class, 'login']);
 

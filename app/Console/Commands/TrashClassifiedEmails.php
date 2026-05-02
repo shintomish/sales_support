@@ -22,8 +22,17 @@ class TrashClassifiedEmails extends Command
         parent::__construct();
     }
 
+    /** Eloquent モデル累積によるメモリ枯渇防止のため、明示的に上限を引き上げる */
+    private const MEMORY_LIMIT = '768M';
+    /** バッチ処理中に到達した時点で安全停止するメモリ閾値（バイト） */
+    private const MEMORY_GUARD_BYTES = 600 * 1024 * 1024;
+    /** Gmail API batchModify は最大1000件可だが、メモリ安全のため500に分割 */
+    private const CHUNK_SIZE = 500;
+
     public function handle(): int
     {
+        @ini_set('memory_limit', self::MEMORY_LIMIT);
+
         $dryRun = $this->option('dry-run');
 
         // テナントごとの GmailToken を全取得
@@ -44,10 +53,11 @@ class TrashClassifiedEmails extends Command
         }
 
         $label = $dryRun ? '[DRY-RUN] ' : '';
-        $this->info("{$label}完了: ゴミ箱移動={$totalTrashed}件, 失敗={$totalFailed}件");
+        $peakMb = round(memory_get_peak_usage(true) / 1024 / 1024, 1);
+        $this->info("{$label}完了: ゴミ箱移動={$totalTrashed}件, 失敗={$totalFailed}件 / peak={$peakMb}MB");
 
-        if ($totalTrashed > 0) {
-            Log::info("[TrashClassifiedEmails] {$label}ゴミ箱移動={$totalTrashed}件, 失敗={$totalFailed}件");
+        if ($totalTrashed > 0 || $totalFailed > 0) {
+            Log::info("[TrashClassifiedEmails] {$label}ゴミ箱移動={$totalTrashed}件, 失敗={$totalFailed}件, peak={$peakMb}MB");
         }
 
         return 0;
@@ -78,12 +88,23 @@ class TrashClassifiedEmails extends Command
 
         $trashed = 0;
         $failed  = 0;
+        $aborted = false;
 
-        // Gmail API batchModify は1リクエストで最大1000件処理可能
-        // チャンクサイズを 1000 に揃えて API call 数を削減
+        // chunkById は ID で前進するため、内部でレコード更新しても安全。
+        // CHUNK_SIZE=500 はメモリ消費とAPI呼び出し数のバランス。
         $baseQuery
             ->select(['id', 'gmail_message_id'])
-            ->chunkById(1000, function ($emails) use ($token, &$trashed, &$failed) {
+            ->chunkById(self::CHUNK_SIZE, function ($emails) use ($token, &$trashed, &$failed, &$aborted) {
+                // メモリ閾値到達で安全停止（次回実行で残りを処理）
+                if (memory_get_usage(true) > self::MEMORY_GUARD_BYTES) {
+                    Log::warning('[TrashClassifiedEmails] メモリ閾値到達で中断', [
+                        'tenant_id' => $token->tenant_id,
+                        'used_mb'   => round(memory_get_usage(true) / 1024 / 1024, 1),
+                    ]);
+                    $aborted = true;
+                    return false; // chunkById ループ終了
+                }
+
                 $messageIds = $emails->pluck('gmail_message_id')->all();
                 $emailIds   = $emails->pluck('id')->all();
 
@@ -95,7 +116,15 @@ class TrashClassifiedEmails extends Command
                 } else {
                     $failed += count($messageIds);
                 }
+
+                // チャンク間で循環参照を解放（長時間実行時のリーク対策）
+                unset($messageIds, $emailIds, $emails);
+                gc_collect_cycles();
             });
+
+        if ($aborted) {
+            $this->warn("テナント={$token->tenant_id}: メモリ閾値で中断（次回実行で続行）");
+        }
 
         return [$trashed, $failed];
     }

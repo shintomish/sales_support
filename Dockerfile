@@ -72,4 +72,10 @@ RUN echo "* * * * * www-data /usr/local/bin/php /var/www/artisan schedule:run >>
 # PUPPETEER_EXECUTABLE_PATH を未指定にしておくことで puppeteer のキャッシュを参照
 
 EXPOSE 9000
+
+# php-fpm マスタープロセスの生存確認
+# 不健康時はホスト側 autoheal cron で自動再起動
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
+  CMD pgrep -f php-fpm > /dev/null || exit 1
+
 CMD ["sh", "-c", "mkdir -p /tmp/chromium-data && chmod 777 /tmp/chromium-data && chown -R www-data:www-data /var/www/storage /var/www/bootstrap/cache && service cron start && php-fpm"]
