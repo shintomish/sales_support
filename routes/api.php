@@ -52,6 +52,7 @@ Route::prefix('v1')->middleware(['supabase.auth'])->group(function () {
     Route::post('users/{id}/resend-invite',   [UserController::class, 'resendInvite']);
     Route::get('tenants',                     [TenantController::class, 'index']);
     Route::get('admin/stats',                 [AdminStatsController::class, 'index']);
+    Route::get('work-records',                               [WorkRecordController::class, 'indexAll']);
     Route::get('deals/{deal}/work-records',                  [WorkRecordController::class, 'index']);
     Route::put('deals/{deal}/work-records/{yearMonth}',      [WorkRecordController::class, 'upsert']);
     Route::delete('deals/{deal}/work-records/{yearMonth}',   [WorkRecordController::class, 'destroy']);
