@@ -20,6 +20,7 @@ use App\Http\Controllers\Api\ProjectMailController;
 use App\Http\Controllers\Api\EngineerMailController;
 use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\TenantController;
+use App\Http\Controllers\Api\AdminStatsController;
 use App\Http\Controllers\Api\EmailBodyTemplateController;
 use App\Http\Controllers\Api\DeliveryAddressController;
 use App\Http\Controllers\Api\DeliveryCampaignController;
@@ -46,6 +47,7 @@ Route::prefix('v1')->middleware(['supabase.auth'])->group(function () {
     Route::delete('users/{id}',               [UserController::class, 'destroy']);
     Route::post('users/{id}/resend-invite',   [UserController::class, 'resendInvite']);
     Route::get('tenants',                     [TenantController::class, 'index']);
+    Route::get('admin/stats',                 [AdminStatsController::class, 'index']);
     Route::get('email-body-templates/me',  [EmailBodyTemplateController::class, 'show']);
     Route::put('email-body-templates/me',  [EmailBodyTemplateController::class, 'upsert']);
     Route::get('dashboard', [DashboardController::class, 'index']);
