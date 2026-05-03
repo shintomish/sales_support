@@ -262,8 +262,11 @@ class DeliveryCampaignController extends Controller
         }
 
         // スレッドサブクエリをベースに完全なクエリを組み立て
-        $threads = DB::table(DB::raw("({$threadsQuery->toSql()}) as threads"))
-            ->mergeBindings($threadsQuery->getQuery())
+        // toBase() は GlobalScope（TenantScope）適用後の QueryBuilder を返すため、
+        // toSql() と bindings の整合が取れる。getQuery() だと scope のバインドが漏れる。
+        $threadsBase = $threadsQuery->toBase();
+        $threads = DB::table(DB::raw("({$threadsBase->toSql()}) as threads"))
+            ->mergeBindings($threadsBase)
             ->leftJoin('project_mail_sources', 'project_mail_sources.id', '=', 'threads.project_mail_id')
             ->leftJoin('engineer_mail_sources', 'engineer_mail_sources.id', '=', 'threads.engineer_mail_source_id')
             ->select([
