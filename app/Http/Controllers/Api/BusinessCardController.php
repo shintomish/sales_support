@@ -12,6 +12,7 @@ use App\Services\BusinessCardRegistrationService;
 use App\Services\GoogleCredentialService;
 use App\Services\ImageOrientationService;
 use App\Services\MultiCardSplitterService;
+use App\Services\MultiCardDetectionService;
 use Illuminate\Http\Request;
 use Google\Cloud\Vision\V1\Client\ImageAnnotatorClient;
 use Google\Cloud\Vision\V1\Image;
@@ -340,12 +341,41 @@ class BusinessCardController extends Controller
         ]);
 
         try {
-            $orient   = new ImageOrientationService();
-            $splitter = new MultiCardSplitterService();
+            $orient    = new ImageOrientationService();
+            $detector  = app(MultiCardDetectionService::class);
+            $splitter  = new MultiCardSplitterService();
 
-            $raw       = file_get_contents($request->file('image')->getRealPath());
-            $oriented  = $orient->normalize($raw);
-            $subImages = $splitter->split($oriented);
+            $raw      = file_get_contents($request->file('image')->getRealPath());
+            $oriented = $orient->normalize($raw);
+
+            // 1. Vision API で領域検出 (グリッド配置にも対応)
+            $img = @imagecreatefromstring($oriented);
+            $subImages = [];
+            $method    = 'fallback';
+
+            if ($img !== false) {
+                $w = imagesx($img); $h = imagesy($img);
+                $rects = $detector->detect($oriented, $w, $h);
+                if (count($rects) >= 2) {
+                    foreach ($rects as $r) {
+                        $cell = imagecreatetruecolor($r['w'], $r['h']);
+                        imagecopy($cell, $img, 0, 0, $r['x'], $r['y'], $r['w'], $r['h']);
+                        ob_start();
+                        imagejpeg($cell, null, 90);
+                        $bin = ob_get_clean();
+                        imagedestroy($cell);
+                        if ($bin !== false) $subImages[] = $bin;
+                    }
+                    $method = 'vision';
+                }
+                imagedestroy($img);
+            }
+
+            // 2. Vision で分割できなければ既存ヒューリスティック (横/縦一列向け)
+            if (empty($subImages)) {
+                $subImages = $splitter->split($oriented);
+                $method    = 'aspect';
+            }
 
             $cards = array_map(
                 fn ($bin) => 'data:image/jpeg;base64,' . base64_encode($bin),
@@ -353,8 +383,9 @@ class BusinessCardController extends Controller
             );
 
             return response()->json([
-                'count' => count($cards),
-                'cards' => $cards,
+                'count'  => count($cards),
+                'method' => $method,
+                'cards'  => $cards,
             ]);
         } catch (\Throwable $e) {
             \Log::error('cards/detect failed: ' . $e->getMessage());
