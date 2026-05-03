@@ -34,10 +34,10 @@ class EmailController extends Controller
     public function index(Request $request)
     {
         $perPage    = $request->integer('per_page', 30);
-        $search     = $request->string('search');
+        $search     = $request->input('search');
         $searchBody = $request->boolean('search_body');
         $unread     = $request->boolean('unread');
-        $category   = $request->string('category');   // engineer / project / ''
+        $category   = $request->input('category');   // engineer / project / null
         $query = Email::query()
             ->orderBy('received_at', 'desc');
         if ($search) {
