@@ -5,6 +5,7 @@ use App\Models\Email;
 use App\Models\GmailToken;
 use App\Services\GmailService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use OpenApi\Attributes as OA;
 class EmailController extends Controller
@@ -96,6 +97,37 @@ class EmailController extends Controller
         }
 
         return response()->json($email);
+    }
+
+    #[OA\Delete(
+        path: '/api/v1/emails/{id}',
+        summary: 'メール削除（関連レコードも一緒に削除）',
+        security: [['bearerAuth' => []]],
+        tags: ['Emails'],
+        parameters: [
+            new OA\Parameter(name: 'id', in: 'path', required: true, schema: new OA\Schema(type: 'integer')),
+        ],
+        responses: [
+            new OA\Response(response: 204, description: '削除成功'),
+            new OA\Response(response: 404, description: '見つかりません'),
+            new OA\Response(response: 401, description: '認証エラー'),
+        ]
+    )]
+    public function destroy(int $id)
+    {
+        $email = Email::findOrFail($id);
+
+        DB::transaction(function () use ($email) {
+            // 関連: スコアリング/ソース系
+            \App\Models\EngineerMailSource::where('email_id', $email->id)->delete();
+            \App\Models\ProjectMailSource::where('email_id', $email->id)->delete();
+            // 関連: 添付
+            $email->attachments()->delete();
+            // 本体
+            $email->delete();
+        });
+
+        return response()->json(null, 204);
     }
 
     #[OA\Post(

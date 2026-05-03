@@ -155,6 +155,7 @@ Route::prefix('v1')->middleware(['supabase.auth'])->group(function () {
         Route::get('/{id}',                                      [EmailController::class, 'show']);
         Route::patch('/{id}/link',                               [EmailController::class, 'link']);
         Route::get('/{id}/attachments/{attachmentId}/download',  [EmailController::class, 'downloadAttachment']);
+        Route::delete('/{id}',                                   [EmailController::class, 'destroy']);
     });
 
     // ── 案件メール（スコアリング済み）────────────────────
