@@ -1,6 +1,6 @@
 # バックアップ・リストア手順書
 
-> 作成日: 2026-04-29 / 対象: sales-support 本番環境
+> 作成日: 2026-04-29 / 最終更新: 2026-05-03 / 対象: sales_support システム 本番環境
 
 ---
 
@@ -12,6 +12,20 @@ RPO（許容データ損失時間）24時間 / RTO（復旧目標時間）4時�
 ---
 
 ## 0. 前提条件（必ず最初に確認）
+
+### 0.1 ⚠️ プロジェクト ref と Dashboard 表示名の逆転（2026-05-01 スワップ実施）
+
+forgot password 二重化解消（Issue #13）で本番/dev のプロジェクトを入れ替えた結果、**Dashboard 上の表示名と実用途が逆転している**。本書で参照する ref は必ず以下の対応表に従うこと。
+
+| ref | Dashboard 表示名 | 実用途 | 確認方法 |
+|---|---|---|---|
+| `smzoqpvaxznqcwrsgjju` | sales-support-dev | **本番** | 本番VPS `.env` の `DB_USERNAME=postgres.smzoqpvaxznqcwrsgjju` |
+| `qkjceppkrsurrynqsuse` | sales-support | **dev** | ローカル/職場PCの `.env` |
+
+> Dashboard で操作する際は **表示名ではなく ref（URL に含まれる）で識別する** こと。誤操作で dev に対して本番リストアを実行すると重大事故になる。
+> 表示名のリネーム（dev → prod）は別タスクとして検討（影響範囲: SES SMTP 設定の表示・OAuth リダイレクト URI 等）。
+
+### 0.2 Supabase プラン
 
 本手順は **Supabase Pro プラン以上** を前提とする。
 
@@ -30,7 +44,7 @@ RPO（許容データ損失時間）24時間 / RTO（復旧目標時間）4時�
 
 | 対象 | 実体 | 自動バックアップ | 手動バックアップが必要か |
 |---|---|---|---|
-| Supabase PostgreSQL（本番） | プロジェクト `sales-support` (`qkjceppkrsurrynqsuse`) | ✅ 日次論理バックアップ（プラン依存） | 月次1回・リリース前 |
+| Supabase PostgreSQL（本番） | プロジェクト `sales-support-dev`（表示名・実体は本番） / ref `smzoqpvaxznqcwrsgjju` | ✅ 日次論理バックアップ（プラン依存） | 月次1回・リリース前 |
 | Supabase Storage（名刺画像） | バケット `business-cards` 等 | ❌ DBバックアップに**含まれない** | **必須・週次** |
 | VPS Laravel コード | `/var/www/sales_support` | GitHub（git push） | git push を励行 |
 | `.env`（本番） | VPS `/var/www/sales_support/.env` | なし（gitignore） | **必須・変更時に都度** |
@@ -46,7 +60,7 @@ DBには `business_cards` テーブルにメタデータと storage path のみ�
 
 | 項目 | 値 |
 |---|---|
-| プロジェクト ID | `qkjceppkrsurrynqsuse` |
+| プロジェクト ID | `smzoqpvaxznqcwrsgjju` |
 | リージョン | ap-northeast-1（東京） |
 | PostgreSQL | 17.6 |
 | DBサイズ | 約 363 MB |
@@ -91,7 +105,7 @@ Supabase Dashboard:
 Management API:
 ```bash
 export SUPABASE_ACCESS_TOKEN="<personal access token>"
-export PROJECT_REF="qkjceppkrsurrynqsuse"
+export PROJECT_REF="smzoqpvaxznqcwrsgjju"
 
 curl -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
   "https://api.supabase.com/v1/projects/$PROJECT_REF/database/backups"
@@ -111,7 +125,7 @@ curl -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
 # 接続情報（Session Pooler 経由）
 export PGHOST="aws-1-ap-northeast-1.pooler.supabase.com"
 export PGPORT="5432"
-export PGUSER="postgres.qkjceppkrsurrynqsuse"
+export PGUSER="postgres.smzoqpvaxznqcwrsgjju"
 export PGPASSWORD="<本番パスワード（.envのDB_PASSWORD）>"
 export PGDATABASE="postgres"
 
@@ -138,7 +152,7 @@ ls -lh sales_support_${DATE}.dump
 supabase login
 supabase storage download \
   --recursive \
-  -p qkjceppkrsurrynqsuse \
+  -p smzoqpvaxznqcwrsgjju \
   ss://business-cards \
   ./storage_backup_$(date +%Y%m%d)/
 ```
@@ -192,7 +206,7 @@ ssh root@v133-18-42-139.vir.kagoya.net \
 4. **本番への適用**: 影響テーブルをTRUNCATEしてからCOPYで投入、または個別行のINSERT/UPDATEで復旧。
 5. **検証**: 行数・主要レコードを確認。
 
-> **必ず先に dev 環境（`sales-support-dev` / `smzoqpvaxznqcwrsgjju`）で同手順を試してから本番適用すること。**
+> **必ず先に dev 環境（`qkjceppkrsurrynqsuse`、Supabase Dashboard 上の表示名は `sales-support` だが実体は dev）で同手順を試してから本番適用すること。**
 
 ### 6.2 ケースB: DB全体ロールバック（広域事故）
 
