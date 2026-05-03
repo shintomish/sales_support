@@ -101,10 +101,11 @@ class KagoyaMailService
 
         [$fromName, $fromAddress] = $this->parseFrom($from);
 
-        // バウンスメール（不達通知）を除外
+        // バウンスメール（不達通知）/ 上流スパム判定済みメールを除外
         $lcFrom = strtolower($fromAddress);
         $lcSubject = strtolower($subject);
-        if (str_contains($lcFrom, 'mailer-daemon') ||
+        if (str_starts_with(trim($lcSubject), '[spam]') ||
+            str_contains($lcFrom, 'mailer-daemon') ||
             str_contains($lcFrom, 'postmaster') ||
             str_contains($lcSubject, 'undelivered') ||
             str_contains($lcSubject, 'returned mail') ||
