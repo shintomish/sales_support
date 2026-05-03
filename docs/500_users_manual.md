@@ -347,8 +347,27 @@ ProjectRequiredSkill を介して必要スキルを複数登録可能。
 
 詳細画面でメール本文を表示する際、**スコア理由（`score_reasons`）から抽出したキーワード**を **黄色背景**（`#fef08a`）でハイライト表示します。営業担当が判定根拠を一目で確認できます。
 
-- ハイライト対象: 「単価」「稼働開始」「Java」「東京」など、スコア加点に寄与したワード
-- URL 内の文字列はハイライト対象外（例: `cc.php` の `php` を技術キーワードとして誤判定しない）
+##### ハイライト対象のカテゴリ
+
+| カテゴリ | 例 |
+|---|---|
+| 技術: 言語（`lang:`） | Java / PHP / Python / TypeScript / Go |
+| 技術: FW・インフラ（`infra:`） | **Spring** / **AWS** / Docker / Laravel / Kubernetes |
+| 技術: DB（`db:`） | PostgreSQL / MySQL / MongoDB |
+| 案件ワード（`project_a:` / `project_b:`） | 案件ご紹介 / 単価 / 稼働開始 / 募集 |
+| 工程（`process:`） | 設計 / 実装 / テスト |
+| 時期（`timing:`） | 即日 / 長期 |
+| ペナルティ（`penalty_vague:` / `penalty_chain:`） | 応相談 / 4次請け |
+
+##### ハイライト対象外
+
+| 項目 | 理由 |
+|---|---|
+| 勤務地名（`location:` 東京・大阪 等） | 案件カードの住所列と重複するため意図的に除外 |
+| ドメイン補正（`domain:`） | キーワードでなく送信元学習値のため |
+| `excluded` / `price_concrete` | フラグのため対応キーワードなし |
+| 勤務形態（リモート可・常駐 等） | `score_reasons` ではなく `work_style` カラムで管理 |
+| URL 内の文字列 | `cc.php` の `php` 誤マッチ防止のため対象外 |
 
 ### 7.3 技術者メール（`/engineer-mails`）【SES限定】
 
