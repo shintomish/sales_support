@@ -10,6 +10,8 @@ use App\Services\SupabaseStorageService;
 use App\Services\ClaudeService;
 use App\Services\BusinessCardRegistrationService;
 use App\Services\GoogleCredentialService;
+use App\Services\ImageOrientationService;
+use App\Services\MultiCardSplitterService;
 use Illuminate\Http\Request;
 use Google\Cloud\Vision\V1\Client\ImageAnnotatorClient;
 use Google\Cloud\Vision\V1\Image;
@@ -78,13 +80,13 @@ class BusinessCardController extends Controller
         // multipart/form-data で画像受信
         try {
         $request->validate([
-            'images'   => 'required|array|min:1|max:20',
+            'images'   => 'required|array|min:1|max:50',
             'images.*' => 'required|image|mimes:jpeg,png,jpg|max:10240',
         ], [
             'images.required'   => '画像ファイルは必須です',
             'images.array'      => '画像は配列形式で送信してください',
             'images.min'        => '少なくとも1枚の画像を選択してください',
-            'images.max'        => '一度にアップロードできる画像は20枚までです',
+            'images.max'        => '一度にアップロードできる画像は50枚までです（並列リクエスト推奨）',
             'images.*.required' => '画像ファイルは必須です',
             'images.*.image'    => '画像ファイルのみアップロードできます',
             'images.*.mimes'    => '対応形式はJPEG・PNG・JPGのみです',
@@ -95,13 +97,16 @@ class BusinessCardController extends Controller
             throw $e;
         }
 
-        try {
-            $results  = [];
-            $supabase = new SupabaseStorageService();
+        $results  = [];
+        $supabase = new SupabaseStorageService();
+        $orient   = new ImageOrientationService();
 
-            foreach ($request->file('images') as $imageFile) {
-
-                $imageContent = file_get_contents($imageFile->getRealPath());
+        foreach ($request->file('images') as $imageFile) {
+            $originalName = $imageFile->getClientOriginalName();
+            try {
+                // 0. 画像の向きを正規化 (EXIF + 縦長は90度回転)
+                $rawBinary  = file_get_contents($imageFile->getRealPath());
+                $imageContent = $orient->normalize($rawBinary);
 
                 // 1. Google Cloud Vision API で OCR 実行
                 $credentialsJson = app(GoogleCredentialService::class)->getCredentials();
@@ -117,12 +122,13 @@ class BusinessCardController extends Controller
                 $annotations  = $response->getResponses()[0];
 
                 if ($annotations->hasError()) {
-                    \Log::error('OCR error: ' . $annotations->getError()->getMessage());
-                    continue;
+                    throw new \RuntimeException('OCR エラー: ' . $annotations->getError()->getMessage());
                 }
 
                 $texts = $annotations->getTextAnnotations();
-                if (count($texts) === 0) continue;
+                if (count($texts) === 0) {
+                    throw new \RuntimeException('テキストを検出できませんでした');
+                }
 
                 $ocrText = $texts[0]->getDescription();
 
@@ -131,12 +137,26 @@ class BusinessCardController extends Controller
                 $extractedData = $claudeService->extractBusinessCardInfo($ocrText);
 
                 // 3. 氏名をファイル名に使ってSupabase Storageにアップロード
+                //    回転後のバイナリを直接アップロード (元ファイルは縦のままなので)
                 $personName = $extractedData['person_name'] ?? null;
-                $baseName   = $personName ? str_replace([' ', '　'], '', $personName) : null;
-                $imageUrl   = $supabase->upload($imageFile, 'cards', $baseName);
+                $rawName    = $personName ? str_replace([' ', '　'], '', $personName)
+                                          : pathinfo($originalName, PATHINFO_FILENAME);
+                $safeName   = preg_replace('/[^\w\-\.]/u', '_', $rawName);
+                $safeName   = preg_replace('/[^\x00-\x7F]/u', '', $safeName);
+                $safeName   = preg_replace('/_+/', '_', trim($safeName, '_'));
+                if ($safeName === '') $safeName = substr(md5($rawName), 0, 8);
+                $filename   = 'cards/' . $safeName . '_' . now()->format('Ymd_His_') . substr(md5($imageContent), 0, 6) . '.jpg';
+                $imageUrl   = $supabase->uploadBinary($imageContent, $filename, 'image/jpeg');
 
-                // 4. 名刺データとして保存（image_path に Supabase 公開 URL を格納）
-                $card = BusinessCard::create([
+                // 4. 既存 BusinessCard を検索 (同一会社+同一氏名・異体字許容)
+                //    あれば上書き更新、なければ新規作成
+                $registrationService = new BusinessCardRegistrationService();
+                $existingCard = $registrationService->findExistingCard(
+                    $extractedData['company_name'] ?? null,
+                    $extractedData['person_name']  ?? null,
+                );
+
+                $payload = [
                     'user_id'      => $request->user()->id,
                     'ocr_text'     => $ocrText,
                     'company_name' => $extractedData['company_name'] ?? null,
@@ -152,38 +172,61 @@ class BusinessCardController extends Controller
                     'website'      => $extractedData['website']      ?? null,
                     'image_path'   => $imageUrl,
                     'status'       => 'processed',
-                ]);
+                ];
 
-                // 5. 顧客・担当者を自動登録
-                $registrationService = new BusinessCardRegistrationService();
-                $result = $registrationService->register($card);
+                if ($existingCard) {
+                    \Log::info("BusinessCard を上書き更新: id={$existingCard->id} {$existingCard->company_name}/{$existingCard->person_name}");
+                    // 既存画像は Supabase に残るが古い参照は失う（必要なら削除）
+                    if ($existingCard->image_path && str_starts_with($existingCard->image_path, 'http')
+                        && $existingCard->image_path !== $imageUrl) {
+                        try { $supabase->delete($existingCard->image_path); }
+                        catch (\Throwable $e) { \Log::warning('旧画像削除失敗: ' . $e->getMessage()); }
+                    }
+                    $existingCard->update($payload);
+                    $card = $existingCard;
+                } else {
+                    $card = BusinessCard::create($payload);
+                }
+
+                // 5. 顧客・担当者を自動登録 (既存があれば更新)
+                $regResult = $registrationService->register($card);
                 $card->load(['customer', 'contact']);
 
                 $results[] = [
-                    'data' => new BusinessCardResource($card),
+                    'success'      => true,
+                    'source_name'  => $originalName,
+                    'data'         => new BusinessCardResource($card),
                     'registration' => [
                         'customer' => [
-                            'id'     => $result['customer']->id,
-                            'name'   => $result['customer']->company_name,
-                            'is_new' => $result['is_new_customer'],
+                            'id'     => $regResult['customer']->id,
+                            'name'   => $regResult['customer']->company_name,
+                            'is_new' => $regResult['is_new_customer'],
                         ],
                         'contact' => [
-                            'id'   => $result['contact']->id,
-                            'name' => $result['contact']->name,
+                            'id'   => $regResult['contact']->id,
+                            'name' => $regResult['contact']->name,
                         ],
                     ],
                 ];
+            } catch (\Throwable $e) {
+                // 1枚の失敗で全体を止めない
+                \Log::warning("BusinessCard OCR failed for {$originalName}: " . $e->getMessage());
+                $results[] = [
+                    'success'     => false,
+                    'source_name' => $originalName,
+                    'error'       => $e->getMessage(),
+                ];
             }
-
-            return response()->json(['results' => $results], 201);
-
-        } catch (\Exception $e) {
-            \Log::error('Exception: ' . $e->getMessage());
-            return response()->json([
-                'message' => 'OCR処理に失敗しました',
-                'error'   => $e->getMessage(),
-            ], 500);
         }
+
+        $successCount = count(array_filter($results, fn($r) => $r['success']));
+        $statusCode   = $successCount > 0 ? 201 : 422;
+
+        return response()->json([
+            'results'       => $results,
+            'success_count' => $successCount,
+            'failure_count' => count($results) - $successCount,
+        ], $statusCode);
     }
 
     #[OA\Get(
@@ -279,6 +322,46 @@ class BusinessCardController extends Controller
             new OA\Response(response: 401, description: '認証エラー'),
         ]
     )]
+    /**
+     * POST /api/v1/cards/detect
+     *
+     * 1画像に複数名刺が並んでいる場合に、向き正規化 + 推定分割した
+     * サブ画像を base64 で返す。フロントは各サブ画像を /cards に送って登録する。
+     */
+    public function detect(Request $request)
+    {
+        $request->validate([
+            'image' => 'required|image|mimes:jpeg,png,jpg|max:20480',
+        ], [
+            'image.required' => '画像ファイルは必須です',
+            'image.image'    => '画像ファイルのみアップロードできます',
+            'image.mimes'    => '対応形式はJPEG・PNG・JPGのみです',
+            'image.max'      => '画像は20MB以内にしてください',
+        ]);
+
+        try {
+            $orient   = new ImageOrientationService();
+            $splitter = new MultiCardSplitterService();
+
+            $raw       = file_get_contents($request->file('image')->getRealPath());
+            $oriented  = $orient->normalize($raw);
+            $subImages = $splitter->split($oriented);
+
+            $cards = array_map(
+                fn ($bin) => 'data:image/jpeg;base64,' . base64_encode($bin),
+                $subImages
+            );
+
+            return response()->json([
+                'count' => count($cards),
+                'cards' => $cards,
+            ]);
+        } catch (\Throwable $e) {
+            \Log::error('cards/detect failed: ' . $e->getMessage());
+            return response()->json(['message' => '名刺検出に失敗しました', 'error' => $e->getMessage()], 500);
+        }
+    }
+
     public function destroy(string $id)
     {
         $card = BusinessCard::findOrFail($id);

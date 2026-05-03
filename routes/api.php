@@ -131,6 +131,7 @@ Route::prefix('v1')->middleware(['supabase.auth'])->group(function () {
     Route::patch('tasks/{task}/status', [TaskController::class, 'updateStatus']);
 
     // 名刺OCR
+    Route::post('cards/detect', [BusinessCardController::class, 'detect']); // 1画像内複数名刺を分割
     Route::apiResource('cards', BusinessCardController::class)->names([
         'index' => 'api.cards.index',
         'store' => 'api.cards.store',

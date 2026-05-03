@@ -12,6 +12,8 @@ RUN apt-get update && apt-get install -y \
     gnupg \
     ca-certificates \
     libpng-dev \
+    libjpeg-dev \
+    libfreetype-dev \
     libonig-dev \
     libxml2-dev \
     libpq-dev \
@@ -35,6 +37,7 @@ RUN apt-get update && apt-get install -y \
     libpango-1.0-0 \
     libcairo2 \
     libasound2 \
+    && docker-php-ext-configure gd --with-freetype --with-jpeg \
     && docker-php-ext-install \
         zip \
         pdo \
