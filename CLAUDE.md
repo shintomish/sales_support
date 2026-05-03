@@ -94,8 +94,13 @@ docker exec sales_support_app php artisan config:clear
 - コード共有: GitHub（git push/pull）
 - `.env` 共有: 手動同期（gitには含めない）
 - `memory.db` 共有: Dropbox経由でリアルタイム同期（職場・自宅ともにシンボリックリンク）
-  - 実体: `/mnt/c/Users/user/Dropbox/Public/Book/03_Aizen/990_Sales_Support/memory_engine/memory.db`
-  - 職場・自宅共通: `ln -s "/mnt/c/Users/user/Dropbox/.../memory_engine/memory.db" ~/memory_engine/memory.db`
+  - 実体: `/mnt/c/Users/<user>/Dropbox/Public/Book/03_Aizen/990_Sales_Support/memory_engine/memory.db`
+  - 職場・自宅共通: `ln -s "/mnt/c/Users/<user>/Dropbox/.../memory_engine/memory.db" ~/memory_engine/memory.db`
+  - `<user>` は WSL2 Windows ユーザー名（自宅: `NAKA-MINI` / 職場は別）
+- Claude Code auto-memory 共有: 同じく Dropbox 経由で symlink 化
+  - 実体: `/mnt/c/Users/<user>/Dropbox/Public/Book/03_Aizen/990_Sales_Support/claude_memory/`
+  - 職場・自宅共通: `ln -s "/mnt/c/Users/<user>/Dropbox/.../claude_memory" ~/.claude/projects/-home-shintomi-sales-support/memory`
+  - 既存 memory ディレクトリがある場合は `mv ... memory.bak.YYYYMMDD` で退避してから symlink を貼る
 
 ## 長期記憶の参照方法
 過去のセッションで議論した設計判断・トラブル対応は以下で検索できる:
