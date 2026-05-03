@@ -54,20 +54,7 @@ class EngineerControllerTest extends TestCase
         $this->assertSame('自テナント技術者', $response->json('data.0.name'));
     }
 
-    public function test_index_searches_by_name(): void
-    {
-        $this->skipIfSqlite(); // ilike は PostgreSQL 固有
-        $this->actingAsUser();
-
-        Engineer::factory()->create(['name' => '山田太郎']);
-        Engineer::factory()->create(['name' => '鈴木花子']);
-
-        $response = $this->getJson('/api/v1/engineers?search=山田');
-
-        $response->assertOk();
-        $this->assertCount(1, $response->json('data'));
-        $this->assertSame('山田太郎', $response->json('data.0.name'));
-    }
+    // ilike 検索は PostgreSQL 固有のため tests/Pgsql/Feature/EngineerSearchTest.php に移動
 
     public function test_index_filters_by_skill(): void
     {
