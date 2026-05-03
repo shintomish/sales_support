@@ -56,19 +56,21 @@ DBには `business_cards` テーブルにメタデータと storage path のみ�
 
 ---
 
-## 3. 本番DBの現状（2026-04-29 時点）
+## 3. 本番DBの現状（2026-05-03 時点）
 
 | 項目 | 値 |
 |---|---|
 | プロジェクト ID | `smzoqpvaxznqcwrsgjju` |
 | リージョン | ap-northeast-1（東京） |
-| PostgreSQL | 17.6 |
-| DBサイズ | 約 363 MB |
-| 主要テーブル行数 | emails: 62,206 / engineer_mail_sources: 44,812 / email_attachments: 33,231 / project_mail_sources: 20,202 |
-| バックアップ種別 | **論理バックアップ**（15GB未満かつPITR未契約のため） |
+| PostgreSQL | 17.6.1 |
+| DBサイズ | 約 363 MB（2026-04-29 時点） |
+| 主要テーブル行数 | emails: 62,206 / engineer_mail_sources: 44,812 / email_attachments: 33,231 / project_mail_sources: 20,202（2026-04-29 時点） |
+| バックアップ種別 | **物理バックアップ（WAL-G ベース）** — Management API で `is_physical_backup: true` / `walg_enabled: true` を確認済み |
+| PITR | 未契約（`pitr_enabled: false`） |
 | 現在のプラン | **Pro**（2026-04-29 昇格完了） |
+| 直近確認 | 2026-04-26〜2026-05-02 の 7 日分すべて COMPLETED（2026-05-03 確認） |
 
-> Dashboard → Database → Backups → Scheduled に翌日以降、日次バックアップが7日分蓄積される。
+> Dashboard → Database → Backups → Scheduled に直近 7 日分の日次バックアップが蓄積される。生成タイミングは概ね 02:53〜02:54 JST。
 
 ---
 
@@ -79,10 +81,12 @@ DBには `business_cards` テーブルにメタデータと storage path のみ�
 | プラン | 自動バックアップ | 保持期間 |
 |---|---|---|
 | Free | なし | — |
-| Pro | 日次論理バックアップ | 7日 |
-| Team | 日次論理バックアップ | 14日 |
-| Enterprise | 日次論理バックアップ | 30日 |
-| PITR add-on（Pro以上） | 物理バックアップ + WAL | 7/14/28日（add-on別） |
+| Pro | 日次バックアップ（物理 / WAL-G） | 7日 |
+| Team | 日次バックアップ（物理 / WAL-G） | 14日 |
+| Enterprise | 日次バックアップ（物理 / WAL-G） | 30日 |
+| PITR add-on（Pro以上） | 上記 + WAL を 2分粒度で保持 | 7/14/28日（add-on別） |
+
+> Supabase は近年バックアップを論理（pg_dump）から物理（WAL-G ベース）に移行済み。リストアは Dashboard 操作で日付単位の復元として提供されるため、ユーザー視点の手順は変わらない。
 
 ### 4.2 PITR（Point-in-Time Recovery）導入判断
 
@@ -107,9 +111,25 @@ Management API:
 export SUPABASE_ACCESS_TOKEN="<personal access token>"
 export PROJECT_REF="smzoqpvaxznqcwrsgjju"
 
-curl -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
-  "https://api.supabase.com/v1/projects/$PROJECT_REF/database/backups"
+curl -sS -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+  "https://api.supabase.com/v1/projects/$PROJECT_REF/database/backups" | jq '.'
 ```
+
+レスポンス例（抜粋）:
+```json
+{
+  "region": "ap-northeast-1",
+  "pitr_enabled": false,
+  "walg_enabled": true,
+  "backups": [
+    { "is_physical_backup": true, "status": "COMPLETED", "inserted_at": "2026-05-02T17:54:07.268Z" },
+    ...
+  ]
+}
+```
+
+- `backups[].status` がすべて `COMPLETED` であること
+- 直近 7 日分が連続で並んでいること（欠損があれば Supabase 側に要問い合わせ）
 
 ---
 
@@ -302,10 +322,10 @@ ssh root@v133-18-42-139.vir.kagoya.net \
 
 ---
 
-## 9. 未対応事項（2026-04-29 時点）
+## 9. 未対応事項（2026-05-03 時点）
 
 - [x] ~~Supabase Pro へ昇格~~ — **2026-04-29 完了**（Business / インボイス番号登録済）
-- [ ] **2026-04-30 以降に Dashboard で日次バックアップが生成されているか確認**
+- [x] ~~日次バックアップ生成の確認~~ — **2026-05-03 完了**（4/26〜5/2 の 7 日分すべて COMPLETED / 物理バックアップ）
 - [x] ~~Supabase CLI を自宅PCにインストール~~ — **2026-04-29 完了**（v2.95.4）
 - [ ] Supabase CLI を職場PCにインストール
 - [x] ~~Dropbox `backups/db/` `backups/storage/` `backups/env/` ディレクトリを作成~~ — **2026-04-29 完了**
@@ -315,6 +335,7 @@ ssh root@v133-18-42-139.vir.kagoya.net \
 - [ ] dev 環境で 6.2（全体リストア）リハーサル実施
 - [ ] バックアップ自動化スクリプト（cron）の整備 — 当面は手動運用で十分
 - [ ] dev プロジェクトの Pause 検討 — 不要なら停止して Compute Hours を削減
+- [ ] Supabase Dashboard 上のプロジェクト名リネーム検討（表示名と用途の逆転を解消する場合）
 
 ---
 
