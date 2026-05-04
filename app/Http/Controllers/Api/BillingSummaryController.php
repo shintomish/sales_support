@@ -124,8 +124,8 @@ class BillingSummaryController extends Controller
                 if ($params['q']) {
                     $q->where(function ($q2) use ($params) {
                         $like = '%' . $params['q'] . '%';
-                        $q2->where('title', 'like', $like)
-                           ->orWhereHas('customer', fn($cq) => $cq->where('company_name', 'like', $like));
+                        $q2->where('title', 'ilike', $like)
+                           ->orWhereHas('customer', fn($cq) => $cq->where('company_name', 'ilike', $like));
                     });
                 }
             })

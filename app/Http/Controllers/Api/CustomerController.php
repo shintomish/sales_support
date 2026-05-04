@@ -29,11 +29,11 @@ class CustomerController extends Controller
     {
         $customers = Customer::query()
             ->when($request->search, fn($q, $s) =>
-                $q->where('company_name', 'like', "%{$s}%")
-                ->orWhere('industry', 'like', "%{$s}%")
+                $q->where('company_name', 'ilike', "%{$s}%")
+                ->orWhere('industry', 'ilike', "%{$s}%")
             )
             ->when($request->industry, fn($q, $i) =>
-                $q->where('industry', 'like', "%{$i}%")
+                $q->where('industry', 'ilike', "%{$i}%")
             )
             ->when($request->type, function ($q, $type) {
                 // 'supplier' / 'customer' / 'both' で絞り込み

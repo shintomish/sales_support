@@ -31,7 +31,7 @@ class ProjectMailController extends Controller
         $status    = $request->input('status');    // new / review / proposed / interview / won / lost / excluded
         $scoreMin  = $request->integer('score_min', 0);
         $scoreMax  = $request->integer('score_max', 100);
-        $search    = $request->string('search');
+        $search    = $request->input('search');
 
         $query = ProjectMailSource::with(['email:id,subject,from_name,from_address,received_at'])
             ->whereBetween('score', [$scoreMin, $scoreMax])
@@ -46,10 +46,10 @@ class ProjectMailController extends Controller
 
         if ($search) {
             $query->where(function ($q) use ($search) {
-                $q->where('title', 'like', "%{$search}%")
-                  ->orWhere('customer_name', 'like', "%{$search}%")
-                  ->orWhere('work_location', 'like', "%{$search}%")
-                  ->orWhere('sales_contact', 'like', "%{$search}%");
+                $q->where('title', 'ilike', "%{$search}%")
+                  ->orWhere('customer_name', 'ilike', "%{$search}%")
+                  ->orWhere('work_location', 'ilike', "%{$search}%")
+                  ->orWhere('sales_contact', 'ilike', "%{$search}%");
             });
         }
 

@@ -50,8 +50,8 @@ class InvoiceController extends Controller
         if (!empty($validated['q'])) {
             $like = '%' . $validated['q'] . '%';
             $query->where(function ($q) use ($like) {
-                $q->where('invoice_number', 'like', $like)
-                  ->orWhere('customer_name_snapshot', 'like', $like);
+                $q->where('invoice_number', 'ilike', $like)
+                  ->orWhere('customer_name_snapshot', 'ilike', $like);
             });
         }
 

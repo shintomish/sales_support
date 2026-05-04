@@ -39,7 +39,7 @@ class EngineerMailController extends Controller
         $status   = $request->input('status');
         $scoreMin = $request->integer('score_min', 0);
         $scoreMax = $request->integer('score_max', 100);
-        $search   = $request->string('search');
+        $search   = $request->input('search');
 
         $query = EngineerMailSource::with(['email:id,subject,from_name,from_address,received_at'])
             ->whereBetween('score', [$scoreMin, $scoreMax])
@@ -53,10 +53,10 @@ class EngineerMailController extends Controller
 
         if ($search) {
             $query->where(function ($q) use ($search) {
-                $q->where('name', 'like', "%{$search}%")
-                  ->orWhere('nearest_station', 'like', "%{$search}%")
-                  ->orWhere('affiliation_type', 'like', "%{$search}%")
-                  ->orWhere('skills', 'like', "%{$search}%");
+                $q->where('name', 'ilike', "%{$search}%")
+                  ->orWhere('nearest_station', 'ilike', "%{$search}%")
+                  ->orWhere('affiliation_type', 'ilike', "%{$search}%")
+                  ->orWhere('skills', 'ilike', "%{$search}%");
             });
         }
 

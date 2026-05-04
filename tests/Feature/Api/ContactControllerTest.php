@@ -30,6 +30,7 @@ class ContactControllerTest extends TestCase
 
     public function test_index_searches_by_name(): void
     {
+        $this->skipIfSqlite(); // ilike は PostgreSQL 固有
         $this->actingAsUser();
 
         Contact::factory()->create(['name' => '田中 太郎']);

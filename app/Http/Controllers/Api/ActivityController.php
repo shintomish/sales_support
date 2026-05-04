@@ -34,10 +34,10 @@ class ActivityController extends Controller
         $query = Activity::with(['customer', 'contact', 'deal'])
             ->when($userFilter,            fn($q, $id) => $q->where('activities.user_id', $id))
             ->when($request->search, fn($q, $s) =>
-                $q->where('activities.subject', 'like', "%{$s}%")
-                ->orWhere('activities.content', 'like', "%{$s}%")
+                $q->where('activities.subject', 'ilike', "%{$s}%")
+                ->orWhere('activities.content', 'ilike', "%{$s}%")
                 ->orWhereHas('customer', fn($q) =>
-                    $q->where('company_name', 'like', "%{$s}%")
+                    $q->where('company_name', 'ilike', "%{$s}%")
                 )
             )
             ->when($request->type,        fn($q, $t) => $q->where('activities.type', $t))

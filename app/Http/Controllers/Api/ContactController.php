@@ -29,11 +29,11 @@ class ContactController extends Controller
     {
         $query = Contact::with('customer')
             ->when($request->search, fn($q, $s) =>
-                $q->where('name', 'like', "%{$s}%")
-                ->orWhere('department', 'like', "%{$s}%")
-                ->orWhere('position', 'like', "%{$s}%")
+                $q->where('name', 'ilike', "%{$s}%")
+                ->orWhere('department', 'ilike', "%{$s}%")
+                ->orWhere('position', 'ilike', "%{$s}%")
                 ->orWhereHas('customer', fn($q) =>
-                    $q->where('company_name', 'like', "%{$s}%")
+                    $q->where('company_name', 'ilike', "%{$s}%")
                 )
             )
             ->when($request->customer_id, fn($q, $id) =>

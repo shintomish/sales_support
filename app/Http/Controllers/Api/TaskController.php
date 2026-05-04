@@ -35,9 +35,9 @@ class TaskController extends Controller
         $tasks = Task::with(['customer', 'deal', 'user'])
             ->when($userFilter,            fn($q, $id) => $q->where('user_id', $id))
             ->when($request->search, fn($q, $s) =>
-                $q->where('title', 'like', "%{$s}%")
+                $q->where('title', 'ilike', "%{$s}%")
                 ->orWhereHas('customer', fn($q) =>
-                    $q->where('company_name', 'like', "%{$s}%")
+                    $q->where('company_name', 'ilike', "%{$s}%")
                 )
             )
             ->when($request->status,   fn($q, $s) => $q->where('status', $s))

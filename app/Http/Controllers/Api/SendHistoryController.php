@@ -36,9 +36,9 @@ class SendHistoryController extends Controller
 
         if ($search) {
             $query->where(function ($q) use ($search) {
-                $q->where('to_address', 'like', "%{$search}%")
-                  ->orWhere('subject', 'like', "%{$search}%")
-                  ->orWhere('to_name', 'like', "%{$search}%");
+                $q->where('to_address', 'ilike', "%{$search}%")
+                  ->orWhere('subject', 'ilike', "%{$search}%")
+                  ->orWhere('to_name', 'ilike', "%{$search}%");
             });
         }
 

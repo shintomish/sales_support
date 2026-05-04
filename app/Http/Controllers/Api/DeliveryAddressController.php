@@ -22,8 +22,8 @@ class DeliveryAddressController extends Controller
         if ($request->filled('search')) {
             $search = $request->input('search');
             $baseQuery->where(function ($q) use ($search) {
-                $q->where('email', 'like', "%{$search}%")
-                  ->orWhere('name', 'like', "%{$search}%");
+                $q->where('email', 'ilike', "%{$search}%")
+                  ->orWhere('name', 'ilike', "%{$search}%");
             });
         }
 

@@ -35,6 +35,7 @@ class CustomerControllerTest extends TestCase
 
     public function test_index_searches_by_company_name(): void
     {
+        $this->skipIfSqlite(); // ilike は PostgreSQL 固有
         $this->actingAsUser();
 
         Customer::factory()->create(['company_name' => '株式会社ターゲット']);
@@ -49,6 +50,7 @@ class CustomerControllerTest extends TestCase
 
     public function test_index_filters_by_industry(): void
     {
+        $this->skipIfSqlite(); // ilike は PostgreSQL 固有
         $this->actingAsUser();
 
         Customer::factory()->create(['company_name' => 'IT企業A', 'industry' => 'IT']);
