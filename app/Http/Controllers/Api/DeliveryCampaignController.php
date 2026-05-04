@@ -55,14 +55,15 @@ class DeliveryCampaignController extends Controller
         }
 
         if ($search) {
+            // PostgreSQL ilike で大文字小文字を区別しない部分一致（他コントローラと統一）
             $query->where(function ($q) use ($search) {
-                $q->where('subject', 'like', "%{$search}%")
+                $q->where('subject', 'ilike', "%{$search}%")
                   ->orWhereHas('projectMailSource', fn($pq) =>
-                      $pq->where('title', 'like', "%{$search}%")
+                      $pq->where('title', 'ilike', "%{$search}%")
                   )
                   ->orWhereHas('sendHistories', fn($sq) =>
-                      $sq->where('email', 'like', "%{$search}%")
-                         ->orWhere('name', 'like', "%{$search}%")
+                      $sq->where('email', 'ilike', "%{$search}%")
+                         ->orWhere('name', 'ilike', "%{$search}%")
                   );
             });
         }

@@ -93,6 +93,7 @@ class DeliveryCampaignControllerTest extends TestCase
 
     public function test_index_searches_by_subject(): void
     {
+        $this->skipIfSqlite(); // ilike は PostgreSQL 固有
         $this->actingAsUser();
 
         DeliveryCampaign::factory()->create([
