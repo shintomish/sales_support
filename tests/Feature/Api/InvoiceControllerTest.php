@@ -116,27 +116,44 @@ class InvoiceControllerTest extends TestCase
     }
 
     /**
-     * 支払期限の月末日オーバーフロー回避（5月末締め payment_site=50 で 8/19 になること）。
-     * 旧実装では Carbon の addMonth() が 5/31 → 7/1 にオーバーフローし、
-     * 翌月末を1ヶ月飛ばして 9/19 を出していた。
+     * 支払期限 = 当月末 + payment_site日（月末締め N日後支払）。
+     *   2026-04 / 50d → 2026-06-19
+     *   2026-05 / 50d → 2026-07-20
+     *   2026-04 / 30d → 2026-05-30
      */
-    public function test_due_date_handles_end_of_month_correctly(): void
+    public function test_due_date_uses_end_of_billing_month_plus_payment_site(): void
     {
         $this->actingAsUser();
-        ['deal' => $deal] = $this->setupSesDeal(['payment_site' => 50]);
-        WorkRecord::query()->create([
-            'tenant_id' => $deal->tenant_id,
-            'deal_id'   => $deal->id,
-            'year_month' => '2026-05',
-        ]);
 
-        $res = $this->postJson('/api/v1/invoices', [
-            'deal_id'    => $deal->id,
-            'year_month' => '2026-05',
-        ]);
+        $cases = [
+            ['payment_site' => 50, 'year_month' => '2026-04', 'expected' => '2026-06-19'],
+            ['payment_site' => 50, 'year_month' => '2026-05', 'expected' => '2026-07-20'],
+            ['payment_site' => 30, 'year_month' => '2026-04', 'expected' => '2026-05-30'],
+        ];
 
-        $res->assertCreated();
-        $this->assertSame('2026-08-19', $res->json('due_date'));
+        foreach ($cases as $i => $c) {
+            $customer = Customer::factory()->create([
+                'company_name' => "C{$i}",
+                'invoice_code' => "C{$i}",
+            ]);
+            ['deal' => $deal] = $this->setupSesDeal(
+                ['payment_site' => $c['payment_site']],
+                ['year_month'   => $c['year_month']],
+                $customer
+            );
+
+            $res = $this->postJson('/api/v1/invoices', [
+                'deal_id'    => $deal->id,
+                'year_month' => $c['year_month'],
+            ]);
+
+            $res->assertCreated();
+            $this->assertSame(
+                $c['expected'],
+                $res->json('due_date'),
+                sprintf('payment_site=%d / year_month=%s', $c['payment_site'], $c['year_month'])
+            );
+        }
     }
 
     public function test_invoice_number_resets_per_month(): void
