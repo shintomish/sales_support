@@ -36,6 +36,11 @@ api-test.http
 Dockerfile
 docker/
 
+# docker-compose の環境別上書き（本番固有設定など）
+# 開発時はリポジトリの docker-compose.yml をそのまま使用。
+# 本番では docker-compose.override.yml に固有設定（image: with-pgsql / healthcheck 等）を配置。
+docker-compose.override.yml
+
 storage/credentials/google-vision.json
 
 tmp/

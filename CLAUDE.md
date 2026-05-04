@@ -74,6 +74,26 @@ docker exec sales_support_app php artisan migrate --force
 docker exec sales_support_app php artisan config:clear
 ```
 
+### docker-compose の構成（2026-05-04〜）
+- `docker-compose.yml` は **共通設定 + 開発時デフォルト**（test-postgres 含む）
+- `docker-compose.override.yml` は **環境別の上書き**（本番固有設定）。git 管理外。
+- 本番固有設定（事前ビルド image / healthcheck / test-postgres 無効化）は本番 VPS の
+  `docker-compose.override.yml` に配置。テンプレートは `docker-compose.override.yml.example`。
+
+### 本番初回セットアップ（または compose 構成変更時）
+```bash
+ssh root@v133-18-42-139.vir.kagoya.net
+cd /var/www/sales_support
+# 既存 docker-compose.yml が skip-worktree されている場合は解除
+git update-index --no-skip-worktree docker-compose.yml
+git pull origin main
+# 本番固有設定を override.yml として配置（git 管理外）
+cp docker-compose.override.yml.example docker-compose.override.yml
+# マージ結果を確認してから反映
+docker compose config | head
+docker compose up -d
+```
+
 ## 事業概要（確認省略のための固定知識）
 - **事業内容**: SES企業。IT技術者と発注企業（IT会社）をマッチング・提案
 - **主なフロー**: 技術者紹介メール受信 → スコアリング → マッチ案件を特定 → 提案メール送信

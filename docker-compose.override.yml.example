@@ -1,0 +1,48 @@
+# ========================================================================
+# docker-compose.override.yml.example
+#
+# Compose は同ディレクトリの docker-compose.override.yml を自動マージするため、
+# 環境ごとに異なる設定（本番のみ事前ビルド image を使う / healthcheck 追加など）を
+# このファイル名で配置する。本ファイル自体は git 追跡されるテンプレートで、実体の
+# docker-compose.override.yml は .gitignore で管理外。
+#
+# === 本番 VPS への適用手順 ===
+# 1. このファイルを docker-compose.override.yml にコピー
+#    cp docker-compose.override.yml.example docker-compose.override.yml
+# 2. 必要に応じて image タグ等を編集
+# 3. 設定マージの確認
+#    docker compose config
+# 4. 反映
+#    docker compose up -d
+#
+# === 開発機での使い方 ===
+# 開発機ではこのファイルをコピーする必要なし。docker-compose.yml だけで完結する
+# （test-postgres も含めて）。
+# ========================================================================
+
+services:
+  app:
+    # 本番では事前ビルド済みイメージを使用
+    # （PostgreSQL ドライバや必要な PHP 拡張をプレインストール済）
+    image: sales_support-app:with-pgsql
+    # docker-compose.yml の build を無効化（Compose v2.20+ の reset 構文）
+    build: !reset null
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -f php-fpm > /dev/null || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+  nginx:
+    healthcheck:
+      test: ["CMD-SHELL", "wget --quiet --tries=1 --spider http://127.0.0.1/api/v1/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # 本番では test-postgres コンテナは起動しない
+  # （ローカル開発時の自動テスト用なので本番では不要）
+  test-postgres:
+    profiles: ["disabled"]
