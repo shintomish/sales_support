@@ -153,12 +153,14 @@ class InvoiceCreationService
     /**
      * 支払期限を算出する
      * payment_site があれば「翌月末 + N日」、なければ翌月末。
+     *
+     * 注: 月初 (day=1) から addMonth() することで月末日オーバーフロー
+     * （5/31 → 7/1 になる Carbon の挙動）を回避する。
      */
     private function calculateDueDate(string $yearMonth, ?int $paymentSite): string
     {
         [$y, $m] = explode('-', $yearMonth);
-        $base = Carbon::create((int) $y, (int) $m, 1)->endOfMonth(); // 当月末
-        $base->addMonth()->endOfMonth(); // 翌月末
+        $base = Carbon::create((int) $y, (int) $m, 1)->addMonth()->endOfMonth(); // 翌月末
         if ($paymentSite) {
             $base->addDays($paymentSite);
         }

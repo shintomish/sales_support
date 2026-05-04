@@ -115,6 +115,30 @@ class InvoiceControllerTest extends TestCase
         $this->assertSame('INV-A001-2026-04-00002', $res2->json('invoice_number'));
     }
 
+    /**
+     * 支払期限の月末日オーバーフロー回避（5月末締め payment_site=50 で 8/19 になること）。
+     * 旧実装では Carbon の addMonth() が 5/31 → 7/1 にオーバーフローし、
+     * 翌月末を1ヶ月飛ばして 9/19 を出していた。
+     */
+    public function test_due_date_handles_end_of_month_correctly(): void
+    {
+        $this->actingAsUser();
+        ['deal' => $deal] = $this->setupSesDeal(['payment_site' => 50]);
+        WorkRecord::query()->create([
+            'tenant_id' => $deal->tenant_id,
+            'deal_id'   => $deal->id,
+            'year_month' => '2026-05',
+        ]);
+
+        $res = $this->postJson('/api/v1/invoices', [
+            'deal_id'    => $deal->id,
+            'year_month' => '2026-05',
+        ]);
+
+        $res->assertCreated();
+        $this->assertSame('2026-08-19', $res->json('due_date'));
+    }
+
     public function test_invoice_number_resets_per_month(): void
     {
         $this->actingAsUser();
