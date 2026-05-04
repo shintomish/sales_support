@@ -17,6 +17,7 @@ class Customer extends Model
         'industry',
         'employee_count',
         'address',
+        'postal_code',
         'phone',
         'fax',
         'website',
