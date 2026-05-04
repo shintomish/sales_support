@@ -57,9 +57,14 @@ Gmail と連携し、SES営業に関わるメール（案件情報・技術者�
 | 1 | Gmail OAuth連携 | Google OAuth2.0でGmailと接続 |
 | 2 | メール同期 | Gmail API + KAGOYA IMAP の二系統で受信メールを取得・保存 |
 | 3 | 自動分類 | 案件メール / 技術者メール をルールベースで振り分け |
-| 4 | 添付ファイルダウンロード | Gmail / IMAP / Supabase Storage のフォールバック付き |
-| 5 | 既読管理 | メール開封時に自動既読、一括既読 |
-| 6 | リアルタイム受信通知 | Supabase Realtimeで新着をリアルタイム検知 |
+| 4 | 添付ファイルダウンロード | Storage → IMAP → Gmail API の順でフォールバック |
+| 5 | 既読管理 | メール開封時に自動既読、一括既読（`POST /emails/mark-all-read`）|
+| 6 | リアルタイム受信通知 | Supabase Realtime で `emails` テーブルの INSERT を購読 |
+| 7 | キーワード検索 | 件名・差出人・差出人名（任意で本文）を `ilike` で部分一致検索（PostgreSQL）|
+| 8 | カテゴリフィルタ | engineer / project / other で絞り込み |
+| 9 | 個別削除（関連一括） | メール削除時に添付・送信履歴などの関連レコードも cascade で削除 |
+| 10 | スパム除外 | 件名先頭が `[spam]` のメールは取込時にスキップ |
+| 11 | スケジューラー連携 | 15 分間隔で自動同期 + 自動分類（Gmail / IMAP の双方）|
 
 > **注**: AI情報抽出・マッチングスコア・「技術者/案件として登録」ボタンは emails 画面からは削除済み（2026-04 リファクタ）。情報抽出・スコアリングは案件メール画面 (`project_mail_sources`) と技術者メール画面 (`engineer_mail_sources`) でそれぞれ専用パイプラインに置き換わった。詳細は 530 / 540 を参照。
 
