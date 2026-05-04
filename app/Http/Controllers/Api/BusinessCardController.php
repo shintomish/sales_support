@@ -36,9 +36,20 @@ class BusinessCardController extends Controller
     public function index(\Illuminate\Http\Request $request)
     {
         $userFilter = $this->resolveUserFilter($request);
+        $search     = $request->input('search');
 
         $cards = BusinessCard::with(['customer', 'contact'])
             ->when($userFilter, fn($q, $id) => $q->where('user_id', $id))
+            ->when($search, function ($q) use ($search) {
+                // 会社名・氏名・部署・役職・メール の ilike 部分一致（PostgreSQL）
+                $q->where(function ($w) use ($search) {
+                    $w->where('company_name', 'ilike', "%{$search}%")
+                      ->orWhere('person_name', 'ilike', "%{$search}%")
+                      ->orWhere('department',  'ilike', "%{$search}%")
+                      ->orWhere('position',    'ilike', "%{$search}%")
+                      ->orWhere('email',       'ilike', "%{$search}%");
+                });
+            })
             ->orderBy(...$this->resolveSort($request, [
                 'created_at'   => 'created_at',
                 'company_name' => 'company_name',
