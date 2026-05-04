@@ -42,11 +42,12 @@ class EmailController extends Controller
             ->orderBy('received_at', 'desc');
         if ($search) {
             $query->where(function ($q) use ($search, $searchBody) {
-                $q->where('subject', 'like', "%{$search}%")
-                  ->orWhere('from_address', 'like', "%{$search}%")
-                  ->orWhere('from_name', 'like', "%{$search}%");
+                // PostgreSQL では ilike で大文字小文字を区別しない部分一致（他コントローラと統一）
+                $q->where('subject', 'ilike', "%{$search}%")
+                  ->orWhere('from_address', 'ilike', "%{$search}%")
+                  ->orWhere('from_name', 'ilike', "%{$search}%");
                 if ($searchBody) {
-                    $q->orWhere('body_text', 'like', "%{$search}%");
+                    $q->orWhere('body_text', 'ilike', "%{$search}%");
                 }
             });
         }

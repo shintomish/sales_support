@@ -47,18 +47,7 @@ class EmailControllerTest extends TestCase
         $this->assertSame('未読', $res->json('data.0.subject'));
     }
 
-    public function test_index_searches_by_subject(): void
-    {
-        $this->actingAsUser();
-        Email::factory()->create(['tenant_id' => $this->authUser->tenant_id, 'subject' => 'Java案件のご紹介']);
-        Email::factory()->create(['tenant_id' => $this->authUser->tenant_id, 'subject' => '別件のお知らせ']);
-
-        $res = $this->getJson('/api/v1/emails?search=' . urlencode('Java'));
-
-        $res->assertOk();
-        $this->assertCount(1, $res->json('data'));
-        $this->assertSame('Java案件のご紹介', $res->json('data.0.subject'));
-    }
+    // ilike 検索は PostgreSQL 固有のため tests/Pgsql/Feature/EmailSearchTest.php に移動
 
     public function test_index_filters_by_category(): void
     {

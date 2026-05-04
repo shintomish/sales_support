@@ -64,13 +64,27 @@ class MatchingService
     }
 
     /**
-     * 案件に対して上位N人の技術者をレコメンドする（スコア再計算後に返す）
+     * 案件に対して上位N人の技術者をレコメンドする（スコア再計算後に返す）。
+     *
+     * CLAUDE.md「確定済み設計判断」より、以下の技術者は除外：
+     * - 希望単価未記載（no_unit_price）
+     * - 希望単価が 35万/月未満（unit_price_too_low）
+     * - 案件 unit_price_max が non-null の場合、技術者希望 > 案件上限の組み合わせ
      */
     public function recommendEngineers(PublicProject $project, int $limit = 10): \Illuminate\Support\Collection
     {
+        $projectMax = $project->unit_price_max;
+
         $engineers = Engineer::with(['engineerSkills.skill', 'profile'])
             ->where('tenant_id', $project->tenant_id)
-            ->whereHas('profile', fn($q) => $q->where('is_public', true))
+            ->whereHas('profile', function ($q) use ($projectMax) {
+                $q->where('is_public', true)
+                  ->whereNotNull('desired_unit_price_max')
+                  ->where('desired_unit_price_max', '>=', 35);
+                if ($projectMax !== null) {
+                    $q->where('desired_unit_price_max', '<=', $projectMax);
+                }
+            })
             ->get();
 
         return $engineers
@@ -84,14 +98,26 @@ class MatchingService
     }
 
     /**
-     * 技術者に対して上位N件の案件をレコメンドする
+     * 技術者に対して上位N件の案件をレコメンドする。
+     *
+     * 技術者本人の希望単価が null または 35万未満の場合は本番マッチング不能のため空コレクションを返す。
+     * 案件側 unit_price_max が null の場合は除外せずスコア中間評価で扱う。
      */
     public function recommendProjects(Engineer $engineer, int $limit = 10): \Illuminate\Support\Collection
     {
+        $eDesiredMax = $engineer->profile?->desired_unit_price_max;
+        if ($eDesiredMax === null || $eDesiredMax < 35) {
+            return collect();
+        }
+
         $projects = PublicProject::with(['requiredSkills.skill'])
             ->where('tenant_id', $engineer->tenant_id)
             ->open()
             ->published()
+            ->where(function ($q) use ($eDesiredMax) {
+                $q->whereNull('unit_price_max')
+                  ->orWhere('unit_price_max', '>=', $eDesiredMax);
+            })
             ->get();
 
         return $projects

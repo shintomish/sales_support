@@ -23,13 +23,14 @@ class MatchingControllerTest extends TestCase
     {
         $this->actingAsUser();
 
-        $project  = PublicProject::factory()->published()->create();
+        $project  = PublicProject::factory()->published()->create(['unit_price_max' => 80]);
         $engineer = Engineer::factory()->create();
         EngineerProfile::create([
-            'tenant_id'   => $engineer->tenant_id,
-            'engineer_id' => $engineer->id,
-            'is_public'   => true,
-            'work_style'  => 'remote',
+            'tenant_id'              => $engineer->tenant_id,
+            'engineer_id'            => $engineer->id,
+            'is_public'              => true,
+            'work_style'             => 'remote',
+            'desired_unit_price_max' => 60,  // 35万以上・案件 unit_price_max(80) 以下
         ]);
 
         $response = $this->getJson("/api/v1/matching/projects/{$project->id}/engineers");
@@ -63,20 +64,22 @@ class MatchingControllerTest extends TestCase
     {
         $this->actingAsUser();
 
-        $project = PublicProject::factory()->published()->create();
+        $project = PublicProject::factory()->published()->create(['unit_price_max' => 80]);
 
         $publicEngineer = Engineer::factory()->create(['name' => '公開技術者']);
         EngineerProfile::create([
-            'tenant_id'   => $publicEngineer->tenant_id,
-            'engineer_id' => $publicEngineer->id,
-            'is_public'   => true,
+            'tenant_id'              => $publicEngineer->tenant_id,
+            'engineer_id'            => $publicEngineer->id,
+            'is_public'              => true,
+            'desired_unit_price_max' => 60,
         ]);
 
         $privateEngineer = Engineer::factory()->create(['name' => '非公開技術者']);
         EngineerProfile::create([
-            'tenant_id'   => $privateEngineer->tenant_id,
-            'engineer_id' => $privateEngineer->id,
-            'is_public'   => false,
+            'tenant_id'              => $privateEngineer->tenant_id,
+            'engineer_id'            => $privateEngineer->id,
+            'is_public'              => false,
+            'desired_unit_price_max' => 60,
         ]);
 
         $response = $this->getJson("/api/v1/matching/projects/{$project->id}/engineers");
@@ -117,13 +120,14 @@ class MatchingControllerTest extends TestCase
 
         $engineer = Engineer::factory()->create();
         EngineerProfile::create([
-            'tenant_id'   => $engineer->tenant_id,
-            'engineer_id' => $engineer->id,
-            'is_public'   => true,
-            'work_style'  => 'remote',
+            'tenant_id'              => $engineer->tenant_id,
+            'engineer_id'            => $engineer->id,
+            'is_public'              => true,
+            'work_style'             => 'remote',
+            'desired_unit_price_max' => 60,  // 35万以上
         ]);
 
-        PublicProject::factory()->published()->create();
+        PublicProject::factory()->published()->create(['unit_price_max' => 80]);
 
         $response = $this->getJson("/api/v1/matching/engineers/{$engineer->id}/projects");
 
