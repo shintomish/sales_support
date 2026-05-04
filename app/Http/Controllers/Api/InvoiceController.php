@@ -8,6 +8,7 @@ use App\Models\Invoice;
 use App\Models\InvoiceLine;
 use App\Services\InvoiceCreationService;
 use App\Services\InvoicePdfService;
+use App\Services\SupabaseStorageService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\ValidationException;
@@ -22,6 +23,7 @@ class InvoiceController extends Controller
     public function __construct(
         private readonly InvoiceCreationService $creationService,
         private readonly InvoicePdfService $pdfService,
+        private readonly SupabaseStorageService $storage,
     ) {}
 
     /** GET /api/v1/invoices */
@@ -150,13 +152,20 @@ class InvoiceController extends Controller
         return response()->json(['pdf_url' => $url, 'invoice' => $invoice->fresh()->load('lines')]);
     }
 
-    /** DELETE /api/v1/invoices/{invoice}  - draft のみ削除可 */
+    /**
+     * DELETE /api/v1/invoices/{invoice}
+     * draft / issued ともに削除可能（誤発行リカバリ用）。
+     * 発行済の場合は Storage 上の PDF も併せて削除する。
+     */
     public function destroy(Invoice $invoice): JsonResponse
     {
-        if ($invoice->status !== 'draft') {
-            throw ValidationException::withMessages([
-                'status' => ['発行済の請求書は削除できません'],
-            ]);
+        if ($invoice->status === 'issued' && $invoice->pdf_path) {
+            try {
+                $this->storage->delete($invoice->pdf_path);
+            } catch (\Throwable $e) {
+                // Storage 削除失敗時もレコード削除は続行（孤児ファイル発生を許容）
+                report($e);
+            }
         }
         $invoice->delete();
         return response()->json(null, 204);

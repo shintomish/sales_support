@@ -193,14 +193,16 @@ class InvoiceControllerTest extends TestCase
         $this->assertEquals(560800, $res->json('total'));
     }
 
-    public function test_destroy_blocks_issued_invoice(): void
+    public function test_destroy_allows_issued_invoice_for_recovery(): void
     {
         $this->actingAsUser();
         ['deal' => $deal] = $this->setupSesDeal();
         $created = $this->postJson('/api/v1/invoices', ['deal_id' => $deal->id, 'year_month' => '2026-04'])->json();
 
+        // 誤発行のリカバリ用に issued でも削除可
         $this->putJson('/api/v1/invoices/' . $created['id'], ['status' => 'issued'])->assertOk();
-        $this->deleteJson('/api/v1/invoices/' . $created['id'])->assertStatus(422);
+        $this->deleteJson('/api/v1/invoices/' . $created['id'])->assertNoContent();
+        $this->assertNull(Invoice::find($created['id']));
     }
 
     public function test_destroy_allows_draft(): void
