@@ -322,7 +322,7 @@ ssh root@v133-18-42-139.vir.kagoya.net \
 
 ---
 
-## 9. 未対応事項（2026-05-03 時点）
+## 9. 未対応事項（2026-05-04 時点）
 
 - [x] ~~Supabase Pro へ昇格~~ — **2026-04-29 完了**（Business / インボイス番号登録済）
 - [x] ~~日次バックアップ生成の確認~~ — **2026-05-03 完了**（4/26〜5/2 の 7 日分すべて COMPLETED / 物理バックアップ）
@@ -332,10 +332,57 @@ ssh root@v133-18-42-139.vir.kagoya.net \
 - [x] ~~初回 .env バックアップ~~ — **2026-04-29 完了**（`prod_env_20260429_123640.txt`）
 - [x] ~~初回手動 pg_dump を実施~~ — **2026-04-29 完了**（91MB / 44テーブル / 68インデックス）
 - [x] ~~初回 Storage バックアップを実施~~ — **2026-04-29 完了**（1029ファイル / 104MB）
-- [ ] dev 環境で 6.2（全体リストア）リハーサル実施
+- [x] ~~dev 環境で 6.2（全体リストア）リハーサル実施~~ — **2026-05-04 完了**（§11 参照）
+- [ ] **5/1 スワップ後の本番 pg_dump を取り直して Dropbox に保管**（4/29 dump は旧本番=現 dev のスナップショットのため）
 - [ ] バックアップ自動化スクリプト（cron）の整備 — 当面は手動運用で十分
 - [ ] dev プロジェクトの Pause 検討 — 不要なら停止して Compute Hours を削減
 - [ ] Supabase Dashboard 上のプロジェクト名リネーム検討（表示名と用途の逆転を解消する場合）
+
+---
+
+## 11. リストアリハーサル実施記録（2026-05-04）
+
+### 11.1 概要
+Issue #21 リハーサル。検証用 Supabase プロジェクト `sales-support-restore-test`（ref `ifsoqmsfefhjasblzjxu` / ap-northeast-1 / Pro $10/月）を新規作成し、4/29 取得の手動 pg_dump（91MB / custom format）を `pg_restore -j 4` で復元、件数を本番と比較。
+
+### 11.2 RTO 計測
+
+| 工程 | 所要時間 |
+|---|---|
+| 検証用 Supabase プロジェクト作成 + ACTIVE_HEALTHY まで | 約 2〜3 分（自動）|
+| dump ファイル host → container コピー | 3.8 秒 |
+| **`pg_restore` 並列 4 ジョブ（91MB / 約 16 万行）** | **45.1 秒** ✅ |
+| **DB 復元のみのトータル** | **約 49 秒** |
+
+§1 の RTO 目標「4 時間」 に対して大幅に余裕。DB 復元自体は 1 分以内。
+
+### 11.3 件数照合結果（重要発見）
+
+| テーブル | 復元（4/29 dump）| 本番（5/4 現在）|
+|---|---|---|
+| customers | 55 | 56 |
+| emails | 62,232 | 2,993 |
+| email_attachments | 33,243 | 1,163 |
+| project_mail_sources | 20,214 | 875 |
+| engineer_mail_sources | 44,826 | 2,167 |
+| delivery_campaigns | 7 | 0 |
+| delivery_send_histories | 2,239 | 0 |
+| engineers | 56 | 57 |
+
+→ **復元行数の方が圧倒的に多い**。これは 4/29 dump 取得時点では旧本番（現 dev `qkjceppkrsurrynqsuse`）が運用中で、5/1 のプロジェクトスワップで「新側（現本番 `smzoqpvaxznqcwrsgjju`）のメール/配信/名刺データ削除 (DB 63,925 行 + Storage 3,047 ファイル)」を意図的に実施したため（`memory/project_forgot_password_handoff.md` 参照）。
+
+### 11.4 含意・残課題
+
+- **4/29 dump は現本番のリストア用としては古い**。今すぐ本番障害が発生した場合、復元しても 5/1 以降の更新（メール取込・配信履歴）は失われる。
+- **対応**: 本番 `smzoqpvaxznqcwrsgjju` から手動 pg_dump を取り直して Dropbox `backups/db/` に保管する。
+- 自動バックアップ（Supabase 物理バックアップ・WAL-G 7 日分）は Dashboard から復元可能（§6.2）なので、緊急時はそちらが先。手動 dump は月次の最終防衛線。
+
+### 11.5 検証用プロジェクトの後始末
+
+リハーサル直後に Dashboard から削除：
+https://supabase.com/dashboard/project/ifsoqmsfefhjasblzjxu/settings/general → 「Delete Project」
+
+放置すると月 $10 課金。日割りでも数日で $1 程度なので忘れず削除する運用ルール。
 
 ---
 
