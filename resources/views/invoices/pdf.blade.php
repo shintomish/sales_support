@@ -228,9 +228,9 @@ body {
 {{-- 番号類（客先名の下、ブロック自体は右寄せ・内部は左揃え） --}}
 <div class="numbers-block">
     <div class="numbers-inner">
-        <div class="num-row"><span class="num-label">請求No.</span><span class="under">{{ $invoice->invoice_number }}</span></div>
-        <div class="num-row"><span class="num-label">注文No.</span><span class="under">{{ $invoice->order_number }}</span></div>
-        <div class="num-row"><span class="num-label">見積No.</span><span class="under">{{ $invoice->quote_number }}</span></div>
+        <div class="num-row"><span class="num-label">請求番号</span><span class="under">{{ $invoice->invoice_number }}</span></div>
+        <div class="num-row"><span class="num-label">注文番号</span><span class="under">{{ $invoice->order_number }}</span></div>
+        <div class="num-row"><span class="num-label">見積番号</span><span class="under">{{ $invoice->quote_number }}</span></div>
         <div class="num-row"><span class="num-label">登録番号</span><span class="under">{{ $invoice->issuer_invoice_number_snapshot }}</span></div>
     </div>
 </div>
