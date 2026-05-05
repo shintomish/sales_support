@@ -24,7 +24,7 @@ class DailyReport extends Mailable
     {
         $date = $this->data['target_date'] ?? '';
         return new Envelope(
-            subject: sprintf('【日次レポート】%s の動き / 要対応 %d件', $date, $this->data['total_action_items'] ?? 0),
+            subject: sprintf('【日次レポート】%s / 要対応 %d件', $date, $this->data['action_total'] ?? 0),
         );
     }
 

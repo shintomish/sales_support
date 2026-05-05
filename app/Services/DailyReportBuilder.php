@@ -2,10 +2,10 @@
 
 namespace App\Services;
 
-use App\Models\Customer;
 use App\Models\DeliverySendHistory;
 use App\Models\Email;
 use App\Models\EngineerMailSource;
+use App\Models\ProjectMailSource;
 use App\Models\SesContract;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -16,26 +16,27 @@ use Throwable;
  * 朝の日次レポート 組立サービス
  *
  * パイプライン:
- *   [1] 5項目データ収集（emails / engineer_mail_sources / delivery_send_histories / SES契約期限）
+ *   [1] データ収集（emails / engineer・project mail sources / delivery / SES契約）
  *   [2] 品質ゲート: 0件セクションは除外
  *   [3] Haiku で「優先順位付き今日のアクション」サマリー（要対応 >= 1 件のとき）
  *
- * テナントスコープ: tenant_id を指定して呼ぶこと。Auth context が無いコマンド実行で動かすため。
+ * 「新着SES」は score >= 80（既定）で絞り込み、技術者/案件 を別々に集計する。
+ * テナントスコープ: tenant_id を指定して呼ぶ（Auth context が無いコマンド実行で動かすため）。
  */
 class DailyReportBuilder
 {
+    private const SCORE_THRESHOLD = 80;
+
     public function __construct(
         private readonly ClaudeService $claude,
     ) {}
 
     /**
-     * テナントごとのレポート用データを返す。
-     *
      * @return array{
      *   tenant_id: int,
      *   target_date: string,
      *   sections: array<string, array<string,mixed>>,
-     *   total_action_items: int,
+     *   action_total: int,
      *   ai_summary: ?string
      * }
      */
@@ -46,32 +47,34 @@ class DailyReportBuilder
 
         $sections = [];
 
-        $sections['inbox']    = $this->collectInbox($tenantId, $yesterday, $today);
-        $sections['matches']  = $this->collectNewMatches($tenantId, $yesterday);
-        $sections['delivery'] = $this->collectDeliveryStats($tenantId, $yesterday, $today);
-        $sections['expiring'] = $this->collectExpiringContracts($tenantId, 30);
+        $sections['inbox']            = $this->collectInbox($tenantId, $yesterday, $today);
+        $sections['engineer_matches'] = $this->collectNewMatches($tenantId, EngineerMailSource::class, $yesterday);
+        $sections['project_matches']  = $this->collectNewMatches($tenantId, ProjectMailSource::class, $yesterday);
+        $sections['delivery']         = $this->collectDeliveryStats($tenantId, $yesterday, $today);
+        $sections['expiring']         = $this->collectExpiringContracts($tenantId, 30);
 
         // 品質ゲート: 0 件セクションは除外
         $sections = array_filter($sections, fn ($s) => ($s['count'] ?? 0) > 0);
 
-        $totalActionItems = ($sections['matches']['count']  ?? 0)
-                          + ($sections['expiring']['count'] ?? 0);
+        $actionTotal = ($sections['engineer_matches']['count'] ?? 0)
+                     + ($sections['project_matches']['count']  ?? 0)
+                     + ($sections['expiring']['count']         ?? 0);
 
         $aiSummary = null;
-        if ($totalActionItems >= 1) {
+        if ($actionTotal >= 1) {
             $aiSummary = $this->summarizeWithHaiku($sections);
         }
 
         return [
-            'tenant_id'          => $tenantId,
-            'target_date'        => $yesterday->toDateString(),
-            'sections'           => $sections,
-            'total_action_items' => $totalActionItems,
-            'ai_summary'         => $aiSummary,
+            'tenant_id'    => $tenantId,
+            'target_date'  => $yesterday->toDateString(),
+            'sections'     => $sections,
+            'action_total' => $actionTotal,
+            'ai_summary'   => $aiSummary,
         ];
     }
 
-    /** [1] 受信メール件数（昨日24h、分類別） */
+    /** [1] 受信メール件数（対象日24h、分類別） */
     private function collectInbox(int $tenantId, Carbon $from, Carbon $to): array
     {
         $rows = Email::withoutGlobalScopes()
@@ -84,19 +87,27 @@ class DailyReportBuilder
 
         $total = array_sum($rows);
         return [
-            'count'      => $total,
-            'engineer'   => (int) ($rows['engineer'] ?? 0),
-            'project'    => (int) ($rows['project']  ?? 0),
-            'other'      => (int) ($rows['other']    ?? 0),
+            'count'    => $total,
+            'engineer' => (int) ($rows['engineer'] ?? 0),
+            'project'  => (int) ($rows['project']  ?? 0),
+            'other'    => (int) ($rows['other']    ?? 0),
         ];
     }
 
-    /** [2] 新規SESマッチング候補（直近24h で status=review、上位5件＋件数） */
-    private function collectNewMatches(int $tenantId, Carbon $from): array
+    /**
+     * [2/3] 新着スコア上位 (engineer または project mail source)
+     *  - 直近24h かつ score >= SCORE_THRESHOLD
+     *  - 上位5件＋件数
+     *
+     * @param class-string $modelClass EngineerMailSource::class | ProjectMailSource::class
+     */
+    private function collectNewMatches(int $tenantId, string $modelClass, Carbon $from): array
     {
-        $query = EngineerMailSource::withoutGlobalScopes()
+        $isEngineer = $modelClass === EngineerMailSource::class;
+
+        $query = $modelClass::withoutGlobalScopes()
             ->where('tenant_id', $tenantId)
-            ->where('status', 'review')
+            ->where('score', '>=', self::SCORE_THRESHOLD)
             ->where('created_at', '>=', $from);
 
         $count = (clone $query)->count();
@@ -104,22 +115,38 @@ class DailyReportBuilder
             ->orderByDesc('score')
             ->orderByDesc('created_at')
             ->take(5)
-            ->get(['id', 'name', 'score', 'unit_price_max', 'skills', 'created_at']);
+            ->get();
 
         return [
             'count' => $count,
-            'top'   => $top->map(fn ($m) => [
-                'id'              => $m->id,
-                'name'            => $m->name ?: '（名前未取得）',
-                'score'           => (int) $m->score,
-                'unit_price_max'  => $m->unit_price_max,
-                'skills_summary'  => $this->summarizeSkills($m->skills),
-                'received_at'     => optional($m->created_at)->format('n/j H:i'),
-            ])->toArray(),
+            'top'   => $top->map(function ($m) use ($isEngineer) {
+                if ($isEngineer) {
+                    return [
+                        'id'             => $m->id,
+                        'kind'           => 'engineer',
+                        'title'          => $m->name ?: '（名前未取得）',
+                        'sub'            => null,
+                        'score'          => (int) $m->score,
+                        'unit_price_max' => $m->unit_price_max,
+                        'skills_summary' => $this->summarizeSkills($m->skills),
+                        'received_at'    => optional($m->created_at)->format('n/j H:i'),
+                    ];
+                }
+                return [
+                    'id'             => $m->id,
+                    'kind'           => 'project',
+                    'title'          => $m->title ?: '（件名未取得）',
+                    'sub'            => $m->customer_name,
+                    'score'          => (int) $m->score,
+                    'unit_price_max' => $m->unit_price_max,
+                    'skills_summary' => $this->summarizeSkills($m->required_skills ?? []),
+                    'received_at'    => optional($m->created_at)->format('n/j H:i'),
+                ];
+            })->toArray(),
         ];
     }
 
-    /** [3] 提案メール送信実績（昨日24h、status別） */
+    /** [4] 提案メール送信実績（対象日24h、status別） */
     private function collectDeliveryStats(int $tenantId, Carbon $from, Carbon $to): array
     {
         $rows = DeliverySendHistory::withoutGlobalScopes()
@@ -139,7 +166,7 @@ class DailyReportBuilder
         ];
     }
 
-    /** [4] 期限切れ間近のSES契約（今後 N 日以内、最大20件） */
+    /** [5] 期限切れ間近のSES契約（今後 N 日以内、最大20件） */
     private function collectExpiringContracts(int $tenantId, int $days): array
     {
         $today = Carbon::today();
@@ -153,7 +180,6 @@ class DailyReportBuilder
             ->take(20)
             ->get(['id', 'deal_id', 'engineer_name', 'contract_period_end']);
 
-        // 取引先名を deal_id 経由で一括取得
         $dealIds = $contracts->pluck('deal_id')->filter()->unique()->values();
         $customers = collect();
         if ($dealIds->isNotEmpty()) {
@@ -169,7 +195,6 @@ class DailyReportBuilder
             'count' => $contracts->count(),
             'list'  => $contracts->map(function (SesContract $c) use ($today, $customers) {
                 $end = Carbon::parse($c->contract_period_end);
-                $days = (int) $today->diffInDays($end, false);
                 $row = $customers->get($c->deal_id);
                 return [
                     'id'             => $c->id,
@@ -178,22 +203,23 @@ class DailyReportBuilder
                     'customer_name'  => $row->customer_name ?? null,
                     'deal_title'     => $row->deal_title ?? null,
                     'end_date'       => $end->toDateString(),
-                    'days_left'      => $days,
+                    'days_left'      => (int) $today->diffInDays($end, false),
                 ];
             })->toArray(),
         ];
     }
 
     /**
-     * Claude Haiku で「今日のアクション」を3つ生成。
-     * API失敗時は null を返してレポートは続行（落ちないこと）。
+     * Claude Haiku で「今日のアクション」を3つ生成。連続行（空行なし）。
      */
     private function summarizeWithHaiku(array $sections): ?string
     {
         $prompt = $this->buildSummaryPrompt($sections);
         try {
             $text = $this->claude->ask($prompt);
-            return trim($text);
+            // Haiku が番号間に空行を入れがちなので、連続行（空行なし）に正規化
+            $text = preg_replace("/\n\s*\n/u", "\n", trim($text)) ?? trim($text);
+            return $text;
         } catch (Throwable $e) {
             Log::warning('DailyReport Haiku summary failed', ['err' => $e->getMessage()]);
             return null;
@@ -202,26 +228,34 @@ class DailyReportBuilder
 
     private function buildSummaryPrompt(array $sections): string
     {
-        $matches  = $sections['matches']  ?? null;
-        $expiring = $sections['expiring'] ?? null;
+        $eng  = $sections['engineer_matches'] ?? null;
+        $prj  = $sections['project_matches']  ?? null;
+        $exp  = $sections['expiring']         ?? null;
 
         $lines = [];
         $lines[] = "あなたはSES企業の営業マネージャーです。以下の状況を踏まえ、今日取るべきアクションを優先順位順に最大3つ、各1〜2行で簡潔に箇条書きしてください。";
-        $lines[] = "出力フォーマット: 「1. ◯◯◯」「2. ◯◯◯」のように番号付きの行のみ（前置き・後書き不要）。";
+        $lines[] = "出力ルール: 「1. ◯◯◯」「2. ◯◯◯」のように番号付きの行のみ、行間に空行は入れず、前置き・後書き不要。";
         $lines[] = "";
-        $lines[] = "## 状況サマリ";
+        $lines[] = "## 状況サマリ（直近24h）";
 
-        if ($matches && $matches['count'] > 0) {
-            $lines[] = "- 新規SES候補（要確認）: {$matches['count']}件";
-            foreach ($matches['top'] as $m) {
-                $price = $m['unit_price_max'] ? "({$m['unit_price_max']}万)" : '';
-                $lines[] = "  - スコア{$m['score']} {$m['name']} {$price} {$m['skills_summary']}";
+        if ($eng && $eng['count'] > 0) {
+            $lines[] = "- 新着 技術者(スコア80+): {$eng['count']}件";
+            foreach ($eng['top'] as $m) {
+                $price = $m['unit_price_max'] ? " ({$m['unit_price_max']}万)" : '';
+                $lines[] = "  - スコア{$m['score']} {$m['title']}{$price} {$m['skills_summary']}";
             }
         }
-
-        if ($expiring && $expiring['count'] > 0) {
-            $lines[] = "- 契約期限まで30日以内: {$expiring['count']}件";
-            foreach ($expiring['list'] as $c) {
+        if ($prj && $prj['count'] > 0) {
+            $lines[] = "- 新着 案件(スコア80+): {$prj['count']}件";
+            foreach ($prj['top'] as $m) {
+                $price = $m['unit_price_max'] ? " ({$m['unit_price_max']}万)" : '';
+                $sub   = $m['sub'] ? " / {$m['sub']}" : '';
+                $lines[] = "  - スコア{$m['score']} {$m['title']}{$sub}{$price} {$m['skills_summary']}";
+            }
+        }
+        if ($exp && $exp['count'] > 0) {
+            $lines[] = "- 契約期限まで30日以内: {$exp['count']}件";
+            foreach ($exp['list'] as $c) {
                 $lines[] = "  - あと{$c['days_left']}日 ({$c['end_date']}) {$c['engineer_name']} / " . ($c['customer_name'] ?? '?');
             }
         }
