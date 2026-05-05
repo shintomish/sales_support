@@ -590,8 +590,9 @@ class EngineerMailScoringService
             if ($name !== '') return $name;
         }
 
-        // 次点: 氏名：XXX 形式（担当者：は除外）
-        if (preg_match('/(?:氏名|技術者名|エンジニア名|名前)[：:　\s]*([^\s\n　■]{2,10})/u', $text, $m)) {
+        // 次点: 氏名：XXX / 名 前：XXX / 【名 前】XXX 形式
+        // ラベル内空白許容（"氏 名"、"名 前" 等）、括弧前まで取得
+        if (preg_match('/(?:【\s*)?(?:氏[\s　]*名|技術者名|エンジニア名|名[\s　]*前)\s*[】]?[：:　\s]*([^\s\n　■【／\/]{1,20})/u', $text, $m)) {
             $name = trim($m[1]);
             // 括弧があれば除去 (例: NA(32歳) → NA)
             $name = preg_replace('/[（(].*/u', '', $name);
@@ -600,7 +601,19 @@ class EngineerMailScoringService
 
         // 最終フォールバック: 行頭の「英字略称（年齢〜）」形式（"氏名"ラベル無し）
         // 例: K.M（57歳男性）、S.K（27歳/男性）、T.I（46歳・男性）、MN（女性/51歳）
-        if (preg_match('/(?:^|\n)[\s　＝━─\*\-□]*([A-Za-z][A-Za-z.]{1,5})[\s　]*[（(][^）)]*\d{2,3}歳/u', $text, $m)) {
+        // 区切り文字や 【 の直後でもマッチ
+        if (preg_match('/(?:^|\n)[\s　＝━─\*\-□【]*([A-Za-z][A-Za-z.]{1,5})[\s　][^（()]*?[（(][^）)]*\d{2,3}歳/u', $text, $m)) {
+            $name = trim($m[1]);
+            if ($name !== '') return $name;
+        }
+        // 同パターン（直後すぐ括弧）
+        if (preg_match('/(?:^|\n)[\s　＝━─\*\-□【]*([A-Za-z][A-Za-z.]{1,5})[\s　]*[（(][^）)]*\d{2,3}歳/u', $text, $m)) {
+            $name = trim($m[1]);
+            if ($name !== '') return $name;
+        }
+
+        // 「要員情報」直後の英字略称＋☆地名（例: YM☆飯能）
+        if (preg_match('/要員情報[\s　】\]]*[―ー\-=━─\s\n]*([A-Za-z]{1,5})☆/u', $text, $m)) {
             $name = trim($m[1]);
             if ($name !== '') return $name;
         }
