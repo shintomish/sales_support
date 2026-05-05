@@ -11,12 +11,30 @@ class EmailClassificationService
     // 本文からURLを抽出する正規表現
     private const URL_PATTERN = '/https?:\/\/[^\s\x{3000}"\'<>「」【】）\)]+/u';
 
+    // 件名にこれらが含まれる場合は案件メールと判定（人材系キーワードに優先する）。
+    // 例: 「Ruby要員募集」「人材を探しています」は案件側が技術者を募集する案件メール
+    private const PROJECT_SUBJECT_KEYWORDS_PRIORITY = [
+        '要員募集', '要員募', '要員探', '要員を探',
+        '人材募集', '人材を募集', '人材を探',
+    ];
+
     // 件名にこれらが含まれる場合は技術者メールと判定（案件メールに見えても実態は人材紹介）
     private const ENGINEER_SUBJECT_KEYWORDS = [
         '人材', '人財', '正社員', 'プロパー', '要員',
         'スキルシート', '経歴書', '職務経歴', 'フリーランス',
         'ご紹介', '弊社直', '弊社要員', '弊社社員',
         '直個人',
+    ];
+
+    // 本文にこれらが含まれる場合は案件メールと判定（engineer キーワードより優先）
+    private const PROJECT_BODY_KEYWORDS_PRIORITY = [
+        '対応可能な人材がいらっしゃいましたら',
+        '見合う要員様がいらっしゃいましたら',
+        '対応可能な要員',
+        '対応可能な技術者がいらっしゃいましたら',
+        '案件情報のご紹介',
+        '注力しております案件をご紹介',
+        '案件のご紹介でございます',
     ];
 
     // 件名がイニシャル＠地名パターンの場合は技術者メールと判定
@@ -117,13 +135,12 @@ class EmailClassificationService
      * 分類ルール（返り値: [category, reason, urls]）
      *
      * 優先順位:
-     *   1. 添付ファイルあり               → engineer
-     *   2. 件名に【技術者情報】           → engineer
-     *   3. 件名に人材系キーワード         → engineer
-     *   4. 本文に技術者キーワード         → engineer
-     *   5. 件名に【案件情報】             → project
-     *   6. 本文にURLあり（件名なし含む）  → project
-     *   7. 本文のみ（URLなし）            → project
+     *   1. 添付ファイルあり                          → engineer
+     *   2. 件名に【技術者情報】                      → engineer
+     *   3. 件名に project 優先キーワード（要員募集等）→ project（人材系より優先）
+     *   3.5 本文に project 優先キーワード             → project（engineer body より優先）
+     *   4. 件名に人材系キーワード                    → engineer
+     *   ...
      */
     private function determineCategory(Email $email): array
     {
@@ -149,7 +166,23 @@ class EmailClassificationService
             return ['engineer', 'subject_engineer_keyword', $urls];
         }
 
-        // 3. 件名に人材系キーワード（人材・人財・正社員・プロパー・要員 等）
+        // 3. 件名に project 優先キーワード（要員募集／要員探／人材募集 等）→ 案件メール
+        //    「要員募集」「人材募集」型は案件側からの技術者要請なので project に分類する
+        foreach (self::PROJECT_SUBJECT_KEYWORDS_PRIORITY as $kw) {
+            if (mb_strpos($subject, $kw) !== false) {
+                return ['project', 'subject_project_priority:' . $kw, $urls];
+            }
+        }
+
+        // 3.5. 本文に project 優先キーワード（対応可能な人材／要員様 等）
+        //      engineer 本文キーワードより先にチェック（"要員のご紹介" などとの優先度逆転を防ぐ）
+        foreach (self::PROJECT_BODY_KEYWORDS_PRIORITY as $kw) {
+            if (mb_strpos($body, $kw) !== false) {
+                return ['project', 'body_project_priority:' . $kw, $urls];
+            }
+        }
+
+        // 4. 件名に人材系キーワード（人材・人財・正社員・プロパー・要員 等）
         foreach (self::ENGINEER_SUBJECT_KEYWORDS as $kw) {
             if (mb_strpos($subject, $kw) !== false) {
                 return ['engineer', 'subject_human_keyword:' . $kw, $urls];
