@@ -618,6 +618,31 @@ class EngineerMailScoringService
             if ($name !== '') return $name;
         }
 
+        // 「【基本情報】K.S / 女性 / 28歳」「【基本情報】任.HY」型
+        // / または改行の手前まで取得
+        if (preg_match('/【基本情報】[\s　]*([^\s\n　／\/【]{1,15})/u', $text, $m)) {
+            $name = trim($m[1]);
+            if ($name !== '') return $name;
+        }
+
+        // 「弊社要員K.Sを提案」「弊社要員任.HYを提案」型
+        if (preg_match('/弊社要員[\s　]*([A-Za-zぁ-んァ-ヶ一-龯]{1,2}\.?[A-Za-z.]{1,8})[を、]/u', $text, $m)) {
+            $name = trim($m[1]);
+            if ($name !== '') return $name;
+        }
+
+        // 区切り行の直後「技術者　XX」型 ("技術者" ラベル + 全角空白 + 名前)
+        if (preg_match('/(?:^|\n)[\s　＝━─\*\-]*技術者[\s　]+([A-Za-zぁ-んァ-ヶ一-龯][A-Za-zぁ-んァ-ヶ一-龯.]{0,12})(?:[\s　／\/\n]|$)/u', $text, $m)) {
+            $name = trim($m[1]);
+            if ($name !== '') return $name;
+        }
+
+        // 「所 属： 弊社正社員（Y.N）」「所属：弊社個人事業主（K.M）」型
+        if (preg_match('/所[\s　]*属[：:　\s]*弊社[^\s（(\n]+[（(]([A-Za-z][A-Za-z.]{1,8})[）)]/u', $text, $m)) {
+            $name = trim($m[1]);
+            if ($name !== '') return $name;
+        }
+
         return null;
     }
 
