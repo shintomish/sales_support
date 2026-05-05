@@ -49,7 +49,7 @@ a { color: #2563eb; }
 <h1>📊 日次レポート ｜ {{ $data['target_date'] ?? '' }}</h1>
 <div class="kvbox">
     要対応合計: <strong>{{ $data['action_total'] ?? 0 }} 件</strong>
-    <span class="kv">（新着スコア80+ の技術者・案件 + 期限切れ間近のSES契約）</span>
+    <span class="kv">（新着スコア70+ の技術者・案件 + 期限切れ間近のSES契約）</span>
 </div>
 
 @if(!empty($data['ai_summary']))
@@ -77,7 +77,7 @@ a { color: #2563eb; }
 {{-- 新着SES（技術者） --}}
 @if(isset($sections['engineer_matches']))
     @php $s = $sections['engineer_matches']; @endphp
-    <h2 class="h2-blue">👤 新着技術者（スコア80+ 直近24h）{{ $s['count'] }} 件</h2>
+    <h2 class="h2-blue">👤 新着技術者（スコア70+ 直近24h）{{ $s['count'] }} 件</h2>
     @foreach($s['top'] as $m)
         @php $r = $renderMatch($m, $appUrl); @endphp
         <div class="match-item">
@@ -98,7 +98,7 @@ a { color: #2563eb; }
 {{-- 新着SES（案件） --}}
 @if(isset($sections['project_matches']))
     @php $s = $sections['project_matches']; @endphp
-    <h2 class="h2-purple">📨 新着案件（スコア80+ 直近24h）{{ $s['count'] }} 件</h2>
+    <h2 class="h2-purple">📨 新着案件（スコア70+ 直近24h）{{ $s['count'] }} 件</h2>
     @foreach($s['top'] as $m)
         @php $r = $renderMatch($m, $appUrl); @endphp
         <div class="match-item">

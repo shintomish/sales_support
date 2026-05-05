@@ -5,7 +5,7 @@
 ============================================================
 日次レポート ｜ {{ $data['target_date'] ?? '' }}
 ============================================================
-要対応合計: {{ $data['action_total'] ?? 0 }} 件（新着スコア80+ + 期限切れ間近のSES契約）
+要対応合計: {{ $data['action_total'] ?? 0 }} 件（新着スコア70+ + 期限切れ間近のSES契約）
 @if(!empty($data['ai_summary']))
 
 ------------------------------------------------------------
@@ -23,7 +23,7 @@
 @if(isset($sections['engineer_matches']))
 
 ------------------------------------------------------------
-[👤 新着技術者（スコア80+ 直近24h） {{ $sections['engineer_matches']['count'] }} 件]
+[👤 新着技術者（スコア70+ 直近24h） {{ $sections['engineer_matches']['count'] }} 件]
 @foreach($sections['engineer_matches']['top'] as $m)
 - スコア{{ $m['score'] }} {{ $m['title'] }}{{ $m['unit_price_max'] ? ' ('.$m['unit_price_max'].'万)' : '' }} {{ $m['skills_summary'] }}
   受信: {{ $m['received_at'] }} | {{ $appUrl }}/engineer-mails?select={{ $m['id'] }}
@@ -35,7 +35,7 @@
 @if(isset($sections['project_matches']))
 
 ------------------------------------------------------------
-[📨 新着案件（スコア80+ 直近24h） {{ $sections['project_matches']['count'] }} 件]
+[📨 新着案件（スコア70+ 直近24h） {{ $sections['project_matches']['count'] }} 件]
 @foreach($sections['project_matches']['top'] as $m)
 - スコア{{ $m['score'] }} {{ $m['title'] }}{{ $m['sub'] ? ' / '.$m['sub'] : '' }}{{ $m['unit_price_max'] ? ' ('.$m['unit_price_max'].'万)' : '' }} {{ $m['skills_summary'] }}
   受信: {{ $m['received_at'] }} | {{ $appUrl }}/project-mails?select={{ $m['id'] }}

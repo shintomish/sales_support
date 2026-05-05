@@ -25,7 +25,7 @@ use Throwable;
  */
 class DailyReportBuilder
 {
-    private const SCORE_THRESHOLD = 80;
+    private const SCORE_THRESHOLD = 70;
 
     public function __construct(
         private readonly ClaudeService $claude,
@@ -257,14 +257,14 @@ class DailyReportBuilder
         $lines[] = "## 状況サマリ（直近24h、重複排除済み）";
 
         if ($eng && $eng['count'] > 0) {
-            $lines[] = "- 新着 技術者(スコア80+ ユニーク): {$eng['count']}件";
+            $lines[] = "- 新着 技術者(スコア70+ ユニーク): {$eng['count']}件";
             foreach ($eng['top'] as $m) {
                 $price = $m['unit_price_max'] ? " ({$m['unit_price_max']}万)" : '';
                 $lines[] = "  - スコア{$m['score']} {$m['title']}{$price} {$m['skills_summary']}";
             }
         }
         if ($prj && $prj['count'] > 0) {
-            $lines[] = "- 新着 案件(スコア80+ ユニーク): {$prj['count']}件";
+            $lines[] = "- 新着 案件(スコア70+ ユニーク): {$prj['count']}件";
             foreach ($prj['top'] as $m) {
                 $price = $m['unit_price_max'] ? " ({$m['unit_price_max']}万)" : '';
                 $sub   = $m['sub'] ? " / {$m['sub']}" : '';
