@@ -7,6 +7,7 @@ use App\Models\Email;
 use App\Models\EngineerMailSource;
 use App\Models\ProjectMailSource;
 use App\Models\SesContract;
+use App\Scopes\TenantScope;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -77,7 +78,7 @@ class DailyReportBuilder
     /** [1] 受信メール件数（対象日24h、分類別） */
     private function collectInbox(int $tenantId, Carbon $from, Carbon $to): array
     {
-        $rows = Email::withoutGlobalScopes()
+        $rows = Email::withoutGlobalScope(TenantScope::class)
             ->where('tenant_id', $tenantId)
             ->whereBetween('received_at', [$from, $to])
             ->select('category', DB::raw('count(*) as cnt'))
@@ -107,7 +108,7 @@ class DailyReportBuilder
         $isEngineer = $modelClass === EngineerMailSource::class;
 
         // ユニーク化のためにある程度多めに取得してから重複排除
-        $rows = $modelClass::withoutGlobalScopes()
+        $rows = $modelClass::withoutGlobalScope(TenantScope::class)
             ->where('tenant_id', $tenantId)
             ->where('score', '>=', self::SCORE_THRESHOLD)
             ->where('created_at', '>=', $from)
@@ -160,7 +161,7 @@ class DailyReportBuilder
     /** [4] 提案メール送信実績（対象日24h、status別） */
     private function collectDeliveryStats(int $tenantId, Carbon $from, Carbon $to): array
     {
-        $rows = DeliverySendHistory::withoutGlobalScopes()
+        $rows = DeliverySendHistory::withoutGlobalScope(TenantScope::class)
             ->where('tenant_id', $tenantId)
             ->whereBetween('created_at', [$from, $to])
             ->select('status', DB::raw('count(*) as cnt'))
@@ -183,7 +184,7 @@ class DailyReportBuilder
         $today = Carbon::today();
         $limit = $today->copy()->addDays($days);
 
-        $contracts = SesContract::withoutGlobalScopes()
+        $contracts = SesContract::withoutGlobalScope(TenantScope::class)
             ->where('tenant_id', $tenantId)
             ->whereNotNull('contract_period_end')
             ->whereBetween('contract_period_end', [$today->toDateString(), $limit->toDateString()])

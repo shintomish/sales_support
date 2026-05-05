@@ -592,6 +592,13 @@ class EngineerMailScoringService
             if ($name !== '') return $name;
         }
 
+        // 最終フォールバック: 行頭の「英字略称（年齢〜）」形式（"氏名"ラベル無し）
+        // 例: K.M（57歳男性）、S.K（27歳/男性）、T.I（46歳・男性）、MN（女性/51歳）
+        if (preg_match('/(?:^|\n)[\s　＝━─\*\-□]*([A-Za-z][A-Za-z.]{1,5})[\s　]*[（(][^）)]*\d{2,3}歳/u', $text, $m)) {
+            $name = trim($m[1]);
+            if ($name !== '') return $name;
+        }
+
         return null;
     }
 
