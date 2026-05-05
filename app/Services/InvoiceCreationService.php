@@ -22,6 +22,7 @@ class InvoiceCreationService
     public function __construct(
         private readonly InvoiceNumberService $numberService,
         private readonly BillingCalculationService $calculator,
+        private readonly InvoiceDueDateCalculator $dueDateCalculator,
     ) {}
 
     /**
@@ -42,11 +43,21 @@ class InvoiceCreationService
         $calc = $this->calculator->calculate($contract, $record);
 
         $issuedDate = $options['issued_date'] ?? Carbon::today()->toDateString();
-        $dueDate    = $options['due_date'] ?? $this->calculateDueDate($yearMonth, $contract?->payment_site);
+        $dueDate    = $options['due_date'] ?? $this->dueDateCalculator->calculate($yearMonth, $contract?->payment_site);
 
         $tenant = Tenant::query()->find($deal->tenant_id);
 
-        return DB::transaction(function () use ($deal, $customer, $contract, $record, $calc, $yearMonth, $issuedDate, $dueDate, $tenant, $options) {
+        [$y, $m]    = explode('-', $yearMonth);
+        $periodStart = Carbon::create((int) $y, (int) $m, 1);
+        $periodEnd   = $periodStart->copy()->endOfMonth();
+        $workPeriod  = sprintf(
+            '%d年%d月%d日～%d年%d月%d日',
+            $periodStart->year, $periodStart->month, $periodStart->day,
+            $periodEnd->year,   $periodEnd->month,   $periodEnd->day,
+        );
+        $paymentTerms = $this->paymentTermsText($contract?->payment_site);
+
+        return DB::transaction(function () use ($deal, $customer, $contract, $record, $calc, $yearMonth, $issuedDate, $dueDate, $tenant, $options, $workPeriod, $paymentTerms) {
             $number = $this->numberService->generate($customer, $yearMonth);
 
             $invoice = new Invoice([
@@ -55,6 +66,12 @@ class InvoiceCreationService
                 'customer_id'                     => $customer->id,
                 'year_month'                      => $yearMonth,
                 'invoice_number'                  => $number,
+                'subject_name'                    => $deal->title,
+                'work_period_text'                => $workPeriod,
+                'work_location'                   => null,
+                'delivery_date_text'              => '御社ご指定日',
+                'delivery_place_text'             => '御社ご指定場所',
+                'payment_terms_text'              => $paymentTerms,
                 'issued_date'                     => $issuedDate,
                 'due_date'                        => $dueDate,
                 'status'                          => 'draft',
@@ -66,6 +83,8 @@ class InvoiceCreationService
                 'issuer_postal_code_snapshot'     => $tenant?->invoice_issuer_postal_code,
                 'issuer_address_snapshot'         => $tenant?->invoice_issuer_address,
                 'issuer_tel_snapshot'             => $tenant?->invoice_issuer_tel,
+                'issuer_fax_snapshot'             => $tenant?->invoice_issuer_fax,
+                'issuer_logo_snapshot'            => $tenant?->invoice_issuer_logo_path,
                 'issuer_invoice_number_snapshot'  => $tenant?->invoice_issuer_invoice_number,
                 'issuer_bank_snapshot'            => $this->formatBankInfo($tenant),
             ]);
@@ -90,19 +109,22 @@ class InvoiceCreationService
     /**
      * 試算結果から明細行を組み立てる
      *
+     * 新仕様（INV_Aizen 2026-05-05）:
+     *  - 基本額の摘要は「{金額}円【基本月額】」表記（ses_contracts.income_amount 由来）
+     *  - 件名/作業期間/作業場所/支払条件はメタ情報として invoices テーブルに保持し、
+     *    PDF/編集画面で表示する。明細行（金額計上）は基本額・控除・超過・交通費のみ。
+     *
      * @return array<int, array<string,mixed>>
      */
     private function buildLines(Deal $deal, ?WorkRecord $record, array $calc): array
     {
         $lines = [];
-        $title = $deal->title ?: '業務委託料';
-        $hoursLabel = $record?->actual_hours !== null ? sprintf(' (実働 %sh)', rtrim(rtrim((string) $record->actual_hours, '0'), '.')) : '';
 
         if ($calc['basic'] > 0) {
             $lines[] = [
-                'description' => $title . $hoursLabel,
+                'description' => sprintf('%s円 【基本月額】', number_format((float) $calc['basic'])),
                 'quantity'    => 1,
-                'unit'        => '式',
+                'unit'        => null,
                 'unit_price'  => $calc['basic'],
                 'tax_rate'    => 0.10,
             ];
@@ -111,7 +133,7 @@ class InvoiceCreationService
             $lines[] = [
                 'description' => '控除（精算下限未達）',
                 'quantity'    => 1,
-                'unit'        => '式',
+                'unit'        => null,
                 'unit_price'  => -1 * $calc['deduction'],
                 'tax_rate'    => 0.10,
             ];
@@ -120,7 +142,7 @@ class InvoiceCreationService
             $lines[] = [
                 'description' => '超過（精算上限超）',
                 'quantity'    => 1,
-                'unit'        => '式',
+                'unit'        => null,
                 'unit_price'  => $calc['overtime'],
                 'tax_rate'    => 0.10,
             ];
@@ -130,7 +152,7 @@ class InvoiceCreationService
             $lines[] = [
                 'description' => '交通費（実費）',
                 'quantity'    => 1,
-                'unit'        => '式',
+                'unit'        => null,
                 'unit_price'  => $calc['transportation'],
                 'tax_rate'    => 0.0,
             ];
@@ -139,9 +161,9 @@ class InvoiceCreationService
         if (empty($lines)) {
             // 何も計上できない場合は基本額0の1行を入れる（編集前提）
             $lines[] = [
-                'description' => $title,
+                'description' => '0円 【基本月額】',
                 'quantity'    => 1,
-                'unit'        => '式',
+                'unit'        => null,
                 'unit_price'  => 0,
                 'tax_rate'    => 0.10,
             ];
@@ -151,18 +173,47 @@ class InvoiceCreationService
     }
 
     /**
-     * 支払期限を算出する
-     * 「当月末締め + N日後支払」（payment_site が日数）。
-     * 例: 2026-04 / payment_site=50 → 2026-04-30 + 50d = 2026-06-19
-     * payment_site が null の場合は 30日（翌月末相当）を既定値とする。
+     * payment_site から支払条件文言を組み立てる。
+     *
+     * 翌月末を起点に offset(=site-30) 日加算した到達点を
+     * 「翌(々*)月{N}日」形式に分解する（業界慣習に合わせ 30 日 = 1 ヶ月扱い）。
+     *
+     *   site=30 → 翌月末日
+     *   site=45 → 翌々月15日
+     *   site=50 → 翌々月20日
+     *   site=55 → 翌々月25日
+     *   site=60 → 翌々月末日
+     *   site=70 → 翌々々月10日
+     *   site=90 → 翌々々月末日
      */
-    private function calculateDueDate(string $yearMonth, ?int $paymentSite): string
+    private function paymentTermsText(?int $paymentSite): string
     {
-        [$y, $m] = explode('-', $yearMonth);
-        return Carbon::create((int) $y, (int) $m, 1)
-            ->endOfMonth()
-            ->addDays($paymentSite ?? 30)
-            ->toDateString();
+        $site = (int) ($paymentSite ?? 30);
+        $offset = $site - 30;
+
+        $monthIndex = 1; // 1=翌月, 2=翌々月, 3=翌々々月, ...
+        $day = 30;       // 翌月末日（30日扱い）
+
+        if ($offset > 0) {
+            $monthIndex += intdiv($offset, 30);
+            $day = $offset % 30;
+            if ($day === 0) {
+                $day = 30; // 月末扱い
+            } else {
+                $monthIndex++;
+            }
+        }
+
+        $monthLabel = match ($monthIndex) {
+            1 => '翌月',
+            2 => '翌々月',
+            3 => '翌々々月',
+            default => sprintf('翌+%dヶ月', $monthIndex - 1),
+        };
+
+        $dayLabel = $day === 30 ? '末日' : sprintf('%d日', $day);
+
+        return sprintf('月末締め%s%s現金お支払', $monthLabel, $dayLabel);
     }
 
     private function formatBankInfo(?Tenant $tenant): ?string

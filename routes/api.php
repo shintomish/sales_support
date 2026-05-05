@@ -62,6 +62,8 @@ Route::prefix('v1')->middleware(['supabase.auth'])->group(function () {
 
     Route::get('settings/invoice-issuer', [InvoiceIssuerController::class, 'show']);
     Route::put('settings/invoice-issuer', [InvoiceIssuerController::class, 'update']);
+    Route::post('settings/invoice-issuer/logo', [InvoiceIssuerController::class, 'uploadLogo']);
+    Route::delete('settings/invoice-issuer/logo', [InvoiceIssuerController::class, 'deleteLogo']);
 
     Route::get('invoices',                [InvoiceController::class, 'index']);
     Route::post('invoices',               [InvoiceController::class, 'store']);

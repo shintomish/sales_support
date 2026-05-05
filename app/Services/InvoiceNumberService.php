@@ -9,8 +9,8 @@ use RuntimeException;
 /**
  * 請求書番号採番サービス（Phase C）
  *
- * フォーマット: INV-[customer.invoice_code]-YYYY-MM-NNNNN
- *   NNNNN は customer × year_month 内で 00001 から連番
+ * フォーマット: INV-[customer.invoice_code]-YYYYMM-NNN
+ *   NNN は customer × year_month 内で 001 から連番
  *
  * customer.invoice_code が空の顧客は採番不可（RuntimeException）。
  * 同時実行は invoices.invoice_number の UNIQUE 制約で担保し、
@@ -26,11 +26,13 @@ class InvoiceNumberService
             throw new RuntimeException('顧客に invoice_code が設定されていません: ' . $customer->id);
         }
 
-        $prefix = sprintf('INV-%s-%s-', $customer->invoice_code, $yearMonth);
+        // YYYY-MM → YYYYMM
+        $yearMonthCompact = str_replace('-', '', $yearMonth);
+        $prefix = sprintf('INV-%s-%s-', $customer->invoice_code, $yearMonthCompact);
 
         for ($attempt = 0; $attempt < self::MAX_RETRY; $attempt++) {
             $next = $this->nextSequence($customer->id, $yearMonth);
-            $candidate = $prefix . str_pad((string) $next, 5, '0', STR_PAD_LEFT);
+            $candidate = $prefix . str_pad((string) $next, 3, '0', STR_PAD_LEFT);
 
             if (!Invoice::withoutGlobalScopes()->where('invoice_number', $candidate)->exists()) {
                 return $candidate;

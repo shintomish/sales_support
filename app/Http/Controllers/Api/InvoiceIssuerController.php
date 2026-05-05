@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Tenant;
+use App\Services\SupabaseStorageService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -16,11 +17,17 @@ use Illuminate\Support\Facades\Auth;
  */
 class InvoiceIssuerController extends Controller
 {
+    public function __construct(
+        private readonly SupabaseStorageService $storage,
+    ) {}
+
     private const FIELDS = [
         'invoice_issuer_name',
         'invoice_issuer_postal_code',
         'invoice_issuer_address',
         'invoice_issuer_tel',
+        'invoice_issuer_fax',
+        'invoice_issuer_logo_path',
         'invoice_issuer_invoice_number',
         'invoice_issuer_bank_name',
         'invoice_issuer_bank_branch',
@@ -49,6 +56,7 @@ class InvoiceIssuerController extends Controller
             'invoice_issuer_postal_code'         => ['nullable', 'string', 'max:20'],
             'invoice_issuer_address'             => ['nullable', 'string', 'max:500'],
             'invoice_issuer_tel'                 => ['nullable', 'string', 'max:50'],
+            'invoice_issuer_fax'                 => ['nullable', 'string', 'max:50'],
             'invoice_issuer_invoice_number'      => ['nullable', 'string', 'max:30'],
             'invoice_issuer_bank_name'           => ['nullable', 'string', 'max:100'],
             'invoice_issuer_bank_branch'         => ['nullable', 'string', 'max:100'],
@@ -62,5 +70,61 @@ class InvoiceIssuerController extends Controller
         $tenant->save();
 
         return response()->json($tenant->only(self::FIELDS));
+    }
+
+    /**
+     * POST /api/v1/settings/invoice-issuer/logo
+     * 請求書発行元ロゴ画像をアップロードして tenants.invoice_issuer_logo_path に設定。
+     * 既存のロゴが設定されている場合は Storage 上のファイルも削除する。
+     */
+    public function uploadLogo(Request $request): JsonResponse
+    {
+        $user = Auth::user();
+        if (!in_array($user->role, ['super_admin', 'tenant_admin'], true)) {
+            return response()->json(['message' => '権限がありません'], 403);
+        }
+
+        $request->validate([
+            'logo' => ['required', 'file', 'mimes:png,jpg,jpeg,gif,webp', 'max:2048'],
+        ]);
+
+        $tenant = Tenant::query()->findOrFail($user->tenant_id);
+
+        if ($tenant->invoice_issuer_logo_path) {
+            try { $this->storage->delete($tenant->invoice_issuer_logo_path); }
+            catch (\Throwable $e) { report($e); }
+        }
+
+        $url = $this->storage->upload(
+            $request->file('logo'),
+            sprintf('invoice-issuer-logos/%d', $tenant->id),
+            'logo',
+        );
+
+        $tenant->invoice_issuer_logo_path = $url;
+        $tenant->save();
+
+        return response()->json(['invoice_issuer_logo_path' => $url]);
+    }
+
+    /**
+     * DELETE /api/v1/settings/invoice-issuer/logo
+     */
+    public function deleteLogo(): JsonResponse
+    {
+        $user = Auth::user();
+        if (!in_array($user->role, ['super_admin', 'tenant_admin'], true)) {
+            return response()->json(['message' => '権限がありません'], 403);
+        }
+
+        $tenant = Tenant::query()->findOrFail($user->tenant_id);
+        if ($tenant->invoice_issuer_logo_path) {
+            try { $this->storage->delete($tenant->invoice_issuer_logo_path); }
+            catch (\Throwable $e) { report($e); }
+            $tenant->invoice_issuer_logo_path = null;
+            $tenant->save();
+        }
+
+        return response()->json(null, 204);
     }
 }

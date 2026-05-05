@@ -12,20 +12,49 @@
         return sprintf('%s年%d月%d日', $era, (int) $d->format('n'), (int) $d->format('j'));
     };
 
+    /** 令和 表記 + 曜日付き（御支払期日用）"令和N年M月D日(曜)" */
+    $reiwaDow = function (?Carbon $d): string {
+        if (!$d) return '';
+        $y = (int) $d->format('Y');
+        $r = $y - 2018;
+        $era = $r === 1 ? '令和元' : "令和{$r}";
+        $dows = ['日','月','火','水','木','金','土'];
+        $dow  = $dows[(int) $d->format('w')];
+        return sprintf('%s年%d月%d日(%s)', $era, (int) $d->format('n'), (int) $d->format('j'), $dow);
+    };
+
     $issuedAt = $invoice->issued_date instanceof Carbon ? $invoice->issued_date : null;
     $dueAt    = $invoice->due_date instanceof Carbon ? $invoice->due_date : null;
 
-    [$y, $m] = array_pad(explode('-', $invoice->year_month), 2, null);
-    $periodStart = $y && $m ? Carbon::create((int) $y, (int) $m, 1) : null;
-    $periodEnd   = $periodStart ? $periodStart->copy()->endOfMonth() : null;
+    // (O) 支払条件 = (G) 支払期限文言から「現金」を除いたもの
+    $paymentCondition = $invoice->payment_terms_text
+        ? str_replace('現金', '', $invoice->payment_terms_text)
+        : null;
 
-    $logoPath = config('invoice.logo_path');
-    $logoData = null;
-    if ($logoPath && is_file($logoPath) && is_readable($logoPath)) {
-        $ext = strtolower(pathinfo($logoPath, PATHINFO_EXTENSION));
+    /**
+     * ロゴデータの解決（base64 埋め込み）
+     *  優先順位: invoice.issuer_logo_snapshot (URL) → config('invoice.logo_path') (ローカル)
+     */
+    $resolveLogoFromUrl = function (?string $url): ?string {
+        if (!$url) return null;
+        $contents = @file_get_contents($url);
+        if ($contents === false) return null;
+        $ext  = strtolower(pathinfo(parse_url($url, PHP_URL_PATH) ?: '', PATHINFO_EXTENSION)) ?: 'png';
         $mime = $ext === 'jpg' ? 'jpeg' : $ext;
-        $logoData = 'data:image/' . $mime . ';base64,' . base64_encode(file_get_contents($logoPath));
-    }
+        return 'data:image/' . $mime . ';base64,' . base64_encode($contents);
+    };
+    $resolveLogoFromPath = function (?string $path): ?string {
+        if (!$path || !is_file($path) || !is_readable($path)) return null;
+        $ext  = strtolower(pathinfo($path, PATHINFO_EXTENSION));
+        $mime = $ext === 'jpg' ? 'jpeg' : $ext;
+        return 'data:image/' . $mime . ';base64,' . base64_encode(file_get_contents($path));
+    };
+
+    $logoData = $resolveLogoFromUrl($invoice->issuer_logo_snapshot)
+             ?? $resolveLogoFromPath(config('invoice.logo_path'));
+
+    // 明細表の固定行数（新レイアウト）
+    $itemRows = 15;
 @endphp
 <!DOCTYPE html>
 <html lang="ja">
@@ -50,7 +79,7 @@ body {
     margin: 2mm 0 5mm 0;
     font-weight: normal;
 }
-.head { width: 100%; border-collapse: collapse; margin-bottom: 4mm; }
+.head { width: 100%; border-collapse: collapse; margin-bottom: 2mm; }
 .head-left, .head-right { vertical-align: top; width: 50%; }
 .recipient {
     font-size: 13pt;
@@ -59,29 +88,70 @@ body {
     display: inline-block;
     min-width: 78mm;
 }
-.head-right { text-align: left; padding-left: 8mm; }
-.logo { height: 11mm; display: block; margin-bottom: 1.5mm; }
-.issuer-block { font-size: 9pt; line-height: 1.45; }
-.issuer-name { text-align: right; margin-top: 0.5mm; }
+.head-right { text-align: right; padding-left: 8mm; }
+.logo { height: 12mm; display: block; margin-left: auto; margin-bottom: 1.5mm; }
+.issuer-block { display: inline-block; text-align: left; font-size: 9pt; line-height: 1.45; }
+.issuer-name  { margin-top: 0.5mm; }
 
-.meta { width: 100%; border-collapse: collapse; margin-bottom: 3mm; font-size: 9.5pt; line-height: 1.55; }
-.meta-left  { width: 60%; vertical-align: top; }
-.meta-right { width: 40%; vertical-align: top; text-align: left; padding-left: 4mm; }
-.meta-label { display: inline-block; }
-.under { border-bottom: 0.5pt solid #111; padding: 0 2mm; }
+/* 番号類（請求No./注文No./見積No./登録番号）— ブロック自体は右寄せ、内部の各行は左揃え */
+.numbers-block {
+    width: 100%;
+    margin-bottom: 2mm;
+    font-size: 9.5pt;
+    line-height: 1.4;
+    text-align: right;
+}
+.numbers-inner {
+    display: inline-block;
+    text-align: left;
+}
+.numbers-inner .num-row { white-space: nowrap; }
+.num-label {
+    display: inline-block;
+    min-width: 16mm;
+}
+.under {
+    border-bottom: 0.5pt solid #111;
+    padding: 0 2mm;
+    min-width: 50mm;
+    display: inline-block;
+    text-align: left;
+}
 
+/* 納期/納入場所/支払期限 — 左寄せ（独立行）。ラベルは均等割付で揃える */
+.left-meta {
+    margin-bottom: 1mm;
+    font-size: 9.5pt;
+    line-height: 1.45;
+}
+.left-meta .meta-label {
+    display: inline-block;
+    width: 18mm;
+    text-align: justify;
+    text-align-last: justify;
+}
+
+/* 合計金額ブロック — 左寄せ、下線が内消費税の閉じ括弧位置までに収まるよう幅制限 */
+.total-wrap {
+    margin: 1mm 0 1mm 0;
+    text-align: left;
+}
+.total-inner {
+    display: inline-block;
+    width: 56%;  /* 明細表の品名カラム(56%)右端 = 数量カラムとの罫線位置 */
+    text-align: left;
+}
 .grand-total {
     border-bottom: 0.7pt solid #111;
-    padding: 1mm 4mm;
-    margin: 2mm 0 1mm 0;
+    padding: 0.5mm 4mm;
     font-size: 12pt;
 }
 .gt-label  { letter-spacing: 0.4em; margin-right: 4mm; }
 .gt-amount { font-size: 15pt; margin-right: 4mm; }
 .gt-tax    { font-size: 10.5pt; }
-.grand-total-sub { text-align: center; font-size: 9.5pt; margin-bottom: 2mm; }
+.grand-total-sub { text-align: center; font-size: 9.5pt; margin-top: 0.5mm; }
 
-.items { width: 100%; border-collapse: collapse; font-size: 9pt; margin-bottom: 2mm; }
+.items { width: 100%; border-collapse: collapse; font-size: 9pt; margin-bottom: 1mm; }
 .items th, .items td { border: 0.5pt solid #111; padding: 0.6mm 2mm; }
 .items th { text-align: center; background: #fff; font-weight: normal; }
 .col-name   { width: 56%; }
@@ -96,10 +166,14 @@ body {
 .items tfoot .sub-label { text-align: center; }
 .items tfoot .total { font-weight: bold; }
 
-.remarks { width: 100%; border-collapse: collapse; margin-top: 1mm; font-size: 9pt; }
-.remarks td { border: 0.5pt solid #111; padding: 1.5mm 3mm; vertical-align: top; }
-.remarks-label { width: 14mm; text-align: center; background: #fde8e8; }
-.remarks-body  { line-height: 1.5; }
+/* 備考欄 — 枠線あり */
+.remarks-block {
+    margin-top: 1mm;
+    border: 0.5pt solid #111;
+    padding: 1.5mm 3mm;
+    font-size: 9pt;
+    line-height: 1.5;
+}
 </style>
 </head>
 <body>
@@ -124,8 +198,12 @@ body {
                 @if($invoice->issuer_address_snapshot)
                     <div>{{ $invoice->issuer_address_snapshot }}</div>
                 @endif
-                @if($invoice->issuer_tel_snapshot)
-                    <div>TEL：{{ $invoice->issuer_tel_snapshot }}</div>
+                @if($invoice->issuer_tel_snapshot || $invoice->issuer_fax_snapshot)
+                    <div>
+                        @if($invoice->issuer_tel_snapshot)TEL：{{ $invoice->issuer_tel_snapshot }}@endif
+                        @if($invoice->issuer_tel_snapshot && $invoice->issuer_fax_snapshot)　@endif
+                        @if($invoice->issuer_fax_snapshot)FAX：{{ $invoice->issuer_fax_snapshot }}@endif
+                    </div>
                 @endif
                 @if($invoice->issuer_name_snapshot)
                     <div class="issuer-name">{{ $invoice->issuer_name_snapshot }}</div>
@@ -135,35 +213,78 @@ body {
     </tr>
 </table>
 
-<table class="meta">
-    <tr>
-        <td class="meta-left">
-            @if($periodStart && $periodEnd)
-                <div><span class="meta-label">対&nbsp;象&nbsp;期&nbsp;間</span>：&nbsp;&nbsp;{{ $periodStart->format('Y年m月d日') }} ～ {{ $periodEnd->format('Y年m月d日') }}</div>
-            @endif
-            @if(!empty($invoice->customer_address_snapshot))
-                <div><span class="meta-label">設&nbsp;置&nbsp;場&nbsp;所</span>：&nbsp;&nbsp;{{ $invoice->customer_address_snapshot }}</div>
-            @endif
-            @if($dueAt)
-                <div><span class="meta-label">支&nbsp;払&nbsp;期&nbsp;限</span>：&nbsp;&nbsp;{{ $dueAt->format('Y年n月j日') }}　現金振り込み</div>
-            @endif
-            <div><span class="meta-label">有&nbsp;効&nbsp;期&nbsp;間</span>：&nbsp;&nbsp;30日間</div>
-        </td>
-        <td class="meta-right">
-            <div>請求書No.&nbsp;&nbsp;<span class="under">{{ $invoice->invoice_number }}</span></div>
-            @if($invoice->issuer_invoice_number_snapshot)
-                <div>登録番号.&nbsp;&nbsp;<span class="under">{{ $invoice->issuer_invoice_number_snapshot }}</span></div>
-            @endif
-        </td>
-    </tr>
-</table>
-
-<div class="grand-total">
-    <span class="gt-label">合&nbsp;計&nbsp;金&nbsp;額</span>
-    <span class="gt-amount">￥{{ number_format((float) $invoice->total) }}-</span>
-    <span class="gt-tax">（税込）</span>
+{{-- 番号類（客先名の下、ブロック自体は右寄せ・内部は左揃え） --}}
+<div class="numbers-block">
+    <div class="numbers-inner">
+        <div class="num-row"><span class="num-label">請求No.</span><span class="under">{{ $invoice->invoice_number }}</span></div>
+        <div class="num-row"><span class="num-label">注文No.</span><span class="under">{{ $invoice->order_number }}</span></div>
+        <div class="num-row"><span class="num-label">見積No.</span><span class="under">{{ $invoice->quote_number }}</span></div>
+        <div class="num-row"><span class="num-label">登録番号</span><span class="under">{{ $invoice->issuer_invoice_number_snapshot }}</span></div>
+    </div>
 </div>
-<div class="grand-total-sub">（内、消費税&nbsp;&nbsp;￥{{ number_format((float) $invoice->tax) }}-）</div>
+
+{{-- 納期/納入場所/支払期限（ラベルは均等割付で揃える） --}}
+<div class="left-meta">
+    @if($invoice->delivery_date_text)
+        <div><span class="meta-label">納期</span>：&nbsp;&nbsp;{{ $invoice->delivery_date_text }}</div>
+    @endif
+    @if($invoice->delivery_place_text)
+        <div><span class="meta-label">納入場所</span>：&nbsp;&nbsp;{{ $invoice->delivery_place_text }}</div>
+    @endif
+    @if($invoice->payment_terms_text)
+        <div><span class="meta-label">支払期限</span>：&nbsp;&nbsp;{{ $invoice->payment_terms_text }}</div>
+    @endif
+</div>
+
+<div class="total-wrap">
+    <div class="total-inner">
+        <div class="grand-total">
+            <span class="gt-label">合&nbsp;計&nbsp;金&nbsp;額</span>
+            <span class="gt-amount">￥{{ number_format((float) $invoice->total) }}</span>
+            <span class="gt-tax">（税込）</span>
+        </div>
+        <div class="grand-total-sub">（内、消費税&nbsp;&nbsp;￥{{ number_format((float) $invoice->tax) }}）</div>
+    </div>
+</div>
+
+@php
+    // 明細レイアウト: メタ行（件名・作業期間・月額・作業場所・支払条件）の間に1行ずつ空行を挟む。
+    // 月額の行には基本額の数量・単価・金額を表示する（基本額の line を流用）。
+    $basicLine = $invoice->lines->firstWhere(fn($l) => str_contains((string) $l->description, '基本月額'));
+    $extraLines = $invoice->lines->filter(fn($l) => $l !== $basicLine)->values();
+
+    $rows = [];
+    if ($invoice->subject_name)        $rows[] = ['name' => '・件名：' . $invoice->subject_name];
+    $rows[] = ['blank' => true];
+    if ($invoice->work_period_text)    $rows[] = ['name' => '・作業期間：' . $invoice->work_period_text];
+    $rows[] = ['blank' => true];
+    if ($basicLine) {
+        $rows[] = [
+            'name' => '・月額:' . $basicLine->description,
+            'qty'  => rtrim(rtrim(number_format((float) $basicLine->quantity, 2), '0'), '.'),
+            'unit_price' => $basicLine->unit_price,
+            'amount' => $basicLine->amount,
+        ];
+    } else {
+        $rows[] = ['name' => '・月額：'];
+    }
+    $rows[] = ['blank' => true];
+    $rows[] = ['name' => '・作業場所：' . ($invoice->work_location ?? '')];
+    $rows[] = ['blank' => true];
+    if ($paymentCondition) $rows[] = ['name' => '・支払条件：' . $paymentCondition];
+    foreach ($extraLines as $l) {
+        $rows[] = ['blank' => true];
+        $rows[] = [
+            'name' => $l->description,
+            'qty'  => rtrim(rtrim(number_format((float) $l->quantity, 2), '0'), '.'),
+            'unit_price' => $l->unit_price,
+            'amount' => $l->amount,
+        ];
+    }
+
+    // 明細表の最低行数を揃えるための空行
+    $padCount = max(0, $itemRows - count($rows));
+@endphp
 
 <table class="items">
     <thead>
@@ -175,41 +296,58 @@ body {
         </tr>
     </thead>
     <tbody>
-        @forelse($invoice->lines as $line)
-            <tr>
-                <td class="name">{{ $line->description }}</td>
-                <td class="qty">{{ rtrim(rtrim(number_format((float) $line->quantity, 2), '0'), '.') }}{{ $line->unit ? ' '.$line->unit : '' }}</td>
-                <td class="num">￥{{ number_format((float) $line->unit_price) }}</td>
-                <td class="num">￥{{ number_format((float) $line->amount) }}</td>
-            </tr>
-        @empty
-            <tr><td class="name">明細なし</td><td></td><td></td><td></td></tr>
-        @endforelse
-        @for($i = 0; $i < max(0, 6 - $invoice->lines->count()); $i++)
+        @foreach($rows as $r)
+            @if(!empty($r['blank']))
+                <tr><td class="name blank">&nbsp;</td><td></td><td></td><td></td></tr>
+            @else
+                <tr>
+                    <td class="name">{{ $r['name'] }}</td>
+                    <td class="qty">{{ $r['qty'] ?? '' }}</td>
+                    <td class="num">{{ isset($r['unit_price']) ? '￥'.number_format((float) $r['unit_price']) : '' }}</td>
+                    <td class="num">{{ isset($r['amount']) ? '￥'.number_format((float) $r['amount']) : '' }}</td>
+                </tr>
+            @endif
+        @endforeach
+        @for($i = 0; $i < $padCount; $i++)
             <tr><td class="name blank">&nbsp;</td><td></td><td></td><td></td></tr>
         @endfor
     </tbody>
     <tfoot>
         <tr><td></td><td colspan="2" class="sub-label">小　計</td><td class="num">￥{{ number_format((float) $invoice->subtotal) }}</td></tr>
-        <tr><td></td><td colspan="2" class="sub-label">消費税（10%）</td><td class="num">￥{{ number_format((float) $invoice->tax) }}</td></tr>
+        @php
+            $byRate = [];
+            foreach ($invoice->lines as $l) {
+                $r = (string) $l->tax_rate;
+                $byRate[$r] = ($byRate[$r] ?? 0) + (float) $l->amount;
+            }
+        @endphp
+        @foreach($byRate as $rate => $sub)
+            @php
+                $pct = (int) round(((float) $rate) * 100);
+                $taxAmt = round($sub * (float) $rate);
+            @endphp
+            <tr>
+                <td></td>
+                <td colspan="2" class="sub-label">消費税（{{ $pct }}%）</td>
+                <td class="num">{{ $pct === 0 ? '' : '￥'.number_format($taxAmt) }}</td>
+            </tr>
+        @endforeach
         <tr><td></td><td colspan="2" class="sub-label total">合　計</td><td class="num total">￥{{ number_format((float) $invoice->total) }}</td></tr>
     </tfoot>
 </table>
 
-<table class="remarks">
-    <tr>
-        <td class="remarks-label">備考</td>
-        <td class="remarks-body">
-            @if($invoice->notes)
-                <div>{!! nl2br(e($invoice->notes)) !!}</div>
-            @endif
-            @if($invoice->issuer_bank_snapshot)
-                <div>お振込先</div>
-                <div>&nbsp;&nbsp;{{ $invoice->issuer_bank_snapshot }}</div>
-            @endif
-        </td>
-    </tr>
-</table>
+<div class="remarks-block">
+    @if($dueAt)
+        <div>■御支払期日：&nbsp;{{ $reiwaDow($dueAt) }}</div>
+    @endif
+    @if($invoice->issuer_bank_snapshot)
+        <div>■お振込先：&nbsp;{{ $invoice->issuer_bank_snapshot }}</div>
+    @endif
+    <div>※振込手数料はお客様にてご負担くださいますようお願い申し上げます。</div>
+    @if($invoice->notes)
+        <div style="margin-top:2mm;">{!! nl2br(e($invoice->notes)) !!}</div>
+    @endif
+</div>
 
 </body>
 </html>

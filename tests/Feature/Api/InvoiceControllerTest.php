@@ -61,7 +61,7 @@ class InvoiceControllerTest extends TestCase
         ]);
 
         $res->assertCreated();
-        $this->assertSame('INV-A001-2026-04-00001', $res->json('invoice_number'));
+        $this->assertSame('INV-A001-202604-001', $res->json('invoice_number'));
         $this->assertSame('draft', $res->json('status'));
         // 基本800000(10%) + 交通費5000(0%) → 小計805000、税80000、合計885000
         $this->assertEquals(805000, $res->json('subtotal'));
@@ -111,24 +111,24 @@ class InvoiceControllerTest extends TestCase
         $res1 = $this->postJson('/api/v1/invoices', ['deal_id' => $d1->id, 'year_month' => '2026-04']);
         $res2 = $this->postJson('/api/v1/invoices', ['deal_id' => $d2->id, 'year_month' => '2026-04']);
 
-        $this->assertSame('INV-A001-2026-04-00001', $res1->json('invoice_number'));
-        $this->assertSame('INV-A001-2026-04-00002', $res2->json('invoice_number'));
+        $this->assertSame('INV-A001-202604-001', $res1->json('invoice_number'));
+        $this->assertSame('INV-A001-202604-002', $res2->json('invoice_number'));
     }
 
     /**
-     * 支払期限 = 当月末 + payment_site日（月末締め N日後支払）。
-     *   2026-04 / 50d → 2026-06-19
-     *   2026-05 / 50d → 2026-07-20
-     *   2026-04 / 30d → 2026-05-30
+     * 支払期限 = 翌月末 + (payment_site - 30)日。土日祝は翌営業日に振替。
+     *   2026-04 / 50d → 5/31 + 20 = 6/20(土) → 6/22(月)
+     *   2026-05 / 50d → 6/30 + 20 = 7/20(月) は海の日 → 7/21(火)
+     *   2026-04 / 30d → 5/31(日) → 6/1(月)
      */
     public function test_due_date_uses_end_of_billing_month_plus_payment_site(): void
     {
         $this->actingAsUser();
 
         $cases = [
-            ['payment_site' => 50, 'year_month' => '2026-04', 'expected' => '2026-06-19'],
-            ['payment_site' => 50, 'year_month' => '2026-05', 'expected' => '2026-07-20'],
-            ['payment_site' => 30, 'year_month' => '2026-04', 'expected' => '2026-05-30'],
+            ['payment_site' => 50, 'year_month' => '2026-04', 'expected' => '2026-06-22'],
+            ['payment_site' => 50, 'year_month' => '2026-05', 'expected' => '2026-07-21'],
+            ['payment_site' => 30, 'year_month' => '2026-04', 'expected' => '2026-06-01'],
         ];
 
         foreach ($cases as $i => $c) {
@@ -168,8 +168,8 @@ class InvoiceControllerTest extends TestCase
         $r1 = $this->postJson('/api/v1/invoices', ['deal_id' => $d->id, 'year_month' => '2026-04']);
         $r2 = $this->postJson('/api/v1/invoices', ['deal_id' => $d->id, 'year_month' => '2026-05']);
 
-        $this->assertSame('INV-A001-2026-04-00001', $r1->json('invoice_number'));
-        $this->assertSame('INV-A001-2026-05-00001', $r2->json('invoice_number'));
+        $this->assertSame('INV-A001-202604-001', $r1->json('invoice_number'));
+        $this->assertSame('INV-A001-202605-001', $r2->json('invoice_number'));
     }
 
     public function test_update_recalculates_totals_with_mixed_tax_rates(): void
@@ -241,7 +241,7 @@ class InvoiceControllerTest extends TestCase
             'deal_id'        => $otherDeal->id,
             'customer_id'    => $otherCustomer->id,
             'year_month'     => '2026-04',
-            'invoice_number' => 'INV-B001-2026-04-00001',
+            'invoice_number' => 'INV-B001-202604-001',
             'issued_date'    => '2026-04-30',
             'status'         => 'draft',
         ])->save();

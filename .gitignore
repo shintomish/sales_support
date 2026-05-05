@@ -22,6 +22,9 @@ output/
 /storage/pail
 /storage/api-docs/
 /vendor
+
+# Puppeteer (Browsershot) cache — invoice PDF 生成用 Chromium。環境依存
+/.cache
 Homestead.json
 Homestead.yaml
 Thumbs.db

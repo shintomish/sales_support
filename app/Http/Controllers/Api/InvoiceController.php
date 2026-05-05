@@ -102,10 +102,18 @@ class InvoiceController extends Controller
     public function update(Request $request, Invoice $invoice): JsonResponse
     {
         $validated = $request->validate([
-            'issued_date' => ['nullable', 'date'],
-            'due_date'    => ['nullable', 'date'],
-            'notes'       => ['nullable', 'string', 'max:2000'],
-            'status'      => ['nullable', 'in:draft,issued'],
+            'issued_date'           => ['nullable', 'date'],
+            'due_date'              => ['nullable', 'date'],
+            'notes'                 => ['nullable', 'string', 'max:2000'],
+            'status'                => ['nullable', 'in:draft,issued'],
+            'order_number'          => ['nullable', 'string', 'max:100'],
+            'quote_number'          => ['nullable', 'string', 'max:100'],
+            'subject_name'          => ['nullable', 'string', 'max:255'],
+            'work_period_text'      => ['nullable', 'string', 'max:100'],
+            'work_location'         => ['nullable', 'string', 'max:255'],
+            'delivery_date_text'    => ['nullable', 'string', 'max:100'],
+            'delivery_place_text'   => ['nullable', 'string', 'max:100'],
+            'payment_terms_text'    => ['nullable', 'string', 'max:100'],
             'lines'                => ['nullable', 'array'],
             'lines.*.description'  => ['required_with:lines', 'string', 'max:500'],
             'lines.*.quantity'     => ['required_with:lines', 'numeric'],
@@ -114,7 +122,12 @@ class InvoiceController extends Controller
             'lines.*.tax_rate'     => ['required_with:lines', 'numeric', 'in:0,0.08,0.10'],
         ]);
 
-        $invoice->fill(array_intersect_key($validated, array_flip(['issued_date', 'due_date', 'notes', 'status'])));
+        $metaKeys = [
+            'issued_date', 'due_date', 'notes', 'status',
+            'order_number', 'quote_number', 'subject_name', 'work_period_text',
+            'work_location', 'delivery_date_text', 'delivery_place_text', 'payment_terms_text',
+        ];
+        $invoice->fill(array_intersect_key($validated, array_flip($metaKeys)));
 
         if (array_key_exists('lines', $validated)) {
             $invoice->lines()->delete();
