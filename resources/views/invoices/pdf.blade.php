@@ -174,6 +174,15 @@ body {
     font-size: 9pt;
     line-height: 1.5;
 }
+/* お振込先行 — 長い口座情報を1行に強制（折り返し禁止 + 自動縮小） */
+.remarks-block .bank-row {
+    white-space: nowrap;
+    overflow: hidden;
+}
+.remarks-block .bank-info {
+    font-size: 7.5pt;
+    letter-spacing: -0.05em;
+}
 </style>
 </head>
 <body>
@@ -341,7 +350,7 @@ body {
         <div>■御支払期日：&nbsp;{{ $reiwaDow($dueAt) }}</div>
     @endif
     @if($invoice->issuer_bank_snapshot)
-        <div>■お振込先：&nbsp;{{ $invoice->issuer_bank_snapshot }}</div>
+        <div class="bank-row">■お振込先：<span class="bank-info">{{ $invoice->issuer_bank_snapshot }}</span></div>
     @endif
     <div>※振込手数料はお客様にてご負担くださいますようお願い申し上げます。</div>
     @if($invoice->notes)
