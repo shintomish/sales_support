@@ -584,6 +584,12 @@ class EngineerMailScoringService
             if ($name !== '') return $name;
         }
 
+        // 優先2.5: 【氏　名】TY や 【氏名】山田太郎 形式（角括弧 + 全角空白許容）
+        if (preg_match('/【\s*氏[\s　]*名\s*】[\s　]*([^\s\n　■【（(]{1,15})/u', $text, $m)) {
+            $name = trim(preg_replace('/[（(].*/u', '', $m[1]));
+            if ($name !== '') return $name;
+        }
+
         // 次点: 氏名：XXX 形式（担当者：は除外）
         if (preg_match('/(?:氏名|技術者名|エンジニア名|名前)[：:　\s]*([^\s\n　■]{2,10})/u', $text, $m)) {
             $name = trim($m[1]);
