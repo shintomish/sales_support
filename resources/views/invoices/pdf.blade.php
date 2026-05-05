@@ -114,9 +114,13 @@ body {
     border-bottom: 0.5pt solid #111;
     padding: 0 2mm;
     min-width: 50mm;
+    min-height: 1em;
     display: inline-block;
     text-align: left;
+    line-height: 1.4;
 }
+/* 値が空のときも下線の高さを保つ */
+.under:empty::before { content: "\00a0"; }
 
 /* 納期/納入場所/支払期限 — 左寄せ（独立行）。ラベルは均等割付で揃える */
 .left-meta {
@@ -174,14 +178,13 @@ body {
     font-size: 9pt;
     line-height: 1.5;
 }
-/* お振込先行 — 長い口座情報を1行に強制（折り返し禁止 + 自動縮小） */
+/* お振込先行 — 長い口座情報を1行に強制。本文幅いっぱい（右端まで）使う */
 .remarks-block .bank-row {
     white-space: nowrap;
-    overflow: hidden;
 }
 .remarks-block .bank-info {
-    font-size: 7.5pt;
-    letter-spacing: -0.05em;
+    font-size: 8.5pt;
+    letter-spacing: -0.02em;
 }
 </style>
 </head>
