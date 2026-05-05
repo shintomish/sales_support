@@ -70,7 +70,7 @@ class SendDailySalesReport extends Command
             "tenant_id=%d: 受信者 %d名 / 要対応 %d件 / AIサマリ %s",
             $tenantId,
             count($recipients),
-            $data['total_action_items'] ?? 0,
+            $data['action_total'] ?? 0,
             !empty($data['ai_summary']) ? 'あり' : 'なし',
         ));
 
