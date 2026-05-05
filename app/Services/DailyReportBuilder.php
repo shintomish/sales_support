@@ -97,7 +97,8 @@ class DailyReportBuilder
     /**
      * [2/3] 新着スコア上位 (engineer または project mail source)
      *  - 直近24h かつ score >= SCORE_THRESHOLD
-     *  - 上位5件＋件数
+     *  - 同一案件・同一技術者の重複は (title|customer) / (name|skills) でユニーク化
+     *  - ユニーク後の件数と上位5件を返す
      *
      * @param class-string $modelClass EngineerMailSource::class | ProjectMailSource::class
      */
@@ -105,17 +106,27 @@ class DailyReportBuilder
     {
         $isEngineer = $modelClass === EngineerMailSource::class;
 
-        $query = $modelClass::withoutGlobalScopes()
+        // ユニーク化のためにある程度多めに取得してから重複排除
+        $rows = $modelClass::withoutGlobalScopes()
             ->where('tenant_id', $tenantId)
             ->where('score', '>=', self::SCORE_THRESHOLD)
-            ->where('created_at', '>=', $from);
-
-        $count = (clone $query)->count();
-        $top   = (clone $query)
+            ->where('created_at', '>=', $from)
             ->orderByDesc('score')
             ->orderByDesc('created_at')
-            ->take(5)
+            ->take(200)
             ->get();
+
+        // 重複排除キー
+        $unique = $rows->unique(function ($m) use ($isEngineer) {
+            if ($isEngineer) {
+                $skillsKey = is_array($m->skills) ? implode(',', $m->skills) : '';
+                return ($m->name ?: '?') . '|' . $skillsKey;
+            }
+            return ($m->title ?: '?') . '|' . ($m->customer_name ?: '?');
+        })->values();
+
+        $count = $unique->count();
+        $top   = $unique->take(5);
 
         return [
             'count' => $count,
@@ -233,20 +244,27 @@ class DailyReportBuilder
         $exp  = $sections['expiring']         ?? null;
 
         $lines = [];
-        $lines[] = "あなたはSES企業の営業マネージャーです。以下の状況を踏まえ、今日取るべきアクションを優先順位順に最大3つ、各1〜2行で簡潔に箇条書きしてください。";
-        $lines[] = "出力ルール: 「1. ◯◯◯」「2. ◯◯◯」のように番号付きの行のみ、行間に空行は入れず、前置き・後書き不要。";
+        $lines[] = "あなたはSES企業の営業マネージャー向けのレポーターです。";
+        $lines[] = "以下の【状況サマリ】に書かれた事実だけを根拠に、今日確認すべきトピックを最大3つ、優先順位順に1〜2行で箇条書きしてください。";
         $lines[] = "";
-        $lines[] = "## 状況サマリ（直近24h）";
+        $lines[] = "厳守ルール:";
+        $lines[] = "- 状況サマリに登場する案件名・技術者名・契約名のみを引用してよい。";
+        $lines[] = "- システム内に存在を確認できないリソース（例: 「PL/SQL人材を優先的にマッチング」等）の推奨は禁止。";
+        $lines[] = "- 「マッチングを推進」「提案を進める」のような実行アドバイスではなく、「期日・件数・対象名の確認」に留める。";
+        $lines[] = "- 期限切れ間近のSES契約があれば最優先で取り上げる。";
+        $lines[] = "- 出力は「1. ◯◯◯」「2. ◯◯◯」のように番号付き行のみ。行間に空行は入れない。前置き・後書き不要。";
+        $lines[] = "";
+        $lines[] = "## 状況サマリ（直近24h、重複排除済み）";
 
         if ($eng && $eng['count'] > 0) {
-            $lines[] = "- 新着 技術者(スコア80+): {$eng['count']}件";
+            $lines[] = "- 新着 技術者(スコア80+ ユニーク): {$eng['count']}件";
             foreach ($eng['top'] as $m) {
                 $price = $m['unit_price_max'] ? " ({$m['unit_price_max']}万)" : '';
                 $lines[] = "  - スコア{$m['score']} {$m['title']}{$price} {$m['skills_summary']}";
             }
         }
         if ($prj && $prj['count'] > 0) {
-            $lines[] = "- 新着 案件(スコア80+): {$prj['count']}件";
+            $lines[] = "- 新着 案件(スコア80+ ユニーク): {$prj['count']}件";
             foreach ($prj['top'] as $m) {
                 $price = $m['unit_price_max'] ? " ({$m['unit_price_max']}万)" : '';
                 $sub   = $m['sub'] ? " / {$m['sub']}" : '';
