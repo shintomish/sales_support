@@ -43,7 +43,7 @@ class DailyReportBuilder
      */
     public function build(int $tenantId): array
     {
-        $today     = Carbon::today();
+        $today     = Carbon::today('Asia/Tokyo');
         $yesterday = $today->copy()->subDay();
 
         $sections = [];
@@ -181,7 +181,7 @@ class DailyReportBuilder
     /** [5] 期限切れ間近のSES契約（今後 N 日以内、最大20件） */
     private function collectExpiringContracts(int $tenantId, int $days): array
     {
-        $today = Carbon::today();
+        $today = Carbon::today('Asia/Tokyo');
         $limit = $today->copy()->addDays($days);
 
         $contracts = SesContract::withoutGlobalScope(TenantScope::class)
