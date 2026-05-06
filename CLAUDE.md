@@ -54,6 +54,7 @@ docker compose exec app tail -f storage/logs/sales_sup-$(date +%Y-%m-%d).log
 - テナント分離はGlobalScopeが担当
 - Schedule::call()でジョブ直接実行（Queueワーカー不要）
 - Supabase Realtimeループ防止: INSERTイベントのみ購読
+- **新規テーブル作成 migration では `up()` 内に `DB::statement('ALTER TABLE public.{name} ENABLE ROW LEVEL SECURITY')` を必ず追加**（Supabase の PostgREST 経由で外部公開されるのを防ぐため。policy は作らず default deny で運用。Laravel は service_role でバイパス）
 
 ## ディレクトリ構成
 ```
