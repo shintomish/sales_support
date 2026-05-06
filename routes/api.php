@@ -26,6 +26,7 @@ use App\Http\Controllers\Api\BillingSummaryController;
 use App\Http\Controllers\Api\InvoiceController;
 use App\Http\Controllers\Api\InvoiceIssuerController;
 use App\Http\Controllers\Api\ReportRecipientController;
+use App\Http\Controllers\Api\FeedbackController;
 use App\Http\Controllers\Api\EmailBodyTemplateController;
 use App\Http\Controllers\Api\DeliveryAddressController;
 use App\Http\Controllers\Api\DeliveryCampaignController;
@@ -70,6 +71,11 @@ Route::prefix('v1')->middleware(['supabase.auth'])->group(function () {
     Route::post('settings/report-recipients',                [ReportRecipientController::class, 'store']);
     Route::put('settings/report-recipients/{recipient}',     [ReportRecipientController::class, 'update']);
     Route::delete('settings/report-recipients/{recipient}',  [ReportRecipientController::class, 'destroy']);
+
+    // 社内バグ・要望フィードバック
+    Route::post('feedback',              [FeedbackController::class, 'store']);
+    Route::get('admin/feedback',         [FeedbackController::class, 'index']);
+    Route::patch('admin/feedback/{id}',  [FeedbackController::class, 'update']);
 
     Route::get('invoices',                [InvoiceController::class, 'index']);
     Route::post('invoices',               [InvoiceController::class, 'store']);
