@@ -47,7 +47,7 @@ class UnsubscribeController extends Controller
 
         $address->update([
             'is_active'          => false,
-            'unsubscribe_reason' => 'self_unsubscribed',
+            'unsubscribe_reason' => 'recipient_unsubscribed',
             'unsubscribed_at'    => now(),
         ]);
 

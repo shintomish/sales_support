@@ -157,7 +157,7 @@ class DeliveryAddressController extends Controller
         if (array_key_exists('is_active', $validated)) {
             if ($validated['is_active'] === false && $address->is_active) {
                 if (!$reasonExplicit) {
-                    $validated['unsubscribe_reason'] = 'user_disabled';
+                    $validated['unsubscribe_reason'] = 'operator_disabled';
                 }
                 $validated['unsubscribed_at'] = now();
             } elseif ($validated['is_active'] === true && !$address->is_active) {
@@ -201,7 +201,7 @@ class DeliveryAddressController extends Controller
 
         // 一括で無効化する場合は user_disabled として理由を残す
         if ($validated['is_active'] === false) {
-            $payload['unsubscribe_reason'] = 'user_disabled';
+            $payload['unsubscribe_reason'] = 'operator_disabled';
             $payload['unsubscribed_at']    = now();
         } else {
             $payload['unsubscribe_reason'] = null;
