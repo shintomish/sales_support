@@ -498,6 +498,84 @@ class DeliveryCampaignController extends Controller
     }
 
     /**
+     * 受信した返信メールに対する個別送信
+     * POST /api/v1/delivery-campaigns/{id}/send-reply
+     *
+     * 既存キャンペーンを親として新規 DeliveryCampaign + DeliverySendHistory を作成。
+     * 親が project_mail_id / engineer_mail_source_id を持つ場合は引き継ぐ。
+     */
+    public function sendReply(Request $request, int $id): JsonResponse
+    {
+        $tenantId = auth()->user()->tenant_id;
+        $parent   = DeliveryCampaign::where('tenant_id', $tenantId)->findOrFail($id);
+
+        $v = $request->validate([
+            'to'      => 'required|email',
+            'to_name' => 'nullable|string|max:255',
+            'subject' => 'required|string|max:500',
+            'body'    => 'required|string',
+        ]);
+
+        $userId      = auth()->id();
+        $senderName  = auth()->user()->name ?? '';
+        $senderEmail = config('mail.from.address') ?? '';
+
+        // 親のソース紐付けを引き継ぎ。proposal にすることで提案スレッドにも現れる
+        $sendType = $parent->engineer_mail_source_id ? 'engineer_proposal'
+                  : ($parent->project_mail_id ? 'proposal' : 'delivery');
+
+        $campaign = DeliveryCampaign::create([
+            'tenant_id'               => $tenantId,
+            'send_type'               => $sendType,
+            'project_mail_id'         => $parent->project_mail_id,
+            'engineer_mail_source_id' => $parent->engineer_mail_source_id,
+            'user_id'                 => $userId,
+            'subject'                 => $v['subject'],
+            'body'                    => $v['body'],
+            'total_count'             => 1,
+            'success_count'           => 0,
+            'failed_count'            => 0,
+            'sent_at'                 => now(),
+        ]);
+
+        $messageId = '<' . \Illuminate\Support\Str::uuid() . '@aizen-sol.co.jp>';
+
+        try {
+            \Illuminate\Support\Facades\Mail::to($v['to'])->send(
+                new \App\Mail\ProposalMail($v['subject'], $v['body'], $senderName, $senderEmail, [], $messageId)
+            );
+
+            $history = DeliverySendHistory::create([
+                'tenant_id'      => $tenantId,
+                'campaign_id'    => $campaign->id,
+                'email'          => $v['to'],
+                'name'           => $v['to_name'] ?? null,
+                'status'         => 'sent',
+                'ses_message_id' => $messageId,
+            ]);
+            $campaign->update(['success_count' => 1]);
+
+            return response()->json([
+                'campaign_id' => $campaign->id,
+                'history_id'  => $history->id,
+                'message'     => '送信しました',
+            ], 201);
+        } catch (\Throwable $e) {
+            DeliverySendHistory::create([
+                'tenant_id'      => $tenantId,
+                'campaign_id'    => $campaign->id,
+                'email'          => $v['to'],
+                'name'           => $v['to_name'] ?? null,
+                'status'         => 'failed',
+                'ses_message_id' => $messageId,
+                'error_message'  => $e->getMessage(),
+            ]);
+            $campaign->update(['failed_count' => 1]);
+            return response()->json(['message' => 'メール送信に失敗しました: ' . $e->getMessage()], 500);
+        }
+    }
+
+    /**
      * 単一履歴の再送信
      * POST /api/v1/delivery-campaigns/{campaignId}/histories/{historyId}/resend
      */

@@ -273,5 +273,6 @@ Route::prefix('v1')->middleware(['supabase.auth'])->group(function () {
         Route::get('/{id}',          [DeliveryCampaignController::class, 'show']);
         Route::get('/{id}/progress', [DeliveryCampaignController::class, 'progress']);
         Route::post('/{campaignId}/histories/{historyId}/resend', [DeliveryCampaignController::class, 'resendHistory']);
+        Route::post('/{id}/send-reply', [DeliveryCampaignController::class, 'sendReply']);
     });
 });
