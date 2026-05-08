@@ -37,8 +37,12 @@ class InvoiceMail extends Mailable
     public function content(): Content
     {
         return new Content(
+            view: 'mails.invoice',
             text: 'mails.invoice_text',
-            with: ['body' => $this->bodyText],
+            with: [
+                'body'    => $this->bodyText,
+                'subject' => $this->subjectText,
+            ],
         );
     }
 
