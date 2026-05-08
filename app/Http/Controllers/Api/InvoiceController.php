@@ -185,7 +185,7 @@ class InvoiceController extends Controller
     public function mailTemplate(Invoice $invoice): JsonResponse
     {
         $tenant = \App\Models\Tenant::find($invoice->tenant_id);
-        $defaultSubject = '【請求書】{invoice_number}（{year_month}分）';
+        $defaultSubject = '【請求書】{invoice_number}({year_month}分)';
         $defaultBody = "{customer_name} 様\n\n"
             . "いつもお世話になっております。\n"
             . "{year_month}分の請求書を添付にてお送りいたします。\n\n"
@@ -196,6 +196,25 @@ class InvoiceController extends Controller
 
         $subject = $tenant?->invoice_email_subject_template ?: $defaultSubject;
         $body    = $tenant?->invoice_email_body_template    ?: $defaultBody;
+
+        // ログインユーザーのメール署名を末尾に付加
+        $user = \Illuminate\Support\Facades\Auth::user();
+        $tpl  = $user ? \App\Models\EmailBodyTemplate::where('tenant_id', $invoice->tenant_id)
+            ->where('user_id', $user->id)->first() : null;
+        $signatureLines = ['', '--'];
+        if ($tenant?->invoice_issuer_name)        $signatureLines[] = $tenant->invoice_issuer_name;
+        if ($tpl?->name ?? $user?->name)          $signatureLines[] = $tpl?->name ?? $user?->name;
+        if ($tpl?->department)                    $signatureLines[] = $tpl->department;
+        if ($tpl?->position)                      $signatureLines[] = $tpl->position;
+        if ($tenant?->invoice_issuer_postal_code) $signatureLines[] = '〒' . $tenant->invoice_issuer_postal_code . '　' . $tenant->invoice_issuer_address;
+        $tel = $tpl?->mobile ?: $tenant?->invoice_issuer_tel;
+        if ($tel)                                 $signatureLines[] = 'TEL：' . $tel;
+        if ($tenant?->invoice_issuer_fax)         $signatureLines[] = 'FAX：' . $tenant->invoice_issuer_fax;
+        $emailAddr = $tpl?->email ?: $user?->email;
+        if ($emailAddr)                           $signatureLines[] = 'E-Mail：' . $emailAddr;
+        if ($tenant?->invoice_issuer_url)         $signatureLines[] = $tenant->invoice_issuer_url;
+        $signature = implode("\n", $signatureLines);
+        $body = $body . "\n" . $signature . "\n";
 
         $invoice->load('customer:id,company_name,primary_contact_id,invoice_delivery_method', 'customer.contacts:id,customer_id,name,email');
 
