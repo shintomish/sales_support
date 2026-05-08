@@ -177,6 +177,26 @@ class InvoiceController extends Controller
     }
 
     /**
+     * GET /api/v1/invoices/{invoice}/latest-post
+     * 該当 invoice の最新郵送記録（モーダル prefill 用）
+     */
+    public function latestPost(Invoice $invoice): JsonResponse
+    {
+        $r = \App\Models\InvoiceSendHistory::where('invoice_id', $invoice->id)
+            ->where('method', 'post')
+            ->orderByDesc('sent_at')
+            ->orderByDesc('id')
+            ->first();
+        if (!$r) return response()->json(null);
+        return response()->json([
+            'id'               => $r->id,
+            'sent_at'          => $r->sent_at?->format('Y-m-d'),
+            'note'             => $r->subject,
+            'attachments_meta' => $r->attachments_meta ?? [],
+        ]);
+    }
+
+    /**
      * POST /api/v1/invoices/{invoice}/record-post
      * 郵送した実績を invoice_send_histories に method=post で記録
      */
