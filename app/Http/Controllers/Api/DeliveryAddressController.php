@@ -38,7 +38,7 @@ class DeliveryAddressController extends Controller
 
         $sortBy = $request->input('sort_by', 'id');
         $sortOrder = $request->input('sort_order', 'asc');
-        $allowedSorts = ['id', 'name', 'email', 'occupation', 'is_active'];
+        $allowedSorts = ['id', 'name', 'email', 'occupation', 'is_active', 'unsubscribe_reason'];
         if (!in_array($sortBy, $allowedSorts)) $sortBy = 'id';
         if (!in_array($sortOrder, ['asc', 'desc'])) $sortOrder = 'asc';
 
