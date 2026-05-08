@@ -310,11 +310,8 @@ class InvoiceController extends Controller
             'subject'                => ['required', 'string', 'max:500'],
             'body'                   => ['required', 'string'],
             'attach_invoice'         => ['nullable', 'boolean'],
-            'attach_cover_letter'    => ['nullable', 'boolean'],
-            'cover_items'            => ['nullable', 'array'],
-            'cover_items.invoice'    => ['nullable', 'boolean'],
-            'cover_items.timesheet'  => ['nullable', 'boolean'],
-            'cover_items.transport'  => ['nullable', 'boolean'],
+            'attachments'            => ['nullable', 'array'],
+            'attachments.*'          => ['file', 'max:10240'],
         ]);
 
         $attachments = [];
@@ -332,21 +329,17 @@ class InvoiceController extends Controller
             } catch (\Throwable $e) { report($e); }
         }
 
-        // 送付状を生成して添付
-        if (!empty($v['attach_cover_letter'])) {
-            $items = [];
-            $ci = $v['cover_items'] ?? [];
-            if (!empty($ci['invoice']))   $items[] = ['name' => '御請求書',   'count' => 1];
-            if (!empty($ci['timesheet'])) $items[] = ['name' => '勤務表',     'count' => 1];
-            if (!empty($ci['transport'])) $items[] = ['name' => '交通費明細書', 'count' => 1];
-            if (empty($items)) $items[] = ['name' => '御請求書', 'count' => 1];
-
-            try {
-                $bin = $this->pdfService->renderCoverLetter($invoice, $items);
-                $name = '送付状-' . $invoice->invoice_number . '.pdf';
-                $attachments[] = ['name' => $name, 'content' => $bin, 'mime' => 'application/pdf'];
+        // 任意添付ファイル（ユーザーがアップロードしたもの）
+        if ($request->hasFile('attachments')) {
+            foreach ($request->file('attachments') as $file) {
+                $name = $file->getClientOriginalName();
+                $attachments[] = [
+                    'name'    => $name,
+                    'content' => file_get_contents($file->getRealPath()),
+                    'mime'    => $file->getMimeType() ?: 'application/octet-stream',
+                ];
                 $metaNames[] = $name;
-            } catch (\Throwable $e) { report($e); }
+            }
         }
 
         $userId  = \Illuminate\Support\Facades\Auth::id();
