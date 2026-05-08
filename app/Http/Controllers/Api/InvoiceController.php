@@ -415,6 +415,7 @@ class InvoiceController extends Controller
                 'status'               => $r->status,
                 'error_message'        => $r->error_message,
                 'sent_at'              => $r->sent_at?->toIso8601String(),
+                'created_at'           => $r->created_at?->toIso8601String(),
                 'sent_by_name'         => $r->sender?->name,
                 'invoice_id'           => $r->invoice_id,
                 'invoice_number'       => $r->invoice?->invoice_number,
