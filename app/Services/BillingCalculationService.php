@@ -27,7 +27,11 @@ class BillingCalculationService
      * @return array{
      *   basic: float,
      *   deduction: float,
+     *   deduction_hours: float,
+     *   deduction_unit: float,
      *   overtime: float,
+     *   overtime_hours: float,
+     *   overtime_unit: float,
      *   transportation: float,
      *   subtotal: float,
      *   tax: float,
@@ -49,31 +53,37 @@ class BillingCalculationService
         $overtimeHours  = (float) ($contract?->client_overtime_hours ?? 0);
         $overtimeUnit   = (float) ($contract?->client_overtime_unit_price ?? 0);
 
-        $deduction = 0.0;
-        $overtime  = 0.0;
+        $deductionGap = 0.0;
+        $overtimeGap  = 0.0;
         if ($actualHours !== null) {
             if ($deductionHours > 0 && $actualHours < $deductionHours) {
-                $deduction = ($deductionHours - $actualHours) * $deductionUnit;
+                $deductionGap = $deductionHours - $actualHours;
             }
             if ($overtimeHours > 0 && $actualHours > $overtimeHours) {
-                $overtime = ($actualHours - $overtimeHours) * $overtimeUnit;
+                $overtimeGap = $actualHours - $overtimeHours;
             }
         }
+        $deduction = $deductionGap * $deductionUnit;
+        $overtime  = $overtimeGap  * $overtimeUnit;
 
         $subtotal = $basic - $deduction + $overtime + $transportation;
         $tax      = $subtotal * self::TAX_RATE;
         $total    = $subtotal + $tax;
 
         return [
-            'basic'          => round($basic, 2),
-            'deduction'      => round($deduction, 2),
-            'overtime'       => round($overtime, 2),
-            'transportation' => round($transportation, 2),
-            'subtotal'       => round($subtotal, 2),
-            'tax'            => round($tax, 2),
-            'total'          => round($total, 2),
-            'actual_hours'   => $actualHours !== null ? round($actualHours, 2) : null,
-            'tax_rate'       => self::TAX_RATE,
+            'basic'           => round($basic, 2),
+            'deduction'       => round($deduction, 2),
+            'deduction_hours' => round($deductionGap, 2),
+            'deduction_unit'  => round($deductionUnit, 2),
+            'overtime'        => round($overtime, 2),
+            'overtime_hours'  => round($overtimeGap, 2),
+            'overtime_unit'   => round($overtimeUnit, 2),
+            'transportation'  => round($transportation, 2),
+            'subtotal'        => round($subtotal, 2),
+            'tax'             => round($tax, 2),
+            'total'           => round($total, 2),
+            'actual_hours'    => $actualHours !== null ? round($actualHours, 2) : null,
+            'tax_rate'        => self::TAX_RATE,
         ];
     }
 }

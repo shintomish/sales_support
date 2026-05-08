@@ -47,8 +47,8 @@
     $logoData = $resolveLogoFromUrl($invoice->issuer_logo_snapshot)
              ?? $resolveLogoFromPath(config('invoice.logo_path'));
 
-    // 明細表のレイアウト
-    $itemRows = 22;
+    // 明細表のレイアウト（A4 1ページに収まる行数）
+    $itemRows = 14;
 
     // 明細行を分類
     $basicLine     = $invoice->lines->first(fn($l) => str_contains((string) $l->description, '基本月額'));
@@ -93,9 +93,9 @@ body {
 .date-top { text-align: right; font-size: 10pt; margin-bottom: 2mm; }
 .title {
     text-align: center;
-    font-size: 22pt;
+    font-size: 20pt;
     letter-spacing: 0.5em;
-    margin: 2mm 0 5mm 0;
+    margin: 1mm 0 3mm 0;
     font-weight: normal;
 }
 .head { width: 100%; border-collapse: collapse; margin-bottom: 2mm; }
@@ -157,9 +157,9 @@ body {
 .gt-tax    { font-size: 10.5pt; }
 .grand-total-sub { text-align: center; font-size: 9.5pt; margin-top: 0.5mm; }
 
-.items { width: 100%; border-collapse: collapse; font-size: 9pt; margin-bottom: 1mm; }
-.items th, .items td { border: 0.5pt solid #111; padding: 0.6mm 2mm; }
-.items th { text-align: center; background: #fff; font-weight: normal; }
+.items { width: 100%; border-collapse: collapse; font-size: 9pt; margin-bottom: 1mm; page-break-inside: avoid; }
+.items th, .items td { border: 0.5pt solid #111; padding: 0.3mm 2mm; }
+.items th { text-align: center; background: #fff; font-weight: normal; padding: 0.6mm 2mm; }
 .col-name   { width: 56%; }
 .col-qty    { width: 12%; text-align: center; }
 .col-price  { width: 16%; }
@@ -168,7 +168,7 @@ body {
 .items td.name.indent { padding-left: 6mm; }
 .items td.qty    { text-align: right; padding-right: 4mm; }
 .items td.num    { text-align: right; padding-right: 2mm; font-variant-numeric: tabular-nums; }
-.items td.blank  { height: 4mm; }
+.items td.blank  { height: 2.5mm; }
 .items td.muted  { color: #d33; }
 .items tfoot td  { border: 0.5pt solid #111; }
 .items tfoot .sub-label { text-align: center; }
@@ -180,6 +180,7 @@ body {
     padding: 1.5mm 3mm;
     font-size: 9pt;
     line-height: 1.5;
+    page-break-inside: avoid;
 }
 .remarks-block .bank-row { white-space: nowrap; }
 .remarks-block .bank-info { font-size: 8.5pt; letter-spacing: -0.02em; }
@@ -283,6 +284,7 @@ body {
             $rows[] = [
                 'name'       => '超過単価：' . number_format((float) $invoice->client_overtime_unit_price_snapshot) . '円',
                 'indent'     => true,
+                'qty'        => $overtimeLine ? rtrim(rtrim(number_format((float) $overtimeLine->quantity, 2), '0'), '.') : null,
                 'unit_price' => $overtimeLine ? $overtimeLine->unit_price : null,
                 'amount'     => $overtimeLine ? $overtimeLine->amount : null,
             ];
@@ -291,6 +293,7 @@ body {
             $rows[] = [
                 'name'       => '控除単価：-' . number_format((float) $invoice->client_deduction_unit_price_snapshot) . '円',
                 'indent'     => true,
+                'qty'        => $deductionLine ? rtrim(rtrim(number_format((float) $deductionLine->quantity, 2), '0'), '.') : null,
                 'unit_price' => $deductionLine ? $deductionLine->unit_price : null,
                 'amount'     => $deductionLine ? $deductionLine->amount : null,
                 'amount_negative' => true,

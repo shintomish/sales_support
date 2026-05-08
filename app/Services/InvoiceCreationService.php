@@ -138,20 +138,22 @@ class InvoiceCreationService
             ];
         }
         if ($calc['deduction'] > 0) {
+            // 控除: 数量=不足時間, 単価=-控除単価, 金額=qty*price (負の値)
             $lines[] = [
                 'description' => '控除（精算下限未達）',
-                'quantity'    => 1,
-                'unit'        => null,
-                'unit_price'  => -1 * $calc['deduction'],
+                'quantity'    => $calc['deduction_hours'],
+                'unit'        => 'h',
+                'unit_price'  => -1 * $calc['deduction_unit'],
                 'tax_rate'    => 0.10,
             ];
         }
         if ($calc['overtime'] > 0) {
+            // 超過: 数量=超過時間, 単価=超過単価, 金額=qty*price
             $lines[] = [
                 'description' => '超過（精算上限超）',
-                'quantity'    => 1,
-                'unit'        => null,
-                'unit_price'  => $calc['overtime'],
+                'quantity'    => $calc['overtime_hours'],
+                'unit'        => 'h',
+                'unit_price'  => $calc['overtime_unit'],
                 'tax_rate'    => 0.10,
             ];
         }
