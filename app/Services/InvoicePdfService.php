@@ -71,7 +71,7 @@ class InvoicePdfService
      */
     public function renderEnvelope(Invoice $invoice, bool $withZaichu = true): string
     {
-        $invoice->load('customer');
+        $invoice->load(['customer.primaryContact']);
         $this->refreshIssuerFromTenant($invoice);
         $html = View::make('invoices.envelope', [
             'invoice'    => $invoice,

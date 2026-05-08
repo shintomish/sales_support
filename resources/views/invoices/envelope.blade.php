@@ -19,6 +19,7 @@
     $customerName = $invoice->customer_name_snapshot ?? $invoice->customer?->company_name ?? '';
     $customerPostal = $invoice->customer?->postal_code ?? '';
     $customerAddress = $invoice->customer_address_snapshot ?? $invoice->customer?->address ?? '';
+    $primaryContactName = $invoice->customer?->primaryContact?->name;
 
     // 郵便番号を 7 桁の数字配列に分解（不足分は空文字）
     $postalDigits = array_pad(
@@ -98,6 +99,13 @@ body {
     letter-spacing: 0.05em;
     line-height: 1.4;
 }
+.recipient-contact {
+    position: absolute;
+    top: 65mm;
+    left: 70mm;
+    font-size: 16pt;
+    letter-spacing: 0.05em;
+}
 
 /* 「請求書在中」朱印 — 左下方 */
 .zaichu {
@@ -151,6 +159,9 @@ body {
 {{-- 宛先 --}}
 <div class="recipient-address">{{ $customerAddress }}</div>
 <div class="recipient-name">{{ $customerName }} 御中</div>
+@if($primaryContactName)
+    <div class="recipient-contact">{{ $primaryContactName }} 様</div>
+@endif
 
 {{-- 自社情報 --}}
 <div class="issuer-area">
