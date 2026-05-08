@@ -14,7 +14,7 @@
 報告者   : {{ $userName ?? '(不明)' }} <{{ $userEmail ?? '-' }}>
 画面URL  : {{ $feedback->url ?: '-' }}
 UA       : {{ $feedback->user_agent ?: '-' }}
-登録日時 : {{ optional($feedback->created_at)->format('Y-m-d H:i:s') }}
+登録日時 : {{ optional($feedback->created_at)->copy()->setTimezone('Asia/Tokyo')->format('Y-m-d H:i:s') }}
 ──────────────────────────────────
 
 【内容】

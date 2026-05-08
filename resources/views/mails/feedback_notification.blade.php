@@ -43,11 +43,11 @@ h1 { font-size: 17px; margin: 0 0 16px 0; padding-bottom: 6px; border-bottom: 2p
         <dt>報告者</dt><dd>{{ $userName ?? '(不明)' }} &lt;{{ $userEmail ?? '-' }}&gt;</dd>
         <dt>画面URL</dt><dd>{{ $feedback->url ?: '-' }}</dd>
         <dt>UA</dt><dd style="font-size:12px; color:#6b7280;">{{ $feedback->user_agent ?: '-' }}</dd>
-        <dt>登録日時</dt><dd>{{ optional($feedback->created_at)->format('Y-m-d H:i:s') }}</dd>
+        <dt>登録日時</dt><dd>{{ optional($feedback->created_at)->copy()->setTimezone('Asia/Tokyo')->format('Y-m-d H:i:s') }}</dd>
     </dl>
 </div>
 
-<div class="body">{{ $feedback->body }}</div>
+<div class="body">{!! nl2br(e($feedback->body)) !!}</div>
 
 <div class="footer">
     @if ($appUrl)
