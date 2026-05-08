@@ -185,10 +185,21 @@ class InvoiceController extends Controller
     public function mailTemplate(Invoice $invoice): JsonResponse
     {
         $tenant = \App\Models\Tenant::find($invoice->tenant_id);
-        $defaultSubject = '【請求書】{invoice_number}({year_month}分)';
+        $invoice->load('customer:id,company_name,primary_contact_id,invoice_delivery_method', 'customer.contacts:id,customer_id,name,email');
+
+        $user = \Illuminate\Support\Facades\Auth::user();
+        $tpl  = $user ? \App\Models\EmailBodyTemplate::where('tenant_id', $invoice->tenant_id)
+            ->where('user_id', $user->id)->first() : null;
+
+        $issuerName = $tenant?->invoice_issuer_name ?? '';
+        $userName   = $tpl?->name ?? $user?->name ?? '';
+        $userNameEn = $tpl?->name_en;
+
+        $defaultSubject = '【請求書】{invoice_number}({year_month_text}分)';
         $defaultBody = "{customer_name} 様\n\n"
-            . "いつもお世話になっております。\n"
-            . "{year_month}分の請求書を添付にてお送りいたします。\n\n"
+            . "いつも大変お世話になっております。\n"
+            . "{issuer_name}の{user_name}です。\n\n"
+            . "{year_month_text}分の請求書を添付にてお送りいたします。\n\n"
             . "請求番号: {invoice_number}\n"
             . "請求金額: ￥{total}（税込）\n"
             . "お支払期限: {due_date}\n\n"
@@ -197,33 +208,48 @@ class InvoiceController extends Controller
         $subject = $tenant?->invoice_email_subject_template ?: $defaultSubject;
         $body    = $tenant?->invoice_email_body_template    ?: $defaultBody;
 
-        // ログインユーザーのメール署名を末尾に付加
-        $user = \Illuminate\Support\Facades\Auth::user();
-        $tpl  = $user ? \App\Models\EmailBodyTemplate::where('tenant_id', $invoice->tenant_id)
-            ->where('user_id', $user->id)->first() : null;
-        $signatureLines = ['', '--'];
-        if ($tenant?->invoice_issuer_name)        $signatureLines[] = $tenant->invoice_issuer_name;
-        if ($tpl?->name ?? $user?->name)          $signatureLines[] = $tpl?->name ?? $user?->name;
-        if ($tpl?->department)                    $signatureLines[] = $tpl->department;
-        if ($tpl?->position)                      $signatureLines[] = $tpl->position;
-        if ($tenant?->invoice_issuer_postal_code) $signatureLines[] = '〒' . $tenant->invoice_issuer_postal_code . '　' . $tenant->invoice_issuer_address;
-        $tel = $tpl?->mobile ?: $tenant?->invoice_issuer_tel;
-        if ($tel)                                 $signatureLines[] = 'TEL：' . $tel;
-        if ($tenant?->invoice_issuer_fax)         $signatureLines[] = 'FAX：' . $tenant->invoice_issuer_fax;
+        // 署名（社内既定書式）
+        $sep = '_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/';
+        $sigLines = [$sep];
+        if ($issuerName) $sigLines[] = $issuerName;
+        $namePart = $userName . ($userNameEn ? '（' . $userNameEn . '）' : '');
+        if ($namePart !== '') $sigLines[] = '　' . $namePart;
+        $sigLines[] = '';
+        if ($tenant?->invoice_issuer_postal_code) $sigLines[] = '　〒' . $tenant->invoice_issuer_postal_code;
+        if ($tenant?->invoice_issuer_address)     $sigLines[] = '　' . $tenant->invoice_issuer_address;
+        $telLine = '';
+        if ($tenant?->invoice_issuer_tel) $telLine .= 'Tel：' . $tenant->invoice_issuer_tel;
+        if ($tenant?->invoice_issuer_fax) {
+            if ($telLine !== '') $telLine .= '　';
+            $telLine .= 'Fax：' . $tenant->invoice_issuer_fax;
+        }
+        if ($telLine !== '') $sigLines[] = '　' . $telLine;
+        $sigLines[] = '';
         $emailAddr = $tpl?->email ?: $user?->email;
-        if ($emailAddr)                           $signatureLines[] = 'E-Mail：' . $emailAddr;
-        if ($tenant?->invoice_issuer_url)         $signatureLines[] = $tenant->invoice_issuer_url;
-        $signature = implode("\n", $signatureLines);
-        $body = $body . "\n" . $signature . "\n";
+        if ($emailAddr) $sigLines[] = '　E-Mail：' . $emailAddr;
+        if ($tpl?->mobile) $sigLines[] = '　Mobile：' . $tpl->mobile;
+        $sigLines[] = '';
+        if ($tenant?->invoice_issuer_url) $sigLines[] = '　URL:' . $tenant->invoice_issuer_url;
+        $sigLines[] = $sep;
+        $signature = "\n" . implode("\n", $sigLines);
 
-        $invoice->load('customer:id,company_name,primary_contact_id,invoice_delivery_method', 'customer.contacts:id,customer_id,name,email');
+        $body = $body . $signature . "\n";
+
+        // 年月表示: 2026-04 → 2026年04月
+        $ymText = $invoice->year_month;
+        if (preg_match('/^(\d{4})-(\d{2})$/', $ymText, $m)) {
+            $ymText = sprintf('%s年%s月', $m[1], $m[2]);
+        }
 
         $vars = [
-            '{invoice_number}' => $invoice->invoice_number,
-            '{customer_name}'  => $invoice->customer_name_snapshot ?? $invoice->customer?->company_name ?? '',
-            '{year_month}'     => $invoice->year_month,
-            '{total}'          => number_format((float) $invoice->total),
-            '{due_date}'       => $invoice->due_date?->format('Y年n月j日') ?? '',
+            '{invoice_number}'   => $invoice->invoice_number,
+            '{customer_name}'    => $invoice->customer_name_snapshot ?? $invoice->customer?->company_name ?? '',
+            '{year_month}'       => $invoice->year_month,
+            '{year_month_text}'  => $ymText,
+            '{total}'            => number_format((float) $invoice->total),
+            '{due_date}'         => $invoice->due_date?->format('Y年n月j日') ?? '',
+            '{issuer_name}'      => $issuerName,
+            '{user_name}'        => $userName,
         ];
         $subject = strtr($subject, $vars);
         $body    = strtr($body, $vars);
