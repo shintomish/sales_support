@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\Invoice;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\View;
 use Spatie\Browsershot\Browsershot;
 
@@ -26,7 +27,16 @@ class InvoicePdfService
     {
         $invoice->load('lines', 'customer');
 
-        $html = View::make('invoices.pdf', ['invoice' => $invoice])->render();
+        // 電子印を押印できるのは tenant_admin / super_admin のみ。
+        // それ以外のユーザーが PDF を生成する場合は印影を非表示でレンダリング。
+        $user = Auth::user();
+        $canSeal = $user && in_array($user->role ?? null, ['tenant_admin', 'super_admin'], true);
+        $invoiceForRender = clone $invoice;
+        if (!$canSeal) {
+            $invoiceForRender->issuer_seal_snapshot = null;
+        }
+
+        $html = View::make('invoices.pdf', ['invoice' => $invoiceForRender])->render();
         $binary = $this->htmlToPdf($html);
 
         // ファイルパス: invoices/{tenant_id}/{year_month}/{invoice_number}.pdf
