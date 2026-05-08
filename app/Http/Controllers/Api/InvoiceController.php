@@ -177,6 +177,42 @@ class InvoiceController extends Controller
     }
 
     /**
+     * POST /api/v1/invoices/{invoice}/record-post
+     * 郵送した実績を invoice_send_histories に method=post で記録
+     */
+    public function recordPost(Request $request, Invoice $invoice): JsonResponse
+    {
+        $v = $request->validate([
+            'sent_at' => ['nullable', 'date'],
+            'note'    => ['nullable', 'string', 'max:1000'],
+            'items'   => ['nullable', 'array'],
+            'items.*' => ['string', 'max:50'],
+        ]);
+
+        $user = \Illuminate\Support\Facades\Auth::user();
+        $items = $v['items'] ?? [];
+
+        $history = \App\Models\InvoiceSendHistory::create([
+            'tenant_id'        => $user?->tenant_id,
+            'invoice_id'       => $invoice->id,
+            'method'           => 'post',
+            'to_emails'        => null,
+            'cc_emails'        => null,
+            'subject'          => $v['note'] ?? null,
+            'body'             => null,
+            'attachments_meta' => $items,
+            'status'           => 'sent',
+            'sent_at'          => $v['sent_at'] ?? now()->toDateTimeString(),
+            'sent_by'          => $user?->id,
+        ]);
+
+        return response()->json([
+            'message'    => '郵送記録を保存しました',
+            'history_id' => $history->id,
+        ], 201);
+    }
+
+    /**
      * GET /api/v1/invoices/{invoice}/mail-template
      * メール送信モーダル用のテンプレート（subject/body）を返す。
      * テナントに保存されたテンプレがあればそれを使い、無ければデフォルトを使用。
