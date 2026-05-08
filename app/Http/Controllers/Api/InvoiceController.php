@@ -178,21 +178,31 @@ class InvoiceController extends Controller
 
     /**
      * GET /api/v1/invoices/{invoice}/latest-post
-     * 該当 invoice の最新郵送記録（モーダル prefill 用）
+     * 該当 invoice の最新郵送記録 + 顧客連絡先候補（モーダル prefill 用）
      */
     public function latestPost(Invoice $invoice): JsonResponse
     {
+        $invoice->load('customer:id,company_name', 'customer.contacts:id,customer_id,name,email');
+
+        $candidates = collect($invoice->customer?->contacts ?? [])
+            ->map(fn($c) => ['name' => $c->name, 'email' => $c->email])
+            ->values();
+
         $r = \App\Models\InvoiceSendHistory::where('invoice_id', $invoice->id)
             ->where('method', 'post')
             ->orderByDesc('sent_at')
             ->orderByDesc('id')
             ->first();
-        if (!$r) return response()->json(null);
+
         return response()->json([
-            'id'               => $r->id,
-            'sent_at'          => $r->sent_at?->format('Y-m-d'),
-            'note'             => $r->subject,
-            'attachments_meta' => $r->attachments_meta ?? [],
+            'latest' => $r ? [
+                'id'               => $r->id,
+                'sent_at'          => $r->sent_at?->format('Y-m-d'),
+                'note'             => $r->subject,
+                'attachments_meta' => $r->attachments_meta ?? [],
+                'to_recipients'    => $r->to_emails ?? [],
+            ] : null,
+            'candidates' => $candidates,
         ]);
     }
 
@@ -203,20 +213,23 @@ class InvoiceController extends Controller
     public function recordPost(Request $request, Invoice $invoice): JsonResponse
     {
         $v = $request->validate([
-            'sent_at' => ['nullable', 'date'],
-            'note'    => ['nullable', 'string', 'max:1000'],
-            'items'   => ['nullable', 'array'],
-            'items.*' => ['string', 'max:50'],
+            'sent_at'        => ['nullable', 'date'],
+            'note'           => ['nullable', 'string', 'max:1000'],
+            'items'          => ['nullable', 'array'],
+            'items.*'        => ['string', 'max:50'],
+            'to_recipients'  => ['nullable', 'array'],
+            'to_recipients.*'=> ['string', 'max:200'],
         ]);
 
         $user = \Illuminate\Support\Facades\Auth::user();
-        $items = $v['items'] ?? [];
+        $items      = $v['items'] ?? [];
+        $recipients = $v['to_recipients'] ?? [];
 
         $history = \App\Models\InvoiceSendHistory::create([
             'tenant_id'        => $user?->tenant_id,
             'invoice_id'       => $invoice->id,
             'method'           => 'post',
-            'to_emails'        => null,
+            'to_emails'        => !empty($recipients) ? $recipients : null,
             'cc_emails'        => null,
             'subject'          => $v['note'] ?? null,
             'body'             => null,
