@@ -39,6 +39,9 @@ class Invoice extends Model
         'tax',
         'total',
         'status',
+        'approved',
+        'approved_at',
+        'approved_by',
         'pdf_path',
         'notes',
         'customer_name_snapshot',
@@ -66,6 +69,8 @@ class Invoice extends Model
         'subtotal'    => 'decimal:2',
         'tax'         => 'decimal:2',
         'total'       => 'decimal:2',
+        'approved'    => 'boolean',
+        'approved_at' => 'datetime',
     ];
 
     public function deal(): BelongsTo

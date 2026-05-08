@@ -171,6 +171,31 @@ class InvoiceController extends Controller
     }
 
     /**
+     * POST /api/v1/invoices/{invoice}/approve
+     * 承認 → 電子印付き PDF を再生成
+     * tenant_admin / super_admin のみ実行可
+     */
+    public function approve(Invoice $invoice): JsonResponse
+    {
+        $user = \Illuminate\Support\Facades\Auth::user();
+        if (!$user || !in_array($user->role ?? null, ['tenant_admin', 'super_admin'], true)) {
+            return response()->json(['message' => '承認権限がありません'], 403);
+        }
+
+        $invoice->approved    = true;
+        $invoice->approved_at = now();
+        $invoice->approved_by = $user->id;
+        $invoice->save();
+
+        $url = $this->pdfService->generateAndStore($invoice);
+
+        return response()->json([
+            'pdf_url' => $url,
+            'invoice' => $invoice->fresh()->load('lines'),
+        ]);
+    }
+
+    /**
      * DELETE /api/v1/invoices/{invoice}
      * draft / issued ともに削除可能（誤発行リカバリ用）。
      * 発行済の場合は Storage 上の PDF も併せて削除する。

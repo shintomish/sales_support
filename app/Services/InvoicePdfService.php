@@ -3,7 +3,6 @@
 namespace App\Services;
 
 use App\Models\Invoice;
-use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\View;
 use Spatie\Browsershot\Browsershot;
 
@@ -27,12 +26,10 @@ class InvoicePdfService
     {
         $invoice->load('lines', 'customer');
 
-        // 電子印を押印できるのは tenant_admin / super_admin のみ。
-        // それ以外のユーザーが PDF を生成する場合は印影を非表示でレンダリング。
-        $user = Auth::user();
-        $canSeal = $user && in_array($user->role ?? null, ['tenant_admin', 'super_admin'], true);
+        // 電子印は invoice.approved=true のときのみ押印（承認済みのみ）。
+        // 下書き/発行直後は印影なしで生成し、tenant_admin / super_admin が承認した時に印影付きで再生成。
         $invoiceForRender = clone $invoice;
-        if (!$canSeal) {
+        if (!$invoice->approved) {
             $invoiceForRender->issuer_seal_snapshot = null;
         }
 
