@@ -42,12 +42,14 @@ class InvoiceCreationService
 
         $calc = $this->calculator->calculate($contract, $record);
 
-        $issuedDate = $options['issued_date'] ?? Carbon::today()->toDateString();
+        // 請求日のデフォルトは対象年月の月末（業務慣習）
+        [$y, $m] = explode('-', $yearMonth);
+        $defaultIssuedDate = Carbon::create((int) $y, (int) $m, 1)->endOfMonth()->toDateString();
+        $issuedDate = $options['issued_date'] ?? $defaultIssuedDate;
         $dueDate    = $options['due_date'] ?? $this->dueDateCalculator->calculate($yearMonth, $contract?->payment_site);
 
         $tenant = Tenant::query()->find($deal->tenant_id);
 
-        [$y, $m]    = explode('-', $yearMonth);
         $periodStart = Carbon::create((int) $y, (int) $m, 1);
         $periodEnd   = $periodStart->copy()->endOfMonth();
         $workPeriod  = sprintf(
