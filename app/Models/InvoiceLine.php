@@ -22,6 +22,7 @@ class InvoiceLine extends Model
         'unit_price',
         'tax_rate',
         'amount',
+        'is_expense',
     ];
 
     protected $casts = [
@@ -30,6 +31,7 @@ class InvoiceLine extends Model
         'unit_price' => 'decimal:2',
         'tax_rate'   => 'decimal:4',
         'amount'     => 'decimal:2',
+        'is_expense' => 'boolean',
     ];
 
     public function invoice(): BelongsTo

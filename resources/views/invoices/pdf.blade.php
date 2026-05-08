@@ -26,14 +26,8 @@
     $issuedAt = $invoice->issued_date instanceof Carbon ? $invoice->issued_date : null;
     $dueAt    = $invoice->due_date instanceof Carbon ? $invoice->due_date : null;
 
-    // (O) 支払条件 = (G) 支払期限文言から「現金」を除いたもの
-    $paymentCondition = $invoice->payment_terms_text
-        ? str_replace('現金', '', $invoice->payment_terms_text)
-        : null;
-
     /**
      * ロゴデータの解決（base64 埋め込み）
-     *  優先順位: invoice.issuer_logo_snapshot (URL) → config('invoice.logo_path') (ローカル)
      */
     $resolveLogoFromUrl = function (?string $url): ?string {
         if (!$url) return null;
@@ -53,8 +47,33 @@
     $logoData = $resolveLogoFromUrl($invoice->issuer_logo_snapshot)
              ?? $resolveLogoFromPath(config('invoice.logo_path'));
 
-    // 明細表の固定行数（新レイアウト）
-    $itemRows = 15;
+    // 明細表のレイアウト
+    $itemRows = 22;
+
+    // 明細行を分類
+    $basicLine     = $invoice->lines->first(fn($l) => str_contains((string) $l->description, '基本月額'));
+    $deductionLine = $invoice->lines->first(fn($l) => str_contains((string) $l->description, '控除') && !$l->is_expense);
+    $overtimeLine  = $invoice->lines->first(fn($l) => str_contains((string) $l->description, '超過') && !$l->is_expense);
+    $expenseLines  = $invoice->lines->where('is_expense', true)->values();
+    // 上記以外（is_expense=false かつ 基本/控除/超過以外）
+    $excludeIds = collect([$basicLine?->id, $deductionLine?->id, $overtimeLine?->id])
+        ->filter()->values();
+    $extraLines = $invoice->lines
+        ->filter(fn($l) => !$l->is_expense
+            && !$excludeIds->contains($l->id))
+        ->values();
+
+    $expenseTotal = $expenseLines->sum(fn($l) => (float) $l->amount);
+
+    // 超過控除の閾値スナップショット
+    $dedH = $invoice->client_deduction_hours_snapshot;
+    $ovtH = $invoice->client_overtime_hours_snapshot;
+    $unitMin = $invoice->settlement_unit_minutes_snapshot;
+    $hasOvertimeRange = ($dedH !== null && $ovtH !== null);
+    $rangeText = $hasOvertimeRange
+        ? sprintf('%dH-%dH', (int) $dedH, (int) $ovtH)
+        : null;
+    $unitMinText = $unitMin ? sprintf('【精算単位：%d分】', (int) $unitMin) : '';
 @endphp
 <!DOCTYPE html>
 <html lang="ja">
@@ -93,7 +112,6 @@ body {
 .issuer-block { display: inline-block; text-align: left; font-size: 9pt; line-height: 1.45; }
 .issuer-name  { margin-top: 0.5mm; }
 
-/* 番号類（請求No./注文No./見積No./登録番号）— ブロック自体は右寄せ、内部の各行は左揃え */
 .numbers-block {
     width: 100%;
     margin-bottom: 2mm;
@@ -101,15 +119,9 @@ body {
     line-height: 1.4;
     text-align: right;
 }
-.numbers-inner {
-    display: inline-block;
-    text-align: left;
-}
+.numbers-inner { display: inline-block; text-align: left; }
 .numbers-inner .num-row { white-space: nowrap; }
-.num-label {
-    display: inline-block;
-    min-width: 16mm;
-}
+.num-label { display: inline-block; min-width: 16mm; }
 .under {
     border-bottom: 0.5pt solid #111;
     padding: 0 2mm;
@@ -119,15 +131,9 @@ body {
     text-align: left;
     line-height: 1.4;
 }
-/* 値が空のときも下線の高さを保つ */
 .under:empty::before { content: "\00a0"; }
 
-/* 納期/納入場所/支払期限 — 左寄せ（独立行）。ラベルは均等割付で揃える */
-.left-meta {
-    margin-bottom: 1mm;
-    font-size: 9.5pt;
-    line-height: 1.45;
-}
+.left-meta { margin-bottom: 1mm; font-size: 9.5pt; line-height: 1.45; }
 .left-meta .meta-label {
     display: inline-block;
     width: 18mm;
@@ -135,14 +141,10 @@ body {
     text-align-last: justify;
 }
 
-/* 合計金額ブロック — 左寄せ、下線が内消費税の閉じ括弧位置までに収まるよう幅制限 */
-.total-wrap {
-    margin: 1mm 0 1mm 0;
-    text-align: left;
-}
+.total-wrap { margin: 1mm 0 1mm 0; text-align: left; }
 .total-inner {
     display: inline-block;
-    width: 56%;  /* 明細表の品名カラム(56%)右端 = 数量カラムとの罫線位置 */
+    width: 56%;
     text-align: left;
 }
 .grand-total {
@@ -163,14 +165,15 @@ body {
 .col-price  { width: 16%; }
 .col-amount { width: 16%; }
 .items td.name   { text-align: left; }
+.items td.name.indent { padding-left: 6mm; }
 .items td.qty    { text-align: right; padding-right: 4mm; }
 .items td.num    { text-align: right; padding-right: 2mm; font-variant-numeric: tabular-nums; }
 .items td.blank  { height: 4mm; }
+.items td.muted  { color: #d33; }
 .items tfoot td  { border: 0.5pt solid #111; }
 .items tfoot .sub-label { text-align: center; }
 .items tfoot .total { font-weight: bold; }
 
-/* 備考欄 — 枠線あり */
 .remarks-block {
     margin-top: 1mm;
     border: 0.5pt solid #111;
@@ -178,14 +181,8 @@ body {
     font-size: 9pt;
     line-height: 1.5;
 }
-/* お振込先行 — 長い口座情報を1行に強制。本文幅いっぱい（右端まで）使う */
-.remarks-block .bank-row {
-    white-space: nowrap;
-}
-.remarks-block .bank-info {
-    font-size: 8.5pt;
-    letter-spacing: -0.02em;
-}
+.remarks-block .bank-row { white-space: nowrap; }
+.remarks-block .bank-info { font-size: 8.5pt; letter-spacing: -0.02em; }
 </style>
 </head>
 <body>
@@ -225,17 +222,15 @@ body {
     </tr>
 </table>
 
-{{-- 番号類（客先名の下、ブロック自体は右寄せ・内部は左揃え） --}}
 <div class="numbers-block">
     <div class="numbers-inner">
-        <div class="num-row"><span class="num-label">請求番号</span><span class="under">{{ $invoice->invoice_number }}</span></div>
-        <div class="num-row"><span class="num-label">注文番号</span><span class="under">{{ $invoice->order_number }}</span></div>
-        <div class="num-row"><span class="num-label">見積番号</span><span class="under">{{ $invoice->quote_number }}</span></div>
+        <div class="num-row"><span class="num-label">請求No.</span><span class="under">{{ $invoice->invoice_number }}</span></div>
+        <div class="num-row"><span class="num-label">注文No.</span><span class="under">{{ $invoice->order_number }}</span></div>
+        <div class="num-row"><span class="num-label">見積No.</span><span class="under">{{ $invoice->quote_number }}</span></div>
         <div class="num-row"><span class="num-label">登録番号</span><span class="under">{{ $invoice->issuer_invoice_number_snapshot }}</span></div>
     </div>
 </div>
 
-{{-- 納期/納入場所/支払期限（ラベルは均等割付で揃える） --}}
 <div class="left-meta">
     @if($invoice->delivery_date_text)
         <div><span class="meta-label">納期</span>：&nbsp;&nbsp;{{ $invoice->delivery_date_text }}</div>
@@ -260,42 +255,91 @@ body {
 </div>
 
 @php
-    // 明細レイアウト: メタ行（件名・作業期間・月額・作業場所・支払条件）の間に1行ずつ空行を挟む。
-    // 月額の行には基本額の数量・単価・金額を表示する（基本額の line を流用）。
-    $basicLine = $invoice->lines->firstWhere(fn($l) => str_contains((string) $l->description, '基本月額'));
-    $extraLines = $invoice->lines->filter(fn($l) => $l !== $basicLine)->values();
-
+    // 明細レイアウト（Sick サンプル準拠）
     $rows = [];
-    if ($invoice->subject_name)        $rows[] = ['name' => '・件名：' . $invoice->subject_name];
+
+    if ($invoice->subject_name) $rows[] = ['name' => '・件名：' . $invoice->subject_name];
     $rows[] = ['blank' => true];
-    if ($invoice->work_period_text)    $rows[] = ['name' => '・作業期間：' . $invoice->work_period_text];
+
+    if ($invoice->work_period_text) $rows[] = ['name' => '・作業期間：' . $invoice->work_period_text];
     $rows[] = ['blank' => true];
+
     if ($basicLine) {
         $rows[] = [
-            'name' => '・月額:' . $basicLine->description,
+            'name' => '・基本月額：' . $basicLine->description,
             'qty'  => rtrim(rtrim(number_format((float) $basicLine->quantity, 2), '0'), '.'),
             'unit_price' => $basicLine->unit_price,
             'amount' => $basicLine->amount,
         ];
     } else {
-        $rows[] = ['name' => '・月額：'];
+        $rows[] = ['name' => '・基本月額：'];
     }
     $rows[] = ['blank' => true];
-    $rows[] = ['name' => '・作業場所：' . ($invoice->work_location ?? '')];
-    $rows[] = ['blank' => true];
-    if ($paymentCondition) $rows[] = ['name' => '・支払条件：' . $paymentCondition];
-    foreach ($extraLines as $l) {
+
+    // 超過控除セクション
+    if ($rangeText) {
+        $rows[] = ['name' => '・超過控除：' . $rangeText . $unitMinText];
+        if ($invoice->client_overtime_unit_price_snapshot !== null) {
+            $rows[] = [
+                'name'       => '超過単価：' . number_format((float) $invoice->client_overtime_unit_price_snapshot) . '円',
+                'indent'     => true,
+                'unit_price' => $overtimeLine ? $overtimeLine->unit_price : null,
+                'amount'     => $overtimeLine ? $overtimeLine->amount : null,
+            ];
+        }
+        if ($invoice->client_deduction_unit_price_snapshot !== null) {
+            $rows[] = [
+                'name'       => '控除単価：-' . number_format((float) $invoice->client_deduction_unit_price_snapshot) . '円',
+                'indent'     => true,
+                'unit_price' => $deductionLine ? $deductionLine->unit_price : null,
+                'amount'     => $deductionLine ? $deductionLine->amount : null,
+                'amount_negative' => true,
+            ];
+        }
         $rows[] = ['blank' => true];
+    }
+
+    if ($invoice->work_location)        { $rows[] = ['name' => '作業場所：' . $invoice->work_location]; $rows[] = ['blank' => true]; }
+    if ($invoice->delivery_items_text)  { $rows[] = ['name' => '納品物：' . $invoice->delivery_items_text]; $rows[] = ['blank' => true]; }
+    if ($invoice->engineer_name_snapshot) { $rows[] = ['name' => '作業者名：' . $invoice->engineer_name_snapshot]; $rows[] = ['blank' => true]; }
+
+    // 業務交通費 説明（複数行可）
+    if ($invoice->transportation_note_text) {
+        $rows[] = ['name' => '業務交通費：' . $invoice->transportation_note_text];
+        $rows[] = ['blank' => true];
+    }
+
+    // 業務交通費 明細（経費）
+    foreach ($expenseLines as $l) {
         $rows[] = [
-            'name' => $l->description,
-            'qty'  => rtrim(rtrim(number_format((float) $l->quantity, 2), '0'), '.'),
+            'name'       => $l->description,
+            'qty'        => rtrim(rtrim(number_format((float) $l->quantity, 2), '0'), '.'),
             'unit_price' => $l->unit_price,
-            'amount' => $l->amount,
+            'amount'     => $l->amount,
         ];
     }
 
-    // 明細表の最低行数を揃えるための空行
+    // 基本/控除/超過/経費以外の追加明細（手動編集分）
+    foreach ($extraLines as $l) {
+        $rows[] = [
+            'name'       => $l->description,
+            'qty'        => rtrim(rtrim(number_format((float) $l->quantity, 2), '0'), '.'),
+            'unit_price' => $l->unit_price,
+            'amount'     => $l->amount,
+        ];
+    }
+
     $padCount = max(0, $itemRows - count($rows));
+
+    // フッター集計（課税分のみ）
+    $byRate = [];
+    foreach ($invoice->lines as $l) {
+        if ($l->is_expense) continue;
+        $r = (string) $l->tax_rate;
+        $byRate[$r] = ($byRate[$r] ?? 0) + (float) $l->amount;
+    }
+    // 8% / 10% を必ず表示する（10% は計算、8% は空欄でも）
+    $hasRate = function (string $r) use ($byRate) { return isset($byRate[$r]); };
 @endphp
 
 <table class="items">
@@ -313,10 +357,14 @@ body {
                 <tr><td class="name blank">&nbsp;</td><td></td><td></td><td></td></tr>
             @else
                 <tr>
-                    <td class="name">{{ $r['name'] }}</td>
+                    <td class="name @if(!empty($r['indent'])) indent @endif">{{ $r['name'] }}</td>
                     <td class="qty">{{ $r['qty'] ?? '' }}</td>
-                    <td class="num">{{ isset($r['unit_price']) ? '￥'.number_format((float) $r['unit_price']) : '' }}</td>
-                    <td class="num">{{ isset($r['amount']) ? '￥'.number_format((float) $r['amount']) : '' }}</td>
+                    <td class="num">{{ isset($r['unit_price']) && $r['unit_price'] !== null ? '￥'.number_format((float) $r['unit_price']) : '' }}</td>
+                    <td class="num @if(!empty($r['amount_negative'])) muted @endif">
+                        @if(isset($r['amount']) && $r['amount'] !== null && (float) $r['amount'] != 0)
+                            ￥{{ number_format((float) $r['amount']) }}
+                        @endif
+                    </td>
                 </tr>
             @endif
         @endforeach
@@ -326,24 +374,21 @@ body {
     </tbody>
     <tfoot>
         <tr><td></td><td colspan="2" class="sub-label">小　計</td><td class="num">￥{{ number_format((float) $invoice->subtotal) }}</td></tr>
-        @php
-            $byRate = [];
-            foreach ($invoice->lines as $l) {
-                $r = (string) $l->tax_rate;
-                $byRate[$r] = ($byRate[$r] ?? 0) + (float) $l->amount;
-            }
-        @endphp
-        @foreach($byRate as $rate => $sub)
-            @php
-                $pct = (int) round(((float) $rate) * 100);
-                $taxAmt = round($sub * (float) $rate);
-            @endphp
-            <tr>
-                <td></td>
-                <td colspan="2" class="sub-label">消費税（{{ $pct }}%）</td>
-                <td class="num">{{ $pct === 0 ? '' : '￥'.number_format($taxAmt) }}</td>
-            </tr>
-        @endforeach
+        {{-- 8%（あれば計算、なければ空欄表示） --}}
+        <tr>
+            <td></td>
+            <td colspan="2" class="sub-label">消費税（8%）</td>
+            <td class="num">{{ $hasRate('0.0800') ? '￥'.number_format(round($byRate['0.0800'] * 0.08)) : '' }}</td>
+        </tr>
+        {{-- 10%（あれば計算、なければ空欄） --}}
+        <tr>
+            <td></td>
+            <td colspan="2" class="sub-label">消費税（10%）</td>
+            <td class="num">{{ $hasRate('0.1000') ? '￥'.number_format(round($byRate['0.1000'] * 0.10)) : '' }}</td>
+        </tr>
+        @if($expenseTotal > 0)
+            <tr><td></td><td colspan="2" class="sub-label">経　費</td><td class="num">￥{{ number_format($expenseTotal) }}</td></tr>
+        @endif
         <tr><td></td><td colspan="2" class="sub-label total">合　計</td><td class="num total">￥{{ number_format((float) $invoice->total) }}</td></tr>
     </tfoot>
 </table>

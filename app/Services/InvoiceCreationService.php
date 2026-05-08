@@ -69,6 +69,8 @@ class InvoiceCreationService
                 'subject_name'                    => $deal->title,
                 'work_period_text'                => $workPeriod,
                 'work_location'                   => null,
+                'delivery_items_text'             => '作業報告書',
+                'transportation_note_text'        => 'お客様指示の基、移動が発生した場合は別途実費にてご請求',
                 'delivery_date_text'              => '御社ご指定日',
                 'delivery_place_text'             => '御社ご指定場所',
                 'payment_terms_text'              => $paymentTerms,
@@ -87,6 +89,11 @@ class InvoiceCreationService
                 'issuer_logo_snapshot'            => $tenant?->invoice_issuer_logo_path,
                 'issuer_invoice_number_snapshot'  => $tenant?->invoice_issuer_invoice_number,
                 'issuer_bank_snapshot'            => $this->formatBankInfo($tenant),
+                'settlement_unit_minutes_snapshot'     => $contract?->settlement_unit_minutes,
+                'client_deduction_hours_snapshot'      => $contract?->client_deduction_hours,
+                'client_overtime_hours_snapshot'       => $contract?->client_overtime_hours,
+                'client_deduction_unit_price_snapshot' => $contract?->client_deduction_unit_price,
+                'client_overtime_unit_price_snapshot'  => $contract?->client_overtime_unit_price,
             ]);
             $invoice->save();
 
@@ -94,7 +101,8 @@ class InvoiceCreationService
             foreach ($this->buildLines($deal, $record, $calc) as $line) {
                 $line['invoice_id'] = $invoice->id;
                 $line['sort_order'] = $sort++;
-                $line['amount'] = round((float) $line['quantity'] * (float) $line['unit_price'], 2);
+                $line['amount']     = round((float) $line['quantity'] * (float) $line['unit_price'], 2);
+                $line['is_expense'] = $line['is_expense'] ?? false;
                 InvoiceLine::query()->create($line);
             }
 
@@ -148,13 +156,14 @@ class InvoiceCreationService
             ];
         }
         if ($calc['transportation'] > 0) {
-            // 交通費は実費精算のため非課税扱い
+            // 業務交通費は実費精算（経費・非課税）
             $lines[] = [
-                'description' => '交通費（実費）',
+                'description' => '業務交通費',
                 'quantity'    => 1,
                 'unit'        => null,
                 'unit_price'  => $calc['transportation'],
                 'tax_rate'    => 0.0,
+                'is_expense'  => true,
             ];
         }
 

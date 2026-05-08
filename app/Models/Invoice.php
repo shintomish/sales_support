@@ -28,6 +28,8 @@ class Invoice extends Model
         'subject_name',
         'work_period_text',
         'work_location',
+        'delivery_items_text',
+        'transportation_note_text',
         'delivery_date_text',
         'delivery_place_text',
         'payment_terms_text',
@@ -50,6 +52,11 @@ class Invoice extends Model
         'issuer_logo_snapshot',
         'issuer_invoice_number_snapshot',
         'issuer_bank_snapshot',
+        'settlement_unit_minutes_snapshot',
+        'client_deduction_hours_snapshot',
+        'client_overtime_hours_snapshot',
+        'client_deduction_unit_price_snapshot',
+        'client_overtime_unit_price_snapshot',
     ];
 
     protected $casts = [
@@ -77,12 +84,19 @@ class Invoice extends Model
 
     /**
      * 明細から金額を再計算してプロパティに反映する（保存はしない）。
-     * tax_rate ごとに集計してから合算するため、丸め誤差を最小化。
+     *  - 経費(is_expense=true) は 小計には入れず、税対象外として 合計に直接加算
+     *  - tax_rate ごとに集計してから合算するため、丸め誤差を最小化
      */
     public function recalcAmounts(): void
     {
-        $byRate = []; // tax_rate => subtotal
+        $byRate    = []; // tax_rate => subtotal（課税対象のみ）
+        $expense   = 0.0;
+
         foreach ($this->lines as $line) {
+            if ($line->is_expense) {
+                $expense += (float) $line->amount;
+                continue;
+            }
             $rate = (string) $line->tax_rate;
             $byRate[$rate] = ($byRate[$rate] ?? 0) + (float) $line->amount;
         }
@@ -96,6 +110,12 @@ class Invoice extends Model
 
         $this->subtotal = round($subtotal, 2);
         $this->tax      = round($tax, 2);
-        $this->total    = round($subtotal + $tax, 2);
+        $this->total    = round($subtotal + $tax + $expense, 2);
+    }
+
+    /** 経費(is_expense=true) の合計（税対象外） */
+    public function getExpenseTotalAttribute(): float
+    {
+        return (float) $this->lines->where('is_expense', true)->sum('amount');
     }
 }

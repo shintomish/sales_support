@@ -102,30 +102,34 @@ class InvoiceController extends Controller
     public function update(Request $request, Invoice $invoice): JsonResponse
     {
         $validated = $request->validate([
-            'issued_date'           => ['nullable', 'date'],
-            'due_date'              => ['nullable', 'date'],
-            'notes'                 => ['nullable', 'string', 'max:2000'],
-            'status'                => ['nullable', 'in:draft,issued'],
-            'order_number'          => ['nullable', 'string', 'max:100'],
-            'quote_number'          => ['nullable', 'string', 'max:100'],
-            'subject_name'          => ['nullable', 'string', 'max:255'],
-            'work_period_text'      => ['nullable', 'string', 'max:100'],
-            'work_location'         => ['nullable', 'string', 'max:255'],
-            'delivery_date_text'    => ['nullable', 'string', 'max:100'],
-            'delivery_place_text'   => ['nullable', 'string', 'max:100'],
-            'payment_terms_text'    => ['nullable', 'string', 'max:100'],
-            'lines'                => ['nullable', 'array'],
-            'lines.*.description'  => ['required_with:lines', 'string', 'max:500'],
-            'lines.*.quantity'     => ['required_with:lines', 'numeric'],
-            'lines.*.unit'         => ['nullable', 'string', 'max:20'],
-            'lines.*.unit_price'   => ['required_with:lines', 'numeric'],
-            'lines.*.tax_rate'     => ['required_with:lines', 'numeric', 'in:0,0.08,0.10'],
+            'issued_date'                 => ['nullable', 'date'],
+            'due_date'                    => ['nullable', 'date'],
+            'notes'                       => ['nullable', 'string', 'max:2000'],
+            'status'                      => ['nullable', 'in:draft,issued'],
+            'order_number'                => ['nullable', 'string', 'max:100'],
+            'quote_number'                => ['nullable', 'string', 'max:100'],
+            'subject_name'                => ['nullable', 'string', 'max:255'],
+            'work_period_text'            => ['nullable', 'string', 'max:100'],
+            'work_location'               => ['nullable', 'string', 'max:255'],
+            'delivery_items_text'         => ['nullable', 'string', 'max:255'],
+            'transportation_note_text'    => ['nullable', 'string', 'max:1000'],
+            'delivery_date_text'          => ['nullable', 'string', 'max:100'],
+            'delivery_place_text'         => ['nullable', 'string', 'max:100'],
+            'payment_terms_text'          => ['nullable', 'string', 'max:100'],
+            'lines'                       => ['nullable', 'array'],
+            'lines.*.description'         => ['required_with:lines', 'string', 'max:500'],
+            'lines.*.quantity'            => ['required_with:lines', 'numeric'],
+            'lines.*.unit'                => ['nullable', 'string', 'max:20'],
+            'lines.*.unit_price'          => ['required_with:lines', 'numeric'],
+            'lines.*.tax_rate'            => ['required_with:lines', 'numeric', 'in:0,0.08,0.10'],
+            'lines.*.is_expense'          => ['nullable', 'boolean'],
         ]);
 
         $metaKeys = [
             'issued_date', 'due_date', 'notes', 'status',
             'order_number', 'quote_number', 'subject_name', 'work_period_text',
-            'work_location', 'delivery_date_text', 'delivery_place_text', 'payment_terms_text',
+            'work_location', 'delivery_items_text', 'transportation_note_text',
+            'delivery_date_text', 'delivery_place_text', 'payment_terms_text',
         ];
         $invoice->fill(array_intersect_key($validated, array_flip($metaKeys)));
 
@@ -141,6 +145,7 @@ class InvoiceController extends Controller
                     'unit_price'  => $line['unit_price'],
                     'tax_rate'    => $line['tax_rate'],
                     'amount'      => round((float) $line['quantity'] * (float) $line['unit_price'], 2),
+                    'is_expense'  => (bool) ($line['is_expense'] ?? false),
                 ]);
             }
             $invoice->load('lines');

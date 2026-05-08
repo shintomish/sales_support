@@ -25,9 +25,19 @@ class WorkRecordController extends Controller
             ->orderBy('year_month', 'desc')
             ->get();
 
+        // 超過時間計算用に SES契約の精算条件（顧客側）を併せて返す
+        $contract = $deal->sesContract;
+
         return response()->json([
-            'deal_id' => $deal->id,
-            'records' => $records,
+            'deal_id'  => $deal->id,
+            'records'  => $records,
+            'contract' => $contract ? [
+                'client_deduction_hours'      => $contract->client_deduction_hours,
+                'client_overtime_hours'       => $contract->client_overtime_hours,
+                'client_deduction_unit_price' => $contract->client_deduction_unit_price,
+                'client_overtime_unit_price'  => $contract->client_overtime_unit_price,
+                'settlement_unit_minutes'     => $contract->settlement_unit_minutes,
+            ] : null,
         ]);
     }
 
