@@ -29,11 +29,13 @@ class Customer extends Model
         'vendor_payment_site',
         'invoice_delivery_method',
         'primary_contact_id',
+        'secondary_contact_ids',
     ];
 
     protected $casts = [
-        'is_supplier' => 'boolean',
-        'is_customer' => 'boolean',
+        'is_supplier'           => 'boolean',
+        'is_customer'           => 'boolean',
+        'secondary_contact_ids' => 'array',
     ];
 
     public function contacts()

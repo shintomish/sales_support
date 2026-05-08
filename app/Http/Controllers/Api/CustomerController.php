@@ -98,6 +98,8 @@ class CustomerController extends Controller
             'vendor_payment_site' => 'nullable|integer|min:0|max:365',
             'invoice_delivery_method' => 'nullable|in:mail,post,both',
             'primary_contact_id'  => 'nullable|integer|exists:contacts,id',
+            'secondary_contact_ids' => 'nullable|array|max:4',
+            'secondary_contact_ids.*' => 'integer|exists:contacts,id',
         ], $this->messages());
 
         $customer = Customer::create($validated);
@@ -173,6 +175,8 @@ class CustomerController extends Controller
             'vendor_payment_site' => 'nullable|integer|min:0|max:365',
             'invoice_delivery_method' => 'nullable|in:mail,post,both',
             'primary_contact_id'  => 'nullable|integer|exists:contacts,id',
+            'secondary_contact_ids' => 'nullable|array|max:4',
+            'secondary_contact_ids.*' => 'integer|exists:contacts,id',
         ], $this->messages());
 
         $customer->update($validated);
