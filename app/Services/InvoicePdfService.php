@@ -77,8 +77,8 @@ class InvoicePdfService
             'invoice'    => $invoice,
             'withZaichu' => $withZaichu,
         ])->render();
-        // 封筒は横長サイズなのでフォーマット指定なしで HTML 内 @page を尊重
-        return $this->htmlToPdfRaw($html);
+        // 長3封筒: 235mm × 120mm（横向き）。Browsershot に明示指定
+        return $this->htmlToCustomPdf($html, 235, 120);
     }
 
     /**
@@ -109,12 +109,12 @@ class InvoicePdfService
     }
 
     /**
-     * @page 指定そのままで PDF 化（封筒など A4 以外）
+     * 任意サイズで PDF 化（封筒など A4 以外）。サイズは mm 単位。
      */
-    private function htmlToPdfRaw(string $html): string
+    private function htmlToCustomPdf(string $html, float $widthMm, float $heightMm): string
     {
         $shot = Browsershot::html($html)
-            ->preferCssPageSize()
+            ->paperSize($widthMm, $heightMm, 'mm')
             ->showBackground()
             ->margins(0, 0, 0, 0)
             ->noSandbox()
