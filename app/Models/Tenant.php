@@ -17,6 +17,8 @@ class Tenant extends Model
         'invoice_issuer_tel',
         'invoice_issuer_fax',
         'invoice_issuer_logo_path',
+        'invoice_issuer_seal_path',
+        'invoice_issuer_url',
         'invoice_issuer_invoice_number',
         'invoice_issuer_bank_name',
         'invoice_issuer_bank_branch',
