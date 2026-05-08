@@ -329,23 +329,44 @@ class InvoiceController extends Controller
         }
 
         $paginated = $q->paginate(50);
-        $paginated->getCollection()->transform(fn($r) => [
-            'id'                   => $r->id,
-            'method'               => $r->method,
-            'to_emails'            => $r->to_emails,
-            'cc_emails'            => $r->cc_emails,
-            'subject'              => $r->subject,
-            'attachments_meta'     => $r->attachments_meta,
-            'status'               => $r->status,
-            'error_message'        => $r->error_message,
-            'sent_at'              => $r->sent_at?->toIso8601String(),
-            'sent_by_name'         => $r->sender?->name,
-            'invoice_id'           => $r->invoice_id,
-            'invoice_number'       => $r->invoice?->invoice_number,
-            'invoice_year_month'   => $r->invoice?->year_month,
-            'invoice_total'        => $r->invoice?->total,
-            'customer_name'        => $r->invoice?->customer_name_snapshot,
-        ]);
+
+        // TO のメールアドレスから連絡先名を解決するためのマップを作る
+        $allEmails = collect();
+        foreach ($paginated->items() as $r) {
+            $allEmails = $allEmails->concat($r->to_emails ?? []);
+        }
+        $allEmails = $allEmails->unique()->values();
+        $emailToName = [];
+        if ($allEmails->isNotEmpty()) {
+            $emailToName = \App\Models\Contact::query()
+                ->whereIn('email', $allEmails)
+                ->pluck('name', 'email')
+                ->all();
+        }
+
+        $paginated->getCollection()->transform(function ($r) use ($emailToName) {
+            $toNames = collect($r->to_emails ?? [])
+                ->map(fn($em) => $emailToName[$em] ?? $em)
+                ->values()->all();
+            return [
+                'id'                   => $r->id,
+                'method'               => $r->method,
+                'to_emails'            => $r->to_emails,
+                'to_names'             => $toNames,
+                'cc_emails'            => $r->cc_emails,
+                'subject'              => $r->subject,
+                'attachments_meta'     => $r->attachments_meta,
+                'status'               => $r->status,
+                'error_message'        => $r->error_message,
+                'sent_at'              => $r->sent_at?->toIso8601String(),
+                'sent_by_name'         => $r->sender?->name,
+                'invoice_id'           => $r->invoice_id,
+                'invoice_number'       => $r->invoice?->invoice_number,
+                'invoice_year_month'   => $r->invoice?->year_month,
+                'invoice_total'        => $r->invoice?->total,
+                'customer_name'        => $r->invoice?->customer_name_snapshot,
+            ];
+        });
 
         return response()->json($paginated);
     }
