@@ -78,7 +78,21 @@ class DeliveryCampaignController extends Controller
 
         $campaigns = $query->paginate($perPage);
 
-        $campaigns->getCollection()->transform(function ($campaign) {
+        // 一覧表示用に各キャンペーンの最終再送信日時を1クエリで取得
+        $campaignIds = $campaigns->getCollection()->pluck('id')->all();
+        $latestResentMap = [];
+        if ($campaignIds) {
+            $latestResentMap = DeliverySendHistory::query()
+                ->whereIn('campaign_id', $campaignIds)
+                ->whereNotNull('resent_at')
+                ->select('campaign_id', DB::raw('MAX(resent_at) as latest_resent_at'))
+                ->groupBy('campaign_id')
+                ->pluck('latest_resent_at', 'campaign_id')
+                ->all();
+        }
+
+        $campaigns->getCollection()->transform(function ($campaign) use ($latestResentMap) {
+            $latest = $latestResentMap[$campaign->id] ?? null;
             return [
                 'id'                       => $campaign->id,
                 'send_type'                => $campaign->send_type,
@@ -90,6 +104,7 @@ class DeliveryCampaignController extends Controller
                                               : null,
                 'subject'                  => $campaign->subject,
                 'sent_at'                  => $campaign->sent_at?->toIso8601String(),
+                'latest_resent_at'         => $latest ? \Carbon\Carbon::parse($latest)->toIso8601String() : null,
                 'sent_by'                  => $campaign->user?->name,
                 'total_count'              => $campaign->total_count,
                 'success_count'            => $campaign->success_count,
