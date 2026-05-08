@@ -84,8 +84,10 @@ Route::prefix('v1')->middleware(['supabase.auth'])->group(function () {
     Route::get('invoices/{invoice}',      [InvoiceController::class, 'show']);
     Route::put('invoices/{invoice}',      [InvoiceController::class, 'update']);
     Route::delete('invoices/{invoice}',   [InvoiceController::class, 'destroy']);
-    Route::post('invoices/{invoice}/pdf',     [InvoiceController::class, 'generatePdf']);
-    Route::post('invoices/{invoice}/approve', [InvoiceController::class, 'approve']);
+    Route::post('invoices/{invoice}/pdf',          [InvoiceController::class, 'generatePdf']);
+    Route::post('invoices/{invoice}/approve',      [InvoiceController::class, 'approve']);
+    Route::get('invoices/{invoice}/cover-letter',  [InvoiceController::class, 'coverLetter']);
+    Route::get('invoices/{invoice}/envelope',      [InvoiceController::class, 'envelope']);
     Route::get('email-body-templates/me',  [EmailBodyTemplateController::class, 'show']);
     Route::put('email-body-templates/me',  [EmailBodyTemplateController::class, 'upsert']);
     Route::get('dashboard', [DashboardController::class, 'index']);

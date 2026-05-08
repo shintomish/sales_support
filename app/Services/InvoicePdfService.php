@@ -52,6 +52,64 @@ class InvoicePdfService
     }
 
     /**
+     * 送付状 PDF をバイナリで返す（保存はしない）
+     *
+     * @param array<int, array{name:string,count:int}> $items 同封物リスト
+     */
+    public function renderCoverLetter(Invoice $invoice, array $items): string
+    {
+        $invoice->load('customer');
+        $html = View::make('invoices.cover_letter', ['invoice' => $invoice, 'items' => $items])->render();
+        return $this->htmlToPdf($html);
+    }
+
+    /**
+     * 長3封筒 PDF をバイナリで返す（保存はしない）
+     *
+     * @param bool $withZaichu 「請求書在中」朱印の表示有無
+     */
+    public function renderEnvelope(Invoice $invoice, bool $withZaichu = true): string
+    {
+        $invoice->load('customer');
+        $html = View::make('invoices.envelope', [
+            'invoice'    => $invoice,
+            'withZaichu' => $withZaichu,
+        ])->render();
+        // 封筒は横長サイズなのでフォーマット指定なしで HTML 内 @page を尊重
+        return $this->htmlToPdfRaw($html);
+    }
+
+    /**
+     * @page 指定そのままで PDF 化（封筒など A4 以外）
+     */
+    private function htmlToPdfRaw(string $html): string
+    {
+        $shot = Browsershot::html($html)
+            ->preferCssPageSize()
+            ->showBackground()
+            ->margins(0, 0, 0, 0)
+            ->noSandbox()
+            ->setNodeEnv([
+                'HOME'                => '/tmp',
+                'PUPPETEER_CACHE_DIR' => '/var/www/.cache/puppeteer',
+            ])
+            ->setOption('args', [
+                '--no-sandbox',
+                '--disable-dev-shm-usage',
+                '--disable-gpu',
+                '--single-process',
+                '--no-zygote',
+                '--disable-crash-reporter',
+                '--disable-breakpad',
+                '--user-data-dir=/tmp/chromium-data',
+            ]);
+        if ($chromePath = env('PUPPETEER_EXECUTABLE_PATH')) {
+            $shot->setChromePath($chromePath);
+        }
+        return $shot->pdf();
+    }
+
+    /**
      * HTML から PDF バイナリを生成
      *
      * www-data ユーザーで Chromium を起動する場合、HOME に書き込めないと

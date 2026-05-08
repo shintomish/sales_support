@@ -171,6 +171,42 @@ class InvoiceController extends Controller
     }
 
     /**
+     * GET /api/v1/invoices/{invoice}/cover-letter?invoice=1&timesheet=0&transport=0
+     * 送付状 PDF をインラインで返す
+     */
+    public function coverLetter(Request $request, Invoice $invoice)
+    {
+        $items = [];
+        if ($request->boolean('invoice', true))   $items[] = ['name' => '御請求書',   'count' => 1];
+        if ($request->boolean('timesheet'))       $items[] = ['name' => '勤務表',     'count' => 1];
+        if ($request->boolean('transport'))       $items[] = ['name' => '交通費明細書', 'count' => 1];
+
+        if (empty($items)) {
+            return response()->json(['message' => '同封物が選択されていません'], 422);
+        }
+
+        $pdf = $this->pdfService->renderCoverLetter($invoice, $items);
+        return response($pdf, 200)
+            ->header('Content-Type', 'application/pdf')
+            ->header('Content-Disposition', 'inline; filename="cover-letter-' . $invoice->invoice_number . '.pdf"');
+    }
+
+    /**
+     * GET /api/v1/invoices/{invoice}/envelope?zaichu=1
+     * 長3封筒 PDF をインラインで返す
+     *  - zaichu=1（既定）: 「請求書在中」朱印あり
+     *  - zaichu=0       : 一般用途（朱印なし）
+     */
+    public function envelope(Request $request, Invoice $invoice)
+    {
+        $withZaichu = $request->boolean('zaichu', true);
+        $pdf = $this->pdfService->renderEnvelope($invoice, $withZaichu);
+        return response($pdf, 200)
+            ->header('Content-Type', 'application/pdf')
+            ->header('Content-Disposition', 'inline; filename="envelope-' . $invoice->invoice_number . '.pdf"');
+    }
+
+    /**
      * POST /api/v1/invoices/{invoice}/approve
      * 承認 → 電子印付き PDF を再生成
      * tenant_admin / super_admin のみ実行可
