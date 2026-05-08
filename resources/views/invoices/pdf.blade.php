@@ -171,6 +171,7 @@ body {
 .items td.blank  { height: 2.5mm; }
 .items td.muted  { color: #d33; }
 .items tfoot td  { border: 0.5pt solid #111; }
+.items tfoot tr:first-child td { border-top: 1.2pt solid #111; }
 .items tfoot .sub-label { text-align: center; }
 .items tfoot .total { font-weight: bold; }
 
