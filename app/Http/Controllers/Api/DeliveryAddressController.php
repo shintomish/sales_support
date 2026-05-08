@@ -129,14 +129,15 @@ class DeliveryAddressController extends Controller
         $address = DeliveryAddress::findOrFail($id);
 
         $validated = $request->validate([
-            'email'      => 'sometimes|email|max:255',
-            'name'       => 'sometimes|nullable|string|max:255',
-            'zip_code'   => 'sometimes|nullable|string|max:20',
-            'prefecture' => 'sometimes|nullable|string|max:50',
-            'address'    => 'sometimes|nullable|string|max:500',
-            'tel'        => 'sometimes|nullable|string|max:50',
-            'occupation' => 'sometimes|nullable|string|max:255',
-            'is_active'  => 'sometimes|boolean',
+            'email'              => 'sometimes|email|max:255',
+            'name'               => 'sometimes|nullable|string|max:255',
+            'zip_code'           => 'sometimes|nullable|string|max:20',
+            'prefecture'         => 'sometimes|nullable|string|max:50',
+            'address'            => 'sometimes|nullable|string|max:500',
+            'tel'                => 'sometimes|nullable|string|max:50',
+            'occupation'         => 'sometimes|nullable|string|max:255',
+            'is_active'          => 'sometimes|boolean',
+            'unsubscribe_reason' => 'sometimes|nullable|string|max:50',
         ]);
 
         // メールアドレス変更時は同テナント内の重複を確認
@@ -151,13 +152,19 @@ class DeliveryAddressController extends Controller
         }
 
         // 状態変更時は停止理由・停止日時を自動記録/クリア
+        // ただしリクエストに unsubscribe_reason が明示指定されている場合はそちらを優先
+        $reasonExplicit = array_key_exists('unsubscribe_reason', $validated);
         if (array_key_exists('is_active', $validated)) {
             if ($validated['is_active'] === false && $address->is_active) {
-                $validated['unsubscribe_reason'] = 'user_disabled';
-                $validated['unsubscribed_at']    = now();
+                if (!$reasonExplicit) {
+                    $validated['unsubscribe_reason'] = 'user_disabled';
+                }
+                $validated['unsubscribed_at'] = now();
             } elseif ($validated['is_active'] === true && !$address->is_active) {
-                $validated['unsubscribe_reason'] = null;
-                $validated['unsubscribed_at']    = null;
+                if (!$reasonExplicit) {
+                    $validated['unsubscribe_reason'] = null;
+                }
+                $validated['unsubscribed_at'] = null;
             }
         }
 
