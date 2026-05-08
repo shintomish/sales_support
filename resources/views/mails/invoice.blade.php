@@ -12,10 +12,9 @@ body {
     max-width: 680px;
     margin: 0 auto;
     padding: 16px;
-    white-space: pre-wrap;
     word-break: break-word;
 }
 </style>
 </head>
-<body>{!! e($body) !!}</body>
+<body>{!! nl2br(e($body)) !!}</body>
 </html>
