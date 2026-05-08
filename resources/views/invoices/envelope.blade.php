@@ -158,8 +158,14 @@ body {
         <div style="margin-bottom: 1mm;"><img class="logo" src="{{ $logoData }}" alt="logo"></div>
     @endif
     <div class="name">{{ $invoice->issuer_name_snapshot }}</div>
-    @if($invoice->issuer_postal_code_snapshot)
-        <div class="addr">〒{{ $invoice->issuer_postal_code_snapshot }}　{{ $invoice->issuer_address_snapshot }}</div>
+    @php
+        $addrParts = preg_split('/[ 　]/u', (string) $invoice->issuer_address_snapshot, 2);
+    @endphp
+    @if($invoice->issuer_postal_code_snapshot || !empty($addrParts[0]))
+        <div>〒{{ $invoice->issuer_postal_code_snapshot }}　{{ $addrParts[0] ?? '' }}</div>
+        @if(!empty($addrParts[1]))
+            <div>　{{ $addrParts[1] }}</div>
+        @endif
     @endif
     @if($invoice->issuer_tel_snapshot || $invoice->issuer_fax_snapshot)
         <div>

@@ -59,6 +59,7 @@ class InvoicePdfService
     public function renderCoverLetter(Invoice $invoice, array $items): string
     {
         $invoice->load('customer');
+        $this->refreshIssuerFromTenant($invoice);
         $html = View::make('invoices.cover_letter', ['invoice' => $invoice, 'items' => $items])->render();
         return $this->htmlToPdf($html);
     }
@@ -71,12 +72,40 @@ class InvoicePdfService
     public function renderEnvelope(Invoice $invoice, bool $withZaichu = true): string
     {
         $invoice->load('customer');
+        $this->refreshIssuerFromTenant($invoice);
         $html = View::make('invoices.envelope', [
             'invoice'    => $invoice,
             'withZaichu' => $withZaichu,
         ])->render();
         // 封筒は横長サイズなのでフォーマット指定なしで HTML 内 @page を尊重
         return $this->htmlToPdfRaw($html);
+    }
+
+    /**
+     * 送付状/封筒は運用書類（発行時の歴史的スナップショット不要）。
+     * 最新のテナント設定で発行者情報を上書きする。
+     */
+    private function refreshIssuerFromTenant(Invoice $invoice): void
+    {
+        $tenant = \App\Models\Tenant::query()->find($invoice->tenant_id);
+        if (!$tenant) return;
+
+        $map = [
+            'issuer_name_snapshot'           => 'invoice_issuer_name',
+            'issuer_postal_code_snapshot'    => 'invoice_issuer_postal_code',
+            'issuer_address_snapshot'        => 'invoice_issuer_address',
+            'issuer_tel_snapshot'            => 'invoice_issuer_tel',
+            'issuer_fax_snapshot'            => 'invoice_issuer_fax',
+            'issuer_url_snapshot'            => 'invoice_issuer_url',
+            'issuer_logo_snapshot'           => 'invoice_issuer_logo_path',
+            'issuer_invoice_number_snapshot' => 'invoice_issuer_invoice_number',
+        ];
+        foreach ($map as $invoiceField => $tenantField) {
+            $value = $tenant->{$tenantField} ?? null;
+            if ($value !== null && $value !== '') {
+                $invoice->{$invoiceField} = $value;
+            }
+        }
     }
 
     /**

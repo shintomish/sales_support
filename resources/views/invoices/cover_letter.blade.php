@@ -59,13 +59,13 @@ body {
     text-align: left;
     font-size: 9.5pt;
     line-height: 1.55;
-    min-width: 80mm;
 }
 .issuer-logo {
     height: 12mm;
     display: block;
     margin-bottom: 1.5mm;
 }
+.issuer-block .url { margin-top: 1mm; }
 
 .title {
     text-align: center;
@@ -103,8 +103,15 @@ body {
         @if($invoice->issuer_name_snapshot)
             <div>{{ $invoice->issuer_name_snapshot }}</div>
         @endif
-        @if($invoice->issuer_postal_code_snapshot)
-            <div>〒{{ $invoice->issuer_postal_code_snapshot }}　{{ $invoice->issuer_address_snapshot }}</div>
+        @php
+            // 住所は最初の半角/全角スペースで2行に分割（建物名以降を改行）
+            $addrParts = preg_split('/[ 　]/u', (string) $invoice->issuer_address_snapshot, 2);
+        @endphp
+        @if($invoice->issuer_postal_code_snapshot || !empty($addrParts[0]))
+            <div>〒{{ $invoice->issuer_postal_code_snapshot }}　{{ $addrParts[0] ?? '' }}</div>
+            @if(!empty($addrParts[1]))
+                <div>　{{ $addrParts[1] }}</div>
+            @endif
         @endif
         @if($invoice->issuer_tel_snapshot || $invoice->issuer_fax_snapshot)
             <div>
@@ -114,7 +121,7 @@ body {
             </div>
         @endif
         @if($invoice->issuer_url_snapshot)
-            <div>{{ $invoice->issuer_url_snapshot }}</div>
+            <div class="url">{{ $invoice->issuer_url_snapshot }}</div>
         @endif
     </div>
 </div>
