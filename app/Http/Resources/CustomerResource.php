@@ -26,6 +26,7 @@ class CustomerResource extends JsonResource
             'invoice_number'       => $this->invoice_number,
             'payment_site'         => $this->payment_site,
             'vendor_payment_site'  => $this->vendor_payment_site,
+            'invoice_delivery_method' => $this->invoice_delivery_method,
             'primary_contact_id'   => $this->primary_contact_id,
             'primary_contact'      => $this->whenLoaded('primaryContact', fn() => $this->primaryContact ? [
                 'id'    => $this->primaryContact->id,

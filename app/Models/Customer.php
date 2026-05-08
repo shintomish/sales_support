@@ -27,6 +27,7 @@ class Customer extends Model
         'invoice_number',
         'payment_site',
         'vendor_payment_site',
+        'invoice_delivery_method',
         'primary_contact_id',
     ];
 

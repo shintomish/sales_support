@@ -96,6 +96,7 @@ class CustomerController extends Controller
             'invoice_code'        => ['nullable', 'string', 'max:20', 'regex:/^[A-Za-z0-9_-]*$/'],
             'payment_site'        => 'nullable|integer|min:0|max:365',
             'vendor_payment_site' => 'nullable|integer|min:0|max:365',
+            'invoice_delivery_method' => 'nullable|in:mail,post,both',
             'primary_contact_id'  => 'nullable|integer|exists:contacts,id',
         ], $this->messages());
 
@@ -170,6 +171,7 @@ class CustomerController extends Controller
             'invoice_code'        => ['nullable', 'string', 'max:20', 'regex:/^[A-Za-z0-9_-]*$/'],
             'payment_site'        => 'nullable|integer|min:0|max:365',
             'vendor_payment_site' => 'nullable|integer|min:0|max:365',
+            'invoice_delivery_method' => 'nullable|in:mail,post,both',
             'primary_contact_id'  => 'nullable|integer|exists:contacts,id',
         ], $this->messages());
 

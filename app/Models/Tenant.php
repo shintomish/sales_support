@@ -20,6 +20,8 @@ class Tenant extends Model
         'invoice_issuer_seal_path',
         'invoice_issuer_url',
         'invoice_issuer_invoice_number',
+        'invoice_email_subject_template',
+        'invoice_email_body_template',
         'invoice_issuer_bank_name',
         'invoice_issuer_bank_branch',
         'invoice_issuer_bank_account_type',
