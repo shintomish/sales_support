@@ -21,6 +21,8 @@ class DeliveryAddress extends Model
         'occupation',
         'is_active',
         'unsubscribe_token',
+        'unsubscribe_reason',
+        'unsubscribed_at',
     ];
 
     protected static function boot(): void
@@ -34,7 +36,8 @@ class DeliveryAddress extends Model
     }
 
     protected $casts = [
-        'is_active' => 'boolean',
+        'is_active'        => 'boolean',
+        'unsubscribed_at'  => 'datetime',
     ];
 
     public function sendHistories(): HasMany

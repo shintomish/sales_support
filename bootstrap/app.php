@@ -22,6 +22,11 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->appendToGroup('api', SetTenantContext::class);
         $middleware->appendToGroup('api', LogUserActivity::class);
         $middleware->appendToGroup('web', LogUserActivity::class);
+
+        // 配信停止リンクは外部メールクライアントから POST するため CSRF 除外
+        $middleware->validateCsrfTokens(except: [
+            'unsubscribe/*',
+        ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->report(function (Throwable $e) {

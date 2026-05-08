@@ -150,6 +150,17 @@ class DeliveryAddressController extends Controller
             }
         }
 
+        // 状態変更時は停止理由・停止日時を自動記録/クリア
+        if (array_key_exists('is_active', $validated)) {
+            if ($validated['is_active'] === false && $address->is_active) {
+                $validated['unsubscribe_reason'] = 'user_disabled';
+                $validated['unsubscribed_at']    = now();
+            } elseif ($validated['is_active'] === true && !$address->is_active) {
+                $validated['unsubscribe_reason'] = null;
+                $validated['unsubscribed_at']    = null;
+            }
+        }
+
         $address->update($validated);
 
         return response()->json($address);
@@ -179,8 +190,19 @@ class DeliveryAddressController extends Controller
         ]);
 
         $tenantId = auth()->user()->tenant_id;
-        $updated  = DeliveryAddress::where('tenant_id', $tenantId)
-            ->update(['is_active' => $validated['is_active']]);
+        $payload  = ['is_active' => $validated['is_active']];
+
+        // 一括で無効化する場合は user_disabled として理由を残す
+        if ($validated['is_active'] === false) {
+            $payload['unsubscribe_reason'] = 'user_disabled';
+            $payload['unsubscribed_at']    = now();
+        } else {
+            $payload['unsubscribe_reason'] = null;
+            $payload['unsubscribed_at']    = null;
+        }
+
+        $updated = DeliveryAddress::where('tenant_id', $tenantId)
+            ->update($payload);
 
         return response()->json([
             'message' => "{$updated}件を更新しました",

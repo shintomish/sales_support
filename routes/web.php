@@ -9,9 +9,11 @@ use App\Http\Controllers\ActivityController;
 use App\Http\Controllers\TaskController;
 use App\Http\Controllers\BusinessCardController;
 
-// 配信停止（認証不要）
-Route::get('/unsubscribe/{token}', [\App\Http\Controllers\UnsubscribeController::class, 'handle'])
+// 配信停止（認証不要）GET=確認画面、POST=実行
+Route::get('/unsubscribe/{token}', [\App\Http\Controllers\UnsubscribeController::class, 'showConfirm'])
     ->name('unsubscribe');
+Route::post('/unsubscribe/{token}', [\App\Http\Controllers\UnsubscribeController::class, 'handle'])
+    ->name('unsubscribe.confirm');
 
 Route::middleware(['auth'])->group(function () {
 
