@@ -116,12 +116,11 @@ body {
 .issuer-name  { margin-top: 0.5mm; }
 .issuer-seal {
     position: absolute;
-    right: -4mm;
-    bottom: -2mm;
-    width: 18mm;
-    height: 18mm;
+    right: 8mm;
+    top: 0mm;
+    width: 16mm;
+    height: 16mm;
     object-fit: contain;
-    opacity: 0.92;
 }
 
 .numbers-block {
