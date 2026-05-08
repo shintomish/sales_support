@@ -179,7 +179,7 @@ class DeliveryCampaignController extends Controller
             'projectMailSource',
             'engineerMailSource',
             'sendHistories' => function ($query) {
-                $query->with(['replyEmail', 'engineer', 'publicProject'])->orderBy('id');
+                $query->with(['replyEmail.attachments', 'engineer', 'publicProject'])->orderBy('id');
             },
         ])->findOrFail($id);
 
@@ -211,12 +211,19 @@ class DeliveryCampaignController extends Controller
                     'public_project_id'    => $h->public_project_id,
                     'public_project_title' => $h->publicProject?->title,
                     'replied_at'           => $h->replied_at?->toIso8601String(),
+                    'reply_email_id'       => $h->reply_email_id,
                     'reply_subject'        => $h->replyEmail?->subject,
                     'reply_received_at'    => $h->replyEmail?->received_at?->toIso8601String(),
                     'reply_body_snippet'   => $h->replyEmail ? mb_substr(strip_tags($h->replyEmail->body_text ?? $h->replyEmail->body_html ?? ''), 0, 300) : null,
                     'reply_body_text'      => $h->replyEmail?->body_text,
                     'reply_from'           => $h->replyEmail?->from_address,
                     'reply_from_name'      => $h->replyEmail?->from_name,
+                    'reply_attachments'    => $h->replyEmail?->attachments?->map(fn($a) => [
+                        'id'        => $a->id,
+                        'filename'  => $a->filename,
+                        'mime_type' => $a->mime_type,
+                        'size'      => $a->size,
+                    ])->values()->all() ?? [],
                 ];
             }),
         ]);
