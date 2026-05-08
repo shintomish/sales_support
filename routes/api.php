@@ -91,6 +91,7 @@ Route::prefix('v1')->middleware(['supabase.auth'])->group(function () {
     Route::post('invoices/{invoice}/send-mail',    [InvoiceController::class, 'sendMail']);
     Route::get('invoices/{invoice}/mail-template', [InvoiceController::class, 'mailTemplate']);
     Route::get('invoices/{invoice}/send-histories',[InvoiceController::class, 'sendHistories']);
+    Route::get('invoice-send-histories',           [InvoiceController::class, 'allSendHistories']);
     Route::get('email-body-templates/me',  [EmailBodyTemplateController::class, 'show']);
     Route::put('email-body-templates/me',  [EmailBodyTemplateController::class, 'upsert']);
     Route::get('dashboard', [DashboardController::class, 'index']);

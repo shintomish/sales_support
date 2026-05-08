@@ -294,6 +294,63 @@ class InvoiceController extends Controller
     }
 
     /**
+     * GET /api/v1/invoice-send-histories
+     * テナント横断の送信履歴一覧（フィルタ・ページング付き）
+     */
+    public function allSendHistories(Request $request): JsonResponse
+    {
+        $v = $request->validate([
+            'year_month' => ['nullable', 'regex:/^\d{4}-(0[1-9]|1[0-2])$/'],
+            'status'     => ['nullable', 'in:sent,failed'],
+            'method'     => ['nullable', 'in:mail,post'],
+            'q'          => ['nullable', 'string', 'max:200'],
+        ]);
+
+        $q = \App\Models\InvoiceSendHistory::query()
+            ->with([
+                'sender:id,name',
+                'invoice:id,invoice_number,customer_id,customer_name_snapshot,year_month,total',
+            ])
+            ->orderByDesc('sent_at');
+
+        if (!empty($v['status'])) $q->where('status', $v['status']);
+        if (!empty($v['method'])) $q->where('method', $v['method']);
+        if (!empty($v['year_month'])) {
+            $q->whereHas('invoice', fn($iq) => $iq->where('year_month', $v['year_month']));
+        }
+        if (!empty($v['q'])) {
+            $like = '%' . $v['q'] . '%';
+            $q->where(function ($qq) use ($like) {
+                $qq->where('subject', 'ilike', $like)
+                   ->orWhereHas('invoice', fn($iq) =>
+                       $iq->where('invoice_number', 'ilike', $like)
+                          ->orWhere('customer_name_snapshot', 'ilike', $like));
+            });
+        }
+
+        $paginated = $q->paginate(50);
+        $paginated->getCollection()->transform(fn($r) => [
+            'id'                   => $r->id,
+            'method'               => $r->method,
+            'to_emails'            => $r->to_emails,
+            'cc_emails'            => $r->cc_emails,
+            'subject'              => $r->subject,
+            'attachments_meta'     => $r->attachments_meta,
+            'status'               => $r->status,
+            'error_message'        => $r->error_message,
+            'sent_at'              => $r->sent_at?->toIso8601String(),
+            'sent_by_name'         => $r->sender?->name,
+            'invoice_id'           => $r->invoice_id,
+            'invoice_number'       => $r->invoice?->invoice_number,
+            'invoice_year_month'   => $r->invoice?->year_month,
+            'invoice_total'        => $r->invoice?->total,
+            'customer_name'        => $r->invoice?->customer_name_snapshot,
+        ]);
+
+        return response()->json($paginated);
+    }
+
+    /**
      * POST /api/v1/invoices/{invoice}/send-mail
      * 請求書をメールで送付。送付状/勤務表/交通費明細書/封筒を選択添付。
      *
