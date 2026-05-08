@@ -232,6 +232,44 @@ class KagoyaMailService
         return $headers;
     }
 
+    /**
+     * MIME タイプから拡張子（ピリオド込み、例: ".xlsx"）を返す。
+     * 不明な場合は ".bin"。filename 復元時の最終フォールバックとして使う。
+     */
+    public static function extensionForMime(?string $mime): string
+    {
+        $mime = strtolower(trim((string) $mime));
+        $map = [
+            'application/pdf'                                                                => '.pdf',
+            'application/zip'                                                                => '.zip',
+            'application/x-zip-compressed'                                                   => '.zip',
+            'application/vnd.ms-excel'                                                       => '.xls',
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'              => '.xlsx',
+            'application/msword'                                                             => '.doc',
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.document'        => '.docx',
+            'application/vnd.ms-powerpoint'                                                  => '.ppt',
+            'application/vnd.openxmlformats-officedocument.presentationml.presentation'      => '.pptx',
+            'image/png'                                                                      => '.png',
+            'image/jpeg'                                                                     => '.jpg',
+            'image/gif'                                                                      => '.gif',
+            'image/webp'                                                                     => '.webp',
+            'image/svg+xml'                                                                  => '.svg',
+            'text/plain'                                                                     => '.txt',
+            'text/csv'                                                                       => '.csv',
+            'text/html'                                                                      => '.html',
+            'application/json'                                                               => '.json',
+            'application/xml'                                                                => '.xml',
+            'text/xml'                                                                       => '.xml',
+            'application/x-7z-compressed'                                                    => '.7z',
+            'application/x-rar-compressed'                                                   => '.rar',
+            'application/vnd.rar'                                                            => '.rar',
+            'application/vnd.ms-excel.sheet.macroenabled.12'                                 => '.xlsm',
+            'application/vnd.oasis.opendocument.text'                                        => '.odt',
+            'application/vnd.oasis.opendocument.spreadsheet'                                 => '.ods',
+        ];
+        return $map[$mime] ?? '.bin';
+    }
+
     private function decodeHeader(string $value): string
     {
         if (empty($value) || !str_contains($value, '=?')) return $value;
@@ -298,14 +336,23 @@ class KagoyaMailService
 
                     if (str_contains(strtolower($partDisp), 'attachment') ||
                         (str_contains(strtolower($partDisp), 'filename') && !str_contains(strtolower($partCt), 'text/'))) {
-                        $filename = 'unknown';
-                        if (preg_match('/filename="?([^";\r\n]+)"?/i', $partDisp . ';' . $partCt, $fm)) {
+                        // 1. Content-Disposition の filename
+                        // 2. Content-Type の name パラメータ（古い MUA は name を使う）
+                        // 3. MIME から拡張子を推測した attachment.<ext>
+                        $filename = null;
+                        if (preg_match('/filename\*?="?([^";\r\n]+)"?/i', $partDisp, $fm)) {
                             $filename = $this->decodeHeader(trim($fm[1]));
+                        } elseif (preg_match('/name="?([^";\r\n]+)"?/i', $partCt, $nm)) {
+                            $filename = $this->decodeHeader(trim($nm[1]));
+                        }
+                        $mime = trim(explode(';', $partCt)[0]);
+                        if ($filename === null || $filename === '' || $filename === 'unknown') {
+                            $filename = 'attachment' . self::extensionForMime($mime);
                         }
                         $decoded = $this->decodeBody($partBody, $partCte);
                         $attachments[] = [
                             'filename'  => $filename,
-                            'mime_type' => trim(explode(';', $partCt)[0]),
+                            'mime_type' => $mime,
                             'size'      => strlen($decoded),
                             'binary'    => $decoded,
                         ];
