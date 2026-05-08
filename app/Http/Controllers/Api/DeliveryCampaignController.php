@@ -79,6 +79,7 @@ class DeliveryCampaignController extends Controller
         $campaigns = $query->paginate($perPage);
 
         // 一覧表示用に各キャンペーンの最終再送信日時を1クエリで取得
+        // 一括再送信(last_resent_at)と個別再送信(history.resent_at)の両方を考慮し、新しい方を採用
         $campaignIds = $campaigns->getCollection()->pluck('id')->all();
         $latestResentMap = [];
         if ($campaignIds) {
@@ -92,7 +93,9 @@ class DeliveryCampaignController extends Controller
         }
 
         $campaigns->getCollection()->transform(function ($campaign) use ($latestResentMap) {
-            $latest = $latestResentMap[$campaign->id] ?? null;
+            $fromHistory  = $latestResentMap[$campaign->id] ?? null;
+            $fromCampaign = $campaign->last_resent_at?->toDateTimeString();
+            $latest = max($fromHistory, $fromCampaign) ?: null;
             return [
                 'id'                       => $campaign->id,
                 'send_type'                => $campaign->send_type,
@@ -495,6 +498,75 @@ class DeliveryCampaignController extends Controller
             foreach (array_unique($m[0]) as $p) $found[] = $p;
         }
         return $found;
+    }
+
+    /**
+     * キャンペーン一括再送信
+     * POST /api/v1/delivery-campaigns/{id}/resend-bulk
+     *
+     * 件名・本文（編集可）を受け取り、有効な配信先全員に再配信する。
+     * 親キャンペーンの project/engineer 紐付けと send_type は引き継ぐ。
+     * 親キャンペーンの last_resent_at を now() に更新。
+     */
+    public function resendBulk(Request $request, int $id): JsonResponse
+    {
+        $tenantId = auth()->user()->tenant_id;
+        $parent   = DeliveryCampaign::where('tenant_id', $tenantId)->findOrFail($id);
+
+        $validated = $request->validate([
+            'subject' => 'required|string|max:500',
+            'body'    => 'required|string',
+        ]);
+
+        // 未置換プレースホルダ検出
+        $unresolved = $this->findUnresolvedPlaceholders($validated['subject'] . "\n" . $validated['body']);
+        if (!empty($unresolved)) {
+            return response()->json([
+                'message'      => '未置換のプレースホルダがあります: ' . implode(' / ', $unresolved)
+                                  . ' 。メール署名設定を確認してください。',
+                'placeholders' => $unresolved,
+            ], 422);
+        }
+
+        $service = new DeliveryCampaignService(
+            tenantId:   $tenantId,
+            userId:     auth()->id(),
+            senderName: auth()->user()->name ?? '',
+        );
+
+        // 親と同じ送信タイプ・ソース紐付けで新規キャンペーン作成
+        $newCampaign = DeliveryCampaign::create([
+            'tenant_id'               => $tenantId,
+            'send_type'               => $parent->send_type,
+            'project_mail_id'         => $parent->project_mail_id,
+            'engineer_mail_source_id' => $parent->engineer_mail_source_id,
+            'user_id'                 => auth()->id(),
+            'subject'                 => $validated['subject'],
+            'body'                    => $validated['body'],
+            'total_count'             => \App\Models\DeliveryAddress::where('tenant_id', $tenantId)
+                                            ->where('is_active', true)->count(),
+            'success_count'           => 0,
+            'failed_count'            => 0,
+            'sent_at'                 => now(),
+        ]);
+
+        // 親に再送信時刻を記録
+        $parent->update(['last_resent_at' => now()]);
+
+        // バックグラウンドで送信
+        register_shutdown_function(function () use ($service, $newCampaign) {
+            if (function_exists('fastcgi_finish_request')) {
+                fastcgi_finish_request();
+            }
+            set_time_limit(0);
+            ignore_user_abort(true);
+            $service->sendCampaign($newCampaign, []);
+        });
+
+        return response()->json([
+            'id'          => $newCampaign->id,
+            'total_count' => $newCampaign->total_count,
+        ], 201);
     }
 
     /**

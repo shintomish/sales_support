@@ -25,10 +25,12 @@ class DeliveryCampaign extends Model
         'success_count',
         'failed_count',
         'sent_at',
+        'last_resent_at',
     ];
 
     protected $casts = [
-        'sent_at' => 'datetime',
+        'sent_at'        => 'datetime',
+        'last_resent_at' => 'datetime',
     ];
 
     public function projectMailSource(): BelongsTo
