@@ -47,6 +47,9 @@
     $logoData = $resolveLogoFromUrl($invoice->issuer_logo_snapshot)
              ?? $resolveLogoFromPath(config('invoice.logo_path'));
 
+    // 電子印画像（base64）
+    $sealData = $resolveLogoFromUrl($invoice->issuer_seal_snapshot);
+
     // 明細表のレイアウト（A4 1ページに収まる行数）
     $itemRows = 14;
 
@@ -109,8 +112,17 @@ body {
 }
 .head-right { text-align: right; padding-left: 8mm; }
 .logo { height: 12mm; display: block; margin-left: auto; margin-bottom: 1.5mm; }
-.issuer-block { display: inline-block; text-align: left; font-size: 9pt; line-height: 1.45; }
+.issuer-block { display: inline-block; text-align: left; font-size: 9pt; line-height: 1.45; position: relative; }
 .issuer-name  { margin-top: 0.5mm; }
+.issuer-seal {
+    position: absolute;
+    right: -4mm;
+    bottom: -2mm;
+    width: 18mm;
+    height: 18mm;
+    object-fit: contain;
+    opacity: 0.92;
+}
 
 .numbers-block {
     width: 100%;
@@ -218,6 +230,9 @@ body {
                 @endif
                 @if($invoice->issuer_name_snapshot)
                     <div class="issuer-name">{{ $invoice->issuer_name_snapshot }}</div>
+                @endif
+                @if($sealData)
+                    <img class="issuer-seal" src="{{ $sealData }}" alt="seal">
                 @endif
             </div>
         </td>

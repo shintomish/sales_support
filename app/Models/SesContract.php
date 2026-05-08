@@ -70,6 +70,7 @@ class SesContract extends Model
         'client_overtime_hours',
         'settlement_unit_minutes',
         'payment_site',
+        'order_number',
         // 仕入れ側精算条件
         'vendor_deduction_unit_price',
         'vendor_deduction_hours',

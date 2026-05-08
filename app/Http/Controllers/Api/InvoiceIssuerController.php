@@ -28,6 +28,7 @@ class InvoiceIssuerController extends Controller
         'invoice_issuer_tel',
         'invoice_issuer_fax',
         'invoice_issuer_logo_path',
+        'invoice_issuer_seal_path',
         'invoice_issuer_invoice_number',
         'invoice_issuer_bank_name',
         'invoice_issuer_bank_branch',
@@ -122,6 +123,59 @@ class InvoiceIssuerController extends Controller
             try { $this->storage->delete($tenant->invoice_issuer_logo_path); }
             catch (\Throwable $e) { report($e); }
             $tenant->invoice_issuer_logo_path = null;
+            $tenant->save();
+        }
+
+        return response()->json(null, 204);
+    }
+
+    /**
+     * POST /api/v1/settings/invoice-issuer/seal
+     * 電子印画像をアップロードして tenants.invoice_issuer_seal_path に設定
+     */
+    public function uploadSeal(Request $request): JsonResponse
+    {
+        $user = Auth::user();
+        if (!in_array($user->role, ['super_admin', 'tenant_admin'], true)) {
+            return response()->json(['message' => '権限がありません'], 403);
+        }
+
+        $request->validate([
+            'seal' => ['required', 'file', 'mimes:png,jpg,jpeg,gif,webp', 'max:2048'],
+        ]);
+
+        $tenant = Tenant::query()->findOrFail($user->tenant_id);
+
+        if ($tenant->invoice_issuer_seal_path) {
+            try { $this->storage->delete($tenant->invoice_issuer_seal_path); }
+            catch (\Throwable $e) { report($e); }
+        }
+
+        $url = $this->storage->upload(
+            $request->file('seal'),
+            sprintf('invoice-issuer-seals/%d', $tenant->id),
+            'seal',
+        );
+
+        $tenant->invoice_issuer_seal_path = $url;
+        $tenant->save();
+
+        return response()->json(['invoice_issuer_seal_path' => $url]);
+    }
+
+    /** DELETE /api/v1/settings/invoice-issuer/seal */
+    public function deleteSeal(): JsonResponse
+    {
+        $user = Auth::user();
+        if (!in_array($user->role, ['super_admin', 'tenant_admin'], true)) {
+            return response()->json(['message' => '権限がありません'], 403);
+        }
+
+        $tenant = Tenant::query()->findOrFail($user->tenant_id);
+        if ($tenant->invoice_issuer_seal_path) {
+            try { $this->storage->delete($tenant->invoice_issuer_seal_path); }
+            catch (\Throwable $e) { report($e); }
+            $tenant->invoice_issuer_seal_path = null;
             $tenant->save();
         }
 

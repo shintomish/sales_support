@@ -50,6 +50,7 @@ class Invoice extends Model
         'issuer_tel_snapshot',
         'issuer_fax_snapshot',
         'issuer_logo_snapshot',
+        'issuer_seal_snapshot',
         'issuer_invoice_number_snapshot',
         'issuer_bank_snapshot',
         'settlement_unit_minutes_snapshot',
