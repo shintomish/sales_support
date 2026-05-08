@@ -75,8 +75,8 @@ body {
     font-weight: normal;
 }
 
-.greeting { margin: 0 4mm 8mm 4mm; }
-.signoff  { text-align: right; margin: 0 4mm 6mm 0; }
+.greeting { margin: 0 30mm 8mm 18mm; }
+.signoff  { text-align: right; margin: 0 30mm 6mm 0; }
 
 .kichou { text-align: center; font-size: 12pt; margin: 6mm 0 4mm 0; }
 
@@ -86,7 +86,7 @@ body {
 .items-list td.name { padding-left: 0; }
 .items-list td.count { text-align: right; padding-right: 0; }
 
-.ijou { text-align: right; margin: 12mm 4mm 0 0; }
+.ijou { text-align: right; margin: 12mm 30mm 0 0; }
 </style>
 </head>
 <body>
