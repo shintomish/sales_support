@@ -386,7 +386,7 @@ class ProjectMailController extends Controller
 
         $campaigns = DeliveryCampaign::with(['sendHistories' => function ($q) {
                 // deliveryタイプは返信ありのみロード（大量送信履歴の対策）
-                $q->with('replyEmail');
+                $q->with(['replyEmail.attachments']);
             }])
             ->where('tenant_id', $tenantId)
             ->where('project_mail_id', $id)
@@ -395,6 +395,15 @@ class ProjectMailController extends Controller
             ->get();
 
         $thread = [];
+
+        $mapAttachments = fn($email) => $email?->attachments
+            ? $email->attachments->map(fn($a) => [
+                'id'        => $a->id,
+                'filename'  => $a->filename,
+                'mime_type' => $a->mime_type,
+                'size'      => $a->size,
+            ])->values()->all()
+            : [];
 
         foreach ($campaigns as $campaign) {
             $isDelivery = $campaign->send_type === 'delivery';
@@ -424,6 +433,7 @@ class ProjectMailController extends Controller
                         'subject'     => $reply->subject,
                         'body_text'   => $reply->body_text,
                         'received_at' => $reply->received_at?->toIso8601String(),
+                        'attachments' => $mapAttachments($reply),
                     ];
                 }
                 continue;
@@ -439,7 +449,8 @@ class ProjectMailController extends Controller
                     'to_name'       => $history->name,
                     'subject'       => $campaign->subject,
                     'body'          => $campaign->body,
-                    'sent_at'       => $campaign->sent_at?->toIso8601String(),
+                    'sent_at'       => $history->created_at?->toIso8601String(),
+                    'resent_at'     => $history->resent_at?->toIso8601String(),
                     'status'        => $history->status,
                     'total_count'   => $campaign->total_count,
                     'success_count' => $campaign->success_count,
@@ -456,6 +467,7 @@ class ProjectMailController extends Controller
                         'subject'     => $reply->subject,
                         'body_text'   => $reply->body_text,
                         'received_at' => $reply->received_at?->toIso8601String(),
+                        'attachments' => $mapAttachments($reply),
                     ];
                 }
             }

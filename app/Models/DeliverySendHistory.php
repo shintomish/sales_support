@@ -25,10 +25,13 @@ class DeliverySendHistory extends Model
         'error_message',
         'replied_at',
         'reply_email_id',
+        'resent_at',
+        'parent_history_id',
     ];
 
     protected $casts = [
         'replied_at' => 'datetime',
+        'resent_at'  => 'datetime',
     ];
 
     public function campaign(): BelongsTo

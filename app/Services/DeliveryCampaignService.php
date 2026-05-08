@@ -137,4 +137,86 @@ class DeliveryCampaignService
             }
         }
     }
+
+    /**
+     * 単一の送信履歴を再送する。
+     *  - 元 history の resent_at を now に更新
+     *  - 同 campaign 内に新しい history 行を作成（parent_history_id で紐付け）
+     *  - キャンペーンの total_count / success_count / failed_count を加算
+     */
+    public function resendHistory(DeliverySendHistory $history): DeliverySendHistory
+    {
+        $campaign    = $history->campaign;
+        $testTo      = env('MAIL_DELIVERY_TEST_TO');
+        $senderEmail = config('mail.from.address') ?? '';
+
+        $toEmail   = $testTo ?: $history->email;
+        $messageId = '<' . Str::uuid() . '@aizen-sol.co.jp>';
+
+        $personalizedBody = str_replace('<%Name%>', $history->name ?? '', $campaign->body);
+
+        // 配信停止リンク（DeliveryAddress が紐付いていれば）
+        if ($history->delivery_address_id) {
+            $address = DeliveryAddress::find($history->delivery_address_id);
+            if ($address) {
+                $unsubscribeUrl   = url('/unsubscribe/' . $address->unsubscribe_token);
+                $personalizedBody .= "\n\n---\n配信停止をご希望の場合は、こちらからお手続きください。\n{$unsubscribeUrl}";
+            }
+        }
+
+        try {
+            Mail::to($toEmail)->send(
+                new DeliveryMail(
+                    mailSubject: $campaign->subject,
+                    body:        $personalizedBody,
+                    senderName:  $this->senderName,
+                    senderEmail: $senderEmail,
+                    messageId:   $messageId,
+                )
+            );
+
+            $newHistory = DeliverySendHistory::create([
+                'tenant_id'           => $this->tenantId,
+                'campaign_id'         => $campaign->id,
+                'delivery_address_id' => $history->delivery_address_id,
+                'engineer_id'         => $history->engineer_id,
+                'public_project_id'   => $history->public_project_id,
+                'email'               => $history->email,
+                'name'                => $history->name,
+                'status'              => 'sent',
+                'ses_message_id'      => $messageId,
+                'parent_history_id'   => $history->id,
+            ]);
+
+            $history->update(['resent_at' => now()]);
+            $campaign->increment('total_count');
+            $campaign->increment('success_count');
+
+            Log::info("[DeliveryCampaign] resend success campaign_id={$campaign->id} history_id={$history->id} new_history_id={$newHistory->id}");
+
+            return $newHistory;
+        } catch (\Throwable $e) {
+            $newHistory = DeliverySendHistory::create([
+                'tenant_id'           => $this->tenantId,
+                'campaign_id'         => $campaign->id,
+                'delivery_address_id' => $history->delivery_address_id,
+                'engineer_id'         => $history->engineer_id,
+                'public_project_id'   => $history->public_project_id,
+                'email'               => $history->email,
+                'name'                => $history->name,
+                'status'              => 'failed',
+                'ses_message_id'      => $messageId,
+                'error_message'       => $e->getMessage(),
+                'parent_history_id'   => $history->id,
+            ]);
+
+            $history->update(['resent_at' => now()]);
+            $campaign->increment('total_count');
+            $campaign->increment('failed_count');
+
+            Log::error("[DeliveryCampaign] resend failed campaign_id={$campaign->id} history_id={$history->id}: " . $e->getMessage());
+
+            return $newHistory;
+        }
+    }
 }

@@ -203,6 +203,9 @@ class DeliveryCampaignController extends Controller
                     'email'                => $h->email,
                     'name'                 => $h->name,
                     'status'               => $h->status,
+                    'sent_at'              => $h->created_at?->toIso8601String(),
+                    'resent_at'            => $h->resent_at?->toIso8601String(),
+                    'parent_history_id'    => $h->parent_history_id,
                     'engineer_id'          => $h->engineer_id,
                     'engineer_name'        => $h->engineer?->name,
                     'public_project_id'    => $h->public_project_id,
@@ -470,5 +473,31 @@ class DeliveryCampaignController extends Controller
             foreach (array_unique($m[0]) as $p) $found[] = $p;
         }
         return $found;
+    }
+
+    /**
+     * 単一履歴の再送信
+     * POST /api/v1/delivery-campaigns/{campaignId}/histories/{historyId}/resend
+     */
+    public function resendHistory(int $campaignId, int $historyId): JsonResponse
+    {
+        $campaign = DeliveryCampaign::findOrFail($campaignId);
+        $history  = DeliverySendHistory::where('campaign_id', $campaign->id)->findOrFail($historyId);
+
+        $service = new DeliveryCampaignService(
+            tenantId:   auth()->user()->tenant_id,
+            userId:     auth()->id(),
+            senderName: auth()->user()->name ?? '',
+        );
+
+        $newHistory = $service->resendHistory($history);
+
+        return response()->json([
+            'id'                => $newHistory->id,
+            'parent_history_id' => $newHistory->parent_history_id,
+            'status'            => $newHistory->status,
+            'sent_at'           => $newHistory->created_at?->toIso8601String(),
+            'error_message'     => $newHistory->error_message,
+        ], 201);
     }
 }
