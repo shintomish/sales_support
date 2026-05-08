@@ -91,6 +91,7 @@ class InvoiceCreationService
                 'issuer_fax_snapshot'             => $tenant?->invoice_issuer_fax,
                 'issuer_logo_snapshot'            => $tenant?->invoice_issuer_logo_path,
                 'issuer_seal_snapshot'            => $tenant?->invoice_issuer_seal_path,
+                'issuer_url_snapshot'             => $tenant?->invoice_issuer_url,
                 'issuer_invoice_number_snapshot'  => $tenant?->invoice_issuer_invoice_number,
                 'issuer_bank_snapshot'            => $this->formatBankInfo($tenant),
                 'settlement_unit_minutes_snapshot'     => $contract?->settlement_unit_minutes,

@@ -2,7 +2,6 @@
     use Illuminate\Support\Carbon;
 
     $issuedAt = $invoice->issued_date instanceof Carbon ? $invoice->issued_date : null;
-    // 送付状の日付は請求日 or 今日
     $coverDate = $issuedAt ?? Carbon::today();
 
     $resolveLogoFromUrl = function (?string $url): ?string {
@@ -22,7 +21,6 @@
     $logoData = $resolveLogoFromUrl($invoice->issuer_logo_snapshot)
              ?? $resolveLogoFromPath(config('invoice.logo_path'));
 
-    // 同封物（呼び出し側で渡す。未指定なら御請求書のみ）
     $items = $items ?? [['name' => '御請求書', 'count' => 1]];
 @endphp
 <!DOCTYPE html>
@@ -44,19 +42,36 @@ body {
 
 .date-top { text-align: right; font-size: 10pt; }
 
-.head { width: 100%; border-collapse: collapse; margin-top: 4mm; }
-.head td { vertical-align: top; }
-.head-left  { width: 50%; }
-.head-right { width: 50%; text-align: right; padding-left: 8mm; }
-.recipient { font-size: 13pt; font-weight: normal; padding-top: 8mm; }
-.logo { height: 12mm; display: block; margin-left: auto; margin-bottom: 1.5mm; }
-.issuer-block { display: inline-block; text-align: left; font-size: 9.5pt; line-height: 1.45; }
+/* 顧客名（左、上段） */
+.recipient {
+    font-size: 13pt;
+    margin-top: 8mm;
+    margin-bottom: 8mm;
+}
+
+/* 発行者ブロック（顧客名の下、右寄せ） */
+.issuer-wrap {
+    text-align: right;
+    margin-bottom: 8mm;
+}
+.issuer-block {
+    display: inline-block;
+    text-align: left;
+    font-size: 9.5pt;
+    line-height: 1.55;
+    min-width: 80mm;
+}
+.issuer-logo {
+    height: 12mm;
+    display: block;
+    margin-bottom: 1.5mm;
+}
 
 .title {
     text-align: center;
     font-size: 22pt;
     letter-spacing: 0.6em;
-    margin: 18mm 0 12mm 0;
+    margin: 12mm 0 12mm 0;
     font-weight: normal;
 }
 
@@ -72,41 +87,37 @@ body {
 .items-list td.count { text-align: right; padding-right: 0; }
 
 .ijou { text-align: right; margin: 12mm 4mm 0 0; }
-
-.footer-mark { text-align: center; margin-top: 30mm; font-size: 11pt; color: #4a82c8; letter-spacing: 0.1em; }
 </style>
 </head>
 <body>
 
 <div class="date-top">{{ $coverDate->format('Y年n月j日') }}</div>
 
-<table class="head">
-    <tr>
-        <td class="head-left">
-            <div class="recipient">{{ $invoice->customer_name_snapshot ?? $invoice->customer?->company_name }} 御中</div>
-        </td>
-        <td class="head-right">
-            @if($logoData)
-                <img class="logo" src="{{ $logoData }}" alt="logo">
-            @endif
-            <div class="issuer-block">
-                @if($invoice->issuer_postal_code_snapshot)
-                    <div>〒{{ $invoice->issuer_postal_code_snapshot }}　{{ $invoice->issuer_address_snapshot }}</div>
-                @endif
-                @if($invoice->issuer_tel_snapshot || $invoice->issuer_fax_snapshot)
-                    <div>
-                        @if($invoice->issuer_tel_snapshot)TEL：{{ $invoice->issuer_tel_snapshot }}@endif
-                        @if($invoice->issuer_tel_snapshot && $invoice->issuer_fax_snapshot)　@endif
-                        @if($invoice->issuer_fax_snapshot)FAX：{{ $invoice->issuer_fax_snapshot }}@endif
-                    </div>
-                @endif
-                @if($invoice->issuer_name_snapshot)
-                    <div>{{ $invoice->issuer_name_snapshot }}</div>
-                @endif
+<div class="recipient">{{ $invoice->customer_name_snapshot ?? $invoice->customer?->company_name }} 御中</div>
+
+<div class="issuer-wrap">
+    <div class="issuer-block">
+        @if($logoData)
+            <img class="issuer-logo" src="{{ $logoData }}" alt="logo">
+        @endif
+        @if($invoice->issuer_name_snapshot)
+            <div>{{ $invoice->issuer_name_snapshot }}</div>
+        @endif
+        @if($invoice->issuer_postal_code_snapshot)
+            <div>〒{{ $invoice->issuer_postal_code_snapshot }}　{{ $invoice->issuer_address_snapshot }}</div>
+        @endif
+        @if($invoice->issuer_tel_snapshot || $invoice->issuer_fax_snapshot)
+            <div>
+                @if($invoice->issuer_tel_snapshot)TEL：{{ $invoice->issuer_tel_snapshot }}@endif
+                @if($invoice->issuer_tel_snapshot && $invoice->issuer_fax_snapshot)　@endif
+                @if($invoice->issuer_fax_snapshot)FAX：{{ $invoice->issuer_fax_snapshot }}@endif
             </div>
-        </td>
-    </tr>
-</table>
+        @endif
+        @if($invoice->issuer_url_snapshot)
+            <div>{{ $invoice->issuer_url_snapshot }}</div>
+        @endif
+    </div>
+</div>
 
 <h1 class="title">送　付　状</h1>
 
@@ -130,8 +141,6 @@ body {
 </div>
 
 <div class="ijou">以上</div>
-
-<div class="footer-mark">AIZENSOL co.</div>
 
 </body>
 </html>

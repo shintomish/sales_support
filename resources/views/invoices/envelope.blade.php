@@ -121,10 +121,12 @@ body {
     padding: 3mm 5mm;
     font-size: 9pt;
     line-height: 1.5;
-    width: 90mm;
+    width: 92mm;
 }
 .issuer-area .logo { height: 8mm; vertical-align: middle; margin-right: 2mm; }
 .issuer-area .name { font-size: 11pt; font-weight: bold; }
+.issuer-area .url  { margin-top: 1mm; font-size: 8.5pt; word-break: break-all; }
+.issuer-area .addr { word-break: break-all; }
 </style>
 </head>
 <body>
@@ -157,7 +159,7 @@ body {
     @endif
     <div class="name">{{ $invoice->issuer_name_snapshot }}</div>
     @if($invoice->issuer_postal_code_snapshot)
-        <div>〒{{ $invoice->issuer_postal_code_snapshot }}　{{ $invoice->issuer_address_snapshot }}</div>
+        <div class="addr">〒{{ $invoice->issuer_postal_code_snapshot }}　{{ $invoice->issuer_address_snapshot }}</div>
     @endif
     @if($invoice->issuer_tel_snapshot || $invoice->issuer_fax_snapshot)
         <div>
@@ -165,6 +167,9 @@ body {
             @if($invoice->issuer_tel_snapshot && $invoice->issuer_fax_snapshot)　@endif
             @if($invoice->issuer_fax_snapshot)FAX：{{ $invoice->issuer_fax_snapshot }}@endif
         </div>
+    @endif
+    @if($invoice->issuer_url_snapshot)
+        <div class="url">{{ $invoice->issuer_url_snapshot }}</div>
     @endif
 </div>
 
