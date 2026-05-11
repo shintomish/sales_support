@@ -52,19 +52,40 @@
     $isEstimate     = $docType === 'estimate';
     $isPurchaseOrder = $docType === 'purchase_order';
 
+    // 注文請書モード: purchase_order 行を「請書」フォーマットで描画する
+    // 同一データから 注文書 と 注文請書 の 2 種類の PDF を出し分ける
+    $isAcknowledgement = ($isAcknowledgement ?? false) && $isPurchaseOrder;
+
     // 電子印画像（base64）
     //   - 請求書/注文書: 丸印
     //   - 見積書: 角印
-    $sealData = $isEstimate
-        ? $resolveLogoFromUrl($invoice->issuer_square_seal_snapshot)
-        : $resolveLogoFromUrl($invoice->issuer_round_seal_snapshot);
+    //   - 注文請書: なし（受領側が押印するため）
+    $sealData = $isAcknowledgement
+        ? null
+        : ($isEstimate
+            ? $resolveLogoFromUrl($invoice->issuer_square_seal_snapshot)
+            : $resolveLogoFromUrl($invoice->issuer_round_seal_snapshot));
 
     // タイトル
-    $docTitle = $isEstimate ? '御　見　積　書'
-              : ($isPurchaseOrder ? '注　文　書' : '請　求　書');
+    $docTitle = $isAcknowledgement ? '注　文　請　書'
+              : ($isEstimate ? '御　見　積　書'
+              : ($isPurchaseOrder ? '注　文　書' : '請　求　書'));
+
+    // 注文請書: 弊社/御社 wording の自動反転
+    $swapWording = function (?string $text) use ($isAcknowledgement): string {
+        if (!$text || !$isAcknowledgement) return (string) $text;
+        return strtr($text, [
+            '弊社指定'       => '御社ご指定',
+            '弊社指示'       => 'お客様指示',
+            '弊社'           => '御社',
+            'ご請求下さい'   => 'ご請求致します',
+            'ご請求ください' => 'ご請求致します',
+        ]);
+    };
 
     // 明細表のレイアウト（A4 1ページに収まる行数）
-    $itemRows = 14;
+    // 注文書/請書 はテキスト情報が少なく明細表が広く取れるため行数を増やす
+    $itemRows = $isPurchaseOrder ? 18 : 14;
 
     // 明細行を分類
     $basicLine     = $invoice->lines->first(fn($l) => str_contains((string) $l->description, '基本月額'));
@@ -95,7 +116,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<title>{{ $isEstimate ? '見積書' : ($isPurchaseOrder ? '注文書' : '請求書') }} {{ $invoice->invoice_number }}</title>
+<title>{{ $isAcknowledgement ? '注文請書' : ($isEstimate ? '見積書' : ($isPurchaseOrder ? '注文書' : '請求書')) }} {{ $isAcknowledgement ? $invoice->acknowledgement_no : $invoice->invoice_number }}</title>
 <style>
 @page { size: A4; margin: 12mm 14mm 10mm 14mm; }
 * { box-sizing: border-box; }
@@ -114,6 +135,8 @@ body {
     margin: 1mm 0 3mm 0;
     font-weight: normal;
 }
+/* 注文書/請書: タイトルと宛先（会社名）の間に余白を入れる */
+.title.spaced { margin: 1mm 0 7mm 0; }
 .head { width: 100%; border-collapse: collapse; margin-bottom: 2mm; }
 .head-left, .head-right { vertical-align: top; width: 50%; }
 .recipient {
@@ -135,6 +158,22 @@ body {
     height: 16mm;
     object-fit: contain;
 }
+
+/* 注文請書: 受領側(取引先)が記入する空欄ボックス。
+   head 内の宛先「アイゼン御中」のすぐ下に配置する。 */
+.ack-box {
+    display: inline-block;
+    margin-top: 5mm;
+    border: 0.5pt solid #111;
+    width: 64mm;
+    height: 22mm;
+    text-align: left;
+    padding: 1.5mm 2mm;
+    font-size: 8.5pt;
+    color: #888;
+    line-height: 1.9;
+}
+.ack-box .ack-label { display: block; }
 
 .numbers-block {
     width: 100%;
@@ -209,51 +248,72 @@ body {
 }
 .remarks-block .bank-row { white-space: nowrap; }
 .remarks-block .bank-info { font-size: 8.5pt; letter-spacing: -0.02em; }
+/* 注文書/請書 は備考エリアを大きく取る */
+.remarks-block.tall { min-height: 22mm; }
 </style>
 </head>
 <body>
 
-<div class="date-top">{{ $reiwa($issuedAt) }}</div>
+<div class="date-top">{{ $isAcknowledgement ? '　　　/　　/　　' : $reiwa($issuedAt) }}</div>
 
-<h1 class="title">{{ $docTitle }}</h1>
+<h1 class="title {{ $isPurchaseOrder ? 'spaced' : '' }}">{{ $docTitle }}</h1>
 
 <table class="head">
     <tr>
         <td class="head-left">
-            <div class="recipient">{{ $invoice->customer_name_snapshot ?? $invoice->customer?->company_name }}&nbsp;&nbsp;御中</div>
-        </td>
-        <td class="head-right">
-            @if($logoData)
-                <img class="logo" src="{{ $logoData }}" alt="logo">
-            @endif
-            <div class="issuer-block">
-                @if($invoice->issuer_postal_code_snapshot)
-                    <div>〒{{ $invoice->issuer_postal_code_snapshot }}</div>
-                @endif
-                @if($invoice->issuer_address_snapshot)
-                    <div>{{ $invoice->issuer_address_snapshot }}</div>
-                @endif
-                @if($invoice->issuer_tel_snapshot || $invoice->issuer_fax_snapshot)
-                    <div>
-                        @if($invoice->issuer_tel_snapshot)TEL：{{ $invoice->issuer_tel_snapshot }}@endif
-                        @if($invoice->issuer_tel_snapshot && $invoice->issuer_fax_snapshot)　@endif
-                        @if($invoice->issuer_fax_snapshot)FAX：{{ $invoice->issuer_fax_snapshot }}@endif
-                    </div>
-                @endif
-                @if($invoice->issuer_name_snapshot)
-                    <div class="issuer-name">{{ $invoice->issuer_name_snapshot }}</div>
-                @endif
-                @if($sealData)
-                    <img class="issuer-seal" src="{{ $sealData }}" alt="seal">
+            <div class="recipient">
+                @if($isAcknowledgement)
+                    {{ $invoice->issuer_name_snapshot }}&nbsp;&nbsp;御中
+                @else
+                    {{ $invoice->customer_name_snapshot ?? $invoice->customer?->company_name }}&nbsp;&nbsp;御中
                 @endif
             </div>
+        </td>
+        <td class="head-right">
+            @if($isAcknowledgement)
+                {{-- 注文請書: 受領側(取引先)が住所/TEL/会社名を記入する空欄ボックス --}}
+                <div class="ack-box">
+                    <div class="ack-label">住所</div>
+                    <div class="ack-label">TEL・FAX</div>
+                    <div class="ack-label">会社名</div>
+                </div>
+            @else
+                @if($logoData)
+                    <img class="logo" src="{{ $logoData }}" alt="logo">
+                @endif
+                <div class="issuer-block">
+                    @if($invoice->issuer_postal_code_snapshot)
+                        <div>〒{{ $invoice->issuer_postal_code_snapshot }}</div>
+                    @endif
+                    @if($invoice->issuer_address_snapshot)
+                        <div>{{ $invoice->issuer_address_snapshot }}</div>
+                    @endif
+                    @if($invoice->issuer_tel_snapshot || $invoice->issuer_fax_snapshot)
+                        <div>
+                            @if($invoice->issuer_tel_snapshot)TEL：{{ $invoice->issuer_tel_snapshot }}@endif
+                            @if($invoice->issuer_tel_snapshot && $invoice->issuer_fax_snapshot)　@endif
+                            @if($invoice->issuer_fax_snapshot)FAX：{{ $invoice->issuer_fax_snapshot }}@endif
+                        </div>
+                    @endif
+                    @if($invoice->issuer_name_snapshot)
+                        <div class="issuer-name">{{ $invoice->issuer_name_snapshot }}</div>
+                    @endif
+                    @if($sealData)
+                        <img class="issuer-seal" src="{{ $sealData }}" alt="seal">
+                    @endif
+                </div>
+            @endif
         </td>
     </tr>
 </table>
 
 <div class="numbers-block">
     <div class="numbers-inner">
-        @if($isEstimate)
+        @if($isAcknowledgement)
+            <div class="num-row"><span class="num-label">請書No.</span><span class="under">{{ $invoice->acknowledgement_no }}</span></div>
+            <div class="num-row"><span class="num-label">注文No.</span><span class="under">{{ $invoice->invoice_number }}</span></div>
+            <div class="num-row"><span class="num-label">見積No.</span><span class="under">{{ $invoice->quote_number }}</span></div>
+        @elseif($isEstimate)
             <div class="num-row"><span class="num-label">見積No.</span><span class="under">{{ $invoice->invoice_number }}</span></div>
         @elseif($isPurchaseOrder)
             <div class="num-row"><span class="num-label">注文No.</span><span class="under">{{ $invoice->invoice_number }}</span></div>
@@ -269,13 +329,13 @@ body {
 
 <div class="left-meta">
     @if($invoice->delivery_date_text)
-        <div><span class="meta-label">納期</span>：&nbsp;&nbsp;{{ $invoice->delivery_date_text }}</div>
+        <div><span class="meta-label">納期</span>：&nbsp;&nbsp;{{ $swapWording($invoice->delivery_date_text) }}</div>
     @endif
     @if($invoice->delivery_place_text)
-        <div><span class="meta-label">納入場所</span>：&nbsp;&nbsp;{{ $invoice->delivery_place_text }}</div>
+        <div><span class="meta-label">納入場所</span>：&nbsp;&nbsp;{{ $swapWording($invoice->delivery_place_text) }}</div>
     @endif
     @if($invoice->payment_terms_text)
-        <div><span class="meta-label">支払期限</span>：&nbsp;&nbsp;{{ $invoice->payment_terms_text }}</div>
+        <div><span class="meta-label">支払期限</span>：&nbsp;&nbsp;{{ $swapWording($invoice->payment_terms_text) }}</div>
     @endif
     @if($isEstimate && $invoice->valid_until_text)
         <div><span class="meta-label">有効期間</span>：&nbsp;&nbsp;{{ $invoice->valid_until_text }}</div>
@@ -316,37 +376,74 @@ body {
     $rows[] = ['blank' => true];
 
     // 超過控除セクション
-    if ($rangeText) {
-        $rows[] = ['name' => '・超過控除：' . $rangeText . $unitMinText];
+    if ($isPurchaseOrder) {
+        // 注文書/請書: 6行に展開（数値は name 列のみ、qty/price/amount は空欄）
+        $rows[] = ['name' => '・超過/控除  (中間割)'];
+        if ($invoice->client_overtime_hours_snapshot !== null) {
+            $rows[] = ['name' => '・上限  ' . (int) $invoice->client_overtime_hours_snapshot . 'H以上'];
+        }
+        if ($invoice->client_deduction_hours_snapshot !== null) {
+            $rows[] = ['name' => '・下限  ' . (int) $invoice->client_deduction_hours_snapshot . 'H未満'];
+        }
         if ($invoice->client_overtime_unit_price_snapshot !== null) {
-            $rows[] = [
-                'name'       => '超過単価：' . number_format((float) $invoice->client_overtime_unit_price_snapshot) . '円',
-                'indent'     => true,
-                'qty'        => $overtimeLine ? rtrim(rtrim(number_format((float) $overtimeLine->quantity, 2), '0'), '.') : null,
-                'unit_price' => $overtimeLine ? $overtimeLine->unit_price : null,
-                'amount'     => $overtimeLine ? $overtimeLine->amount : null,
-            ];
+            $rows[] = ['name' => '・超過  ' . number_format((float) $invoice->client_overtime_unit_price_snapshot) . '円(10円未満切り捨て)'];
         }
         if ($invoice->client_deduction_unit_price_snapshot !== null) {
-            $rows[] = [
-                'name'       => '控除単価：-' . number_format((float) $invoice->client_deduction_unit_price_snapshot) . '円',
-                'indent'     => true,
-                'qty'        => $deductionLine ? rtrim(rtrim(number_format((float) $deductionLine->quantity, 2), '0'), '.') : null,
-                'unit_price' => $deductionLine ? $deductionLine->unit_price : null,
-                'amount'     => $deductionLine ? $deductionLine->amount : null,
-                'amount_negative' => true,
-            ];
+            $rows[] = ['name' => '・控除  ' . number_format((float) $invoice->client_deduction_unit_price_snapshot) . '円(10円未満切り捨て)'];
+        }
+        if ($invoice->settlement_unit_minutes_snapshot !== null) {
+            $rows[] = ['name' => '・精算単位：' . (int) $invoice->settlement_unit_minutes_snapshot . '分'];
         }
         $rows[] = ['blank' => true];
-    }
 
-    if ($invoice->work_location)        { $rows[] = ['name' => '作業場所：' . $invoice->work_location]; $rows[] = ['blank' => true]; }
-    if ($invoice->delivery_items_text)  { $rows[] = ['name' => '納品物：' . $invoice->delivery_items_text]; $rows[] = ['blank' => true]; }
-    if ($invoice->engineer_name_snapshot) { $rows[] = ['name' => '作業者名：' . $invoice->engineer_name_snapshot]; $rows[] = ['blank' => true]; }
+        // 支払サイト（注文書独自）
+        if ($invoice->payment_terms_text) {
+            $rows[] = ['name' => '・支払サイト：' . $swapWording($invoice->payment_terms_text)];
+            $rows[] = ['blank' => true];
+        }
+        if ($invoice->engineer_name_snapshot) {
+            $rows[] = ['name' => '・作業担当者：' . $invoice->engineer_name_snapshot];
+        }
+        if ($invoice->work_location) {
+            $rows[] = ['name' => '・作業場所：' . $swapWording($invoice->work_location)];
+        }
+        if ($invoice->engineer_name_snapshot || $invoice->work_location) {
+            $rows[] = ['blank' => true];
+        }
+    } else {
+        // 請求書/見積書: 既存の短縮表示
+        if ($rangeText) {
+            $rows[] = ['name' => '・超過控除：' . $rangeText . $unitMinText];
+            if ($invoice->client_overtime_unit_price_snapshot !== null) {
+                $rows[] = [
+                    'name'       => '超過単価：' . number_format((float) $invoice->client_overtime_unit_price_snapshot) . '円',
+                    'indent'     => true,
+                    'qty'        => $overtimeLine ? rtrim(rtrim(number_format((float) $overtimeLine->quantity, 2), '0'), '.') : null,
+                    'unit_price' => $overtimeLine ? $overtimeLine->unit_price : null,
+                    'amount'     => $overtimeLine ? $overtimeLine->amount : null,
+                ];
+            }
+            if ($invoice->client_deduction_unit_price_snapshot !== null) {
+                $rows[] = [
+                    'name'       => '控除単価：-' . number_format((float) $invoice->client_deduction_unit_price_snapshot) . '円',
+                    'indent'     => true,
+                    'qty'        => $deductionLine ? rtrim(rtrim(number_format((float) $deductionLine->quantity, 2), '0'), '.') : null,
+                    'unit_price' => $deductionLine ? $deductionLine->unit_price : null,
+                    'amount'     => $deductionLine ? $deductionLine->amount : null,
+                    'amount_negative' => true,
+                ];
+            }
+            $rows[] = ['blank' => true];
+        }
+
+        if ($invoice->work_location)        { $rows[] = ['name' => '作業場所：' . $invoice->work_location]; $rows[] = ['blank' => true]; }
+        if ($invoice->delivery_items_text)  { $rows[] = ['name' => '納品物：' . $invoice->delivery_items_text]; $rows[] = ['blank' => true]; }
+        if ($invoice->engineer_name_snapshot) { $rows[] = ['name' => '作業者名：' . $invoice->engineer_name_snapshot]; $rows[] = ['blank' => true]; }
+    }
 
     // 業務交通費 説明（複数行可）
     if ($invoice->transportation_note_text) {
-        $rows[] = ['name' => '業務交通費：' . $invoice->transportation_note_text];
+        $rows[] = ['name' => '業務交通費：' . $swapWording($invoice->transportation_note_text)];
         $rows[] = ['blank' => true];
     }
 
@@ -434,9 +531,15 @@ body {
     </tfoot>
 </table>
 
-<div class="remarks-block">
+<div class="remarks-block {{ $isPurchaseOrder ? 'tall' : '' }}">
     @if($isEstimate)
         <div>※御見積記載事項以外は別途御見積させていただきます。</div>
+        @if($invoice->notes)
+            <div style="margin-top:2mm;">{!! nl2br(e($invoice->notes)) !!}</div>
+        @endif
+    @elseif($isPurchaseOrder)
+        {{-- 注文書 / 注文請書: 備考 のみ（御支払期日/振込先/手数料は請求書専用） --}}
+        <div>備考</div>
         @if($invoice->notes)
             <div style="margin-top:2mm;">{!! nl2br(e($invoice->notes)) !!}</div>
         @endif

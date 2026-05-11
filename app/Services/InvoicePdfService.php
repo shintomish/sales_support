@@ -19,37 +19,69 @@ class InvoicePdfService
     ) {}
 
     /**
-     * 請求書から PDF を生成して Storage に保存。
+     * 請求書/見積書/注文書 PDF を生成して Storage に保存。
      * Invoice の pdf_path を更新して保存する。
      */
     public function generateAndStore(Invoice $invoice): string
     {
-        $invoice->load('lines', 'customer');
-
-        // 電子印は invoice.approved=true のときのみ押印（承認済みのみ）。
-        // 下書き/発行直後は印影なしで生成し、tenant_admin / super_admin が承認した時に印影付きで再生成。
-        $invoiceForRender = clone $invoice;
-        if (!$invoice->approved) {
-            $invoiceForRender->issuer_round_seal_snapshot  = null;
-            $invoiceForRender->issuer_square_seal_snapshot = null;
-        }
-
-        $html = View::make('invoices.pdf', ['invoice' => $invoiceForRender])->render();
-        $binary = $this->htmlToPdf($html);
-
-        // ファイルパス: invoices/{tenant_id}/{year_month}/{invoice_number}.pdf
-        $path = sprintf('invoices/%d/%s/%s.pdf',
-            $invoice->tenant_id,
-            $invoice->year_month,
-            $invoice->invoice_number,
-        );
-
-        $url = $this->storage->uploadBinary($binary, $path, 'application/pdf');
+        $url = $this->renderAndUpload($invoice, false, $invoice->invoice_number);
 
         $invoice->pdf_path = $url;
         $invoice->save();
 
         return $url;
+    }
+
+    /**
+     * 注文請書 PDF を生成して Storage に保存。
+     * 同じ Invoice 行から、宛先・立場文言を反転した請書フォーマットで出力する。
+     * 請書側は印不要（受領側が押印）のため、いずれの状態でも印は描画しない。
+     */
+    public function generateAcknowledgementAndStore(Invoice $invoice): string
+    {
+        if ($invoice->doc_type !== 'purchase_order') {
+            throw new \RuntimeException('注文請書は注文書(doc_type=purchase_order)に対してのみ生成可能です');
+        }
+        if (empty($invoice->acknowledgement_no)) {
+            throw new \RuntimeException('注文請書番号(acknowledgement_no)が未設定です');
+        }
+
+        $url = $this->renderAndUpload($invoice, true, $invoice->acknowledgement_no);
+
+        $invoice->acknowledgement_pdf_path = $url;
+        $invoice->save();
+
+        return $url;
+    }
+
+    /**
+     * 共通: blade を render → Browsershot で PDF → Storage アップロード。
+     * $isAcknowledgement=true の場合は請書フォーマット（印影なし・宛先反転）。
+     */
+    private function renderAndUpload(Invoice $invoice, bool $isAcknowledgement, string $fileBaseName): string
+    {
+        $invoice->load('lines', 'customer');
+
+        // 電子印は invoice.approved=true のときのみ押印。請書側は常に印なし。
+        $invoiceForRender = clone $invoice;
+        if ($isAcknowledgement || !$invoice->approved) {
+            $invoiceForRender->issuer_round_seal_snapshot  = null;
+            $invoiceForRender->issuer_square_seal_snapshot = null;
+        }
+
+        $html = View::make('invoices.pdf', [
+            'invoice'           => $invoiceForRender,
+            'isAcknowledgement' => $isAcknowledgement,
+        ])->render();
+        $binary = $this->htmlToPdf($html);
+
+        $path = sprintf('invoices/%d/%s/%s.pdf',
+            $invoice->tenant_id,
+            $invoice->year_month,
+            $fileBaseName,
+        );
+
+        return $this->storage->uploadBinary($binary, $path, 'application/pdf');
     }
 
     /**

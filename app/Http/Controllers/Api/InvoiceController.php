@@ -183,6 +183,85 @@ class InvoiceController extends Controller
         return response()->json($invoice->load('lines'), 201);
     }
 
+    /**
+     * POST /api/v1/purchase-orders  - 注文書を作成（勤務表非依存）
+     * 顧客と任意の案件を指定し、空テンプレート + 既定明細1行で発行する。
+     * 注文番号は PO-YYYYMM-NNN、注文請書番号は UKE-YYYYMM-NNN を同時採番する。
+     */
+    public function storePurchaseOrder(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'customer_id'  => ['required', 'integer'],
+            'deal_id'      => ['nullable', 'integer'],
+            'issued_date'  => ['nullable', 'date'],
+            'subject_name' => ['nullable', 'string', 'max:255'],
+            'notes'        => ['nullable', 'string', 'max:2000'],
+        ]);
+
+        $user     = \Illuminate\Support\Facades\Auth::user();
+        $tenant   = \App\Models\Tenant::find($user?->tenant_id);
+        $customer = \App\Models\Customer::findOrFail($validated['customer_id']);
+
+        if (empty($customer->invoice_code)) {
+            throw ValidationException::withMessages([
+                'customer_id' => ['この顧客には顧客コード(invoice_code)が設定されていないため注文書を発行できません'],
+            ]);
+        }
+        $issuedDate        = $validated['issued_date'] ?? now()->toDateString();
+        $yearMonth         = \Carbon\Carbon::parse($issuedDate)->format('Y-m');
+        $invoiceNumber     = $this->numberService->generate($customer, $yearMonth, 'purchase_order');
+        $acknowledgementNo = $this->numberService->generate($customer, $yearMonth, 'acknowledgement');
+
+        $invoice = Invoice::create([
+            'tenant_id'                     => $tenant?->id,
+            'doc_type'                      => 'purchase_order',
+            'deal_id'                       => $validated['deal_id'] ?? null,
+            'customer_id'                   => $customer->id,
+            'year_month'                    => $yearMonth,
+            'invoice_number'                => $invoiceNumber,
+            'acknowledgement_no'            => $acknowledgementNo,
+            'issued_date'                   => $issuedDate,
+            'subject_name'                  => $validated['subject_name'] ?? null,
+            'notes'                         => $validated['notes'] ?? null,
+            'status'                        => 'draft',
+            'approval_status'               => 'draft',
+            'subtotal'                      => 0,
+            'tax'                           => 0,
+            'total'                         => 0,
+            'delivery_date_text'            => '弊社指定日',
+            'delivery_place_text'           => '弊社指定場所',
+            'payment_terms_text'            => '月末締め翌々月25日現金お支払',
+            'transportation_note_text'      => '弊社指示の下、移動が発生した場合は別途実費にてご請求下さい。',
+            'customer_name_snapshot'        => $customer->company_name,
+            'customer_address_snapshot'     => $customer->address,
+            'issuer_name_snapshot'          => $tenant?->invoice_issuer_name,
+            'issuer_postal_code_snapshot'   => $tenant?->invoice_issuer_postal_code,
+            'issuer_address_snapshot'       => $tenant?->invoice_issuer_address,
+            'issuer_tel_snapshot'           => $tenant?->invoice_issuer_tel,
+            'issuer_fax_snapshot'           => $tenant?->invoice_issuer_fax,
+            'issuer_logo_snapshot'          => $tenant?->invoice_issuer_logo_path,
+            'issuer_round_seal_snapshot'    => $tenant?->invoice_issuer_round_seal_path,
+            'issuer_square_seal_snapshot'   => $tenant?->invoice_issuer_square_seal_path,
+            'issuer_url_snapshot'           => $tenant?->invoice_issuer_url,
+            'issuer_invoice_number_snapshot'=> $tenant?->invoice_issuer_invoice_number,
+        ]);
+
+        // 既定の1行を追加（編集前提）
+        InvoiceLine::create([
+            'invoice_id'  => $invoice->id,
+            'sort_order'  => 0,
+            'description' => '',
+            'quantity'    => 1,
+            'unit'        => null,
+            'unit_price'  => 0,
+            'tax_rate'    => 0.10,
+            'amount'      => 0,
+            'is_expense'  => false,
+        ]);
+
+        return response()->json($invoice->load('lines'), 201);
+    }
+
     /** GET /api/v1/invoices/{invoice} */
     public function show(Invoice $invoice): JsonResponse
     {
@@ -259,6 +338,7 @@ class InvoiceController extends Controller
     /**
      * POST /api/v1/invoices/{invoice}/pdf  - PDF を生成・保存
      * draft でも issued でも生成可。生成と同時に status を issued に遷移。
+     * 注文書(doc_type=purchase_order)の場合は注文請書 PDF も同時に生成する。
      */
     public function generatePdf(Invoice $invoice): JsonResponse
     {
@@ -267,7 +347,14 @@ class InvoiceController extends Controller
             $invoice->status = 'issued';
             $invoice->save();
         }
-        return response()->json(['pdf_url' => $url, 'invoice' => $invoice->fresh()->load('lines')]);
+
+        $payload = ['pdf_url' => $url];
+        if ($invoice->doc_type === 'purchase_order' && !empty($invoice->acknowledgement_no)) {
+            $payload['acknowledgement_pdf_url'] = $this->pdfService->generateAcknowledgementAndStore($invoice);
+        }
+        $payload['invoice'] = $invoice->fresh()->load('lines');
+
+        return response()->json($payload);
     }
 
     /**
