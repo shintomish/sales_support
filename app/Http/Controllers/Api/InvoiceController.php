@@ -83,9 +83,10 @@ class InvoiceController extends Controller
 
         $deal = Deal::query()->findOrFail($validated['deal_id']);
 
-        // 同 deal × year_month で既に存在する場合はエラー
+        // 同 deal × year_month の「請求書」が既に存在する場合はエラー（見積書は別扱い）
         $exists = Invoice::where('deal_id', $deal->id)
             ->where('year_month', $validated['year_month'])
+            ->where('doc_type', 'invoice')
             ->exists();
         if ($exists) {
             throw ValidationException::withMessages([
@@ -126,7 +127,7 @@ class InvoiceController extends Controller
         // 連番は customer × year_month × doc_type で 0001 から
         if (empty($customer->invoice_code)) {
             throw ValidationException::withMessages([
-                'customer_id' => ['この顧客には請求コード(invoice_code)が設定されていないため見積書を発行できません'],
+                'customer_id' => ['この顧客には顧客コード(invoice_code)が設定されていないため見積書を発行できません'],
             ]);
         }
         $issuedDate    = $validated['issued_date'] ?? now()->toDateString();

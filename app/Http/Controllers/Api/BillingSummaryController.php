@@ -57,7 +57,7 @@ class BillingSummaryController extends Controller
             fwrite($out, "\xEF\xBB\xBF");
 
             if ($params['group'] === 'customer') {
-                fputcsv($out, ['取引先ID', '取引先名', '請求書コード', '案件数', '実労働時間', '基本額', '控除', '超過', '交通費', '小計', '消費税', '請求合計']);
+                fputcsv($out, ['取引先ID', '取引先名', '顧客コード', '案件数', '実労働時間', '基本額', '控除', '超過', '交通費', '小計', '消費税', '請求合計']);
                 foreach ($items as $r) {
                     fputcsv($out, [
                         $r['customer_id'], $r['customer_name'], $r['invoice_code'] ?? '',
@@ -67,7 +67,7 @@ class BillingSummaryController extends Controller
                     ]);
                 }
             } else {
-                fputcsv($out, ['案件ID', '案件名', '取引先ID', '取引先名', '請求書コード', '技術者', '実労働時間', '基本額', '控除', '超過', '交通費', '小計', '消費税', '請求合計']);
+                fputcsv($out, ['案件ID', '案件名', '取引先ID', '取引先名', '顧客コード', '技術者', '実労働時間', '基本額', '控除', '超過', '交通費', '小計', '消費税', '請求合計']);
                 foreach ($items as $r) {
                     fputcsv($out, [
                         $r['deal_id'], $r['deal_title'],
@@ -113,7 +113,9 @@ class BillingSummaryController extends Controller
         $records = WorkRecord::with([
                 'deal.customer',
                 'deal.sesContract',
-                'deal.invoices' => fn($q) => $q->where('year_month', $params['year_month']),
+                // 集計画面の「発行状況」は請求書のみが対象（見積書/注文書は除外）
+                'deal.invoices' => fn($q) => $q->where('year_month', $params['year_month'])
+                                               ->where('doc_type', 'invoice'),
             ])
             ->where('year_month', $params['year_month'])
             ->whereHas('deal', function ($q) use ($params) {
