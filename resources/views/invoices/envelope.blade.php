@@ -27,8 +27,8 @@
         7, ''
     );
 
-    // 「請求書在中」表示有無（呼び出し側で渡す。デフォルトは表示）
-    $withZaichu = $withZaichu ?? true;
+    // 朱印文言（呼び出し側で渡す配列。空配列なら朱印なし、複数なら縦に並べる）
+    $zaichuLabels = $zaichuLabels ?? [];
 @endphp
 <!DOCTYPE html>
 <html lang="ja">
@@ -107,17 +107,24 @@ body {
     letter-spacing: 0.05em;
 }
 
-/* 「請求書在中」朱印 — 左下方 */
-.zaichu {
+/* 朱印 — 左下方。複数指定された場合は縦に並べる */
+.zaichu-stack {
     position: absolute;
     top: 22mm;
-    left: 165mm;
+    left: 150mm;
+    display: flex;
+    flex-direction: column;
+    gap: 2mm;
+    align-items: flex-start;
+}
+.zaichu {
     border: 1.2pt solid #c8102e;
     color: #c8102e;
     padding: 2mm 4mm;
     font-size: 13pt;
     letter-spacing: 0.4em;
     font-weight: bold;
+    white-space: nowrap;
 }
 
 /* 自社情報 — 右下 */
@@ -151,9 +158,13 @@ body {
     @endforeach
 </div>
 
-{{-- 「請求書在中」 --}}
-@if($withZaichu)
-    <div class="zaichu">請求書在中</div>
+{{-- 朱印（請求書在中 / 見積書在中 / 注文書在中 / 注文書・請書在中 等）。複数指定時は縦に並べる --}}
+@if(count($zaichuLabels) > 0)
+    <div class="zaichu-stack">
+        @foreach($zaichuLabels as $label)
+            <div class="zaichu">{{ $label }}</div>
+        @endforeach
+    </div>
 @endif
 
 {{-- 宛先 --}}

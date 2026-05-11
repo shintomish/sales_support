@@ -48,7 +48,7 @@ class CustomerController extends Controller
                 'phone'          => 'phone',
                 'created_at'     => 'created_at',
             ], 'created_at', 'desc'))
-            ->paginate(50);
+            ->paginate(min(max((int) $request->query('per_page', 50), 1), 500));
         return CustomerResource::collection($customers);
     }
 

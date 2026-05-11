@@ -153,6 +153,7 @@ class InvoiceController extends Controller
             'delivery_date_text'            => '御社ご指定日',
             'delivery_place_text'           => '御社ご指定場所',
             'payment_terms_text'            => '月末締め翌々月20日現金お支払',
+            'transportation_note_text'      => 'お客様指示の下、移動が発生した場合は別途実費にて御請求致します。',
             'customer_name_snapshot'        => $customer->company_name,
             'customer_address_snapshot'     => $customer->address,
             'issuer_name_snapshot'          => $tenant?->invoice_issuer_name,
@@ -295,7 +296,7 @@ class InvoiceController extends Controller
             'payment_terms_text'          => ['nullable', 'string', 'max:100'],
             'invoice_number'              => ['nullable', 'string', 'max:100'],
             'lines'                       => ['nullable', 'array'],
-            'lines.*.description'         => ['required_with:lines', 'string', 'max:500'],
+            'lines.*.description'         => ['nullable', 'string', 'max:500'],
             'lines.*.quantity'            => ['required_with:lines', 'numeric'],
             'lines.*.unit'                => ['nullable', 'string', 'max:20'],
             'lines.*.unit_price'          => ['required_with:lines', 'numeric'],
@@ -318,7 +319,7 @@ class InvoiceController extends Controller
                 InvoiceLine::query()->create([
                     'invoice_id'  => $invoice->id,
                     'sort_order'  => $i,
-                    'description' => $line['description'],
+                    'description' => $line['description'] ?? '',
                     'quantity'    => $line['quantity'],
                     'unit'        => $line['unit'] ?? null,
                     'unit_price'  => $line['unit_price'],
@@ -711,15 +712,19 @@ class InvoiceController extends Controller
     }
 
     /**
-     * GET /api/v1/invoices/{invoice}/cover-letter?invoice=1&timesheet=0&transport=0
-     * 送付状 PDF をインラインで返す
+     * GET /api/v1/invoices/{invoice}/cover-letter?items[]=御請求書&items[]=勤務表&items[]=御見積書
+     * 送付状 PDF をインラインで返す。items[] に同封物の表示名を順に並べる。
      */
     public function coverLetter(Request $request, Invoice $invoice)
     {
-        $items = [];
-        if ($request->boolean('invoice', true))   $items[] = ['name' => '御請求書',   'count' => 1];
-        if ($request->boolean('timesheet'))       $items[] = ['name' => '勤務表',     'count' => 1];
-        if ($request->boolean('transport'))       $items[] = ['name' => '交通費明細書', 'count' => 1];
+        $names = $request->input('items', []);
+        $items = is_array($names)
+            ? collect($names)
+                ->filter(fn($n) => is_string($n) && trim($n) !== '')
+                ->map(fn($n) => ['name' => mb_substr(trim($n), 0, 100), 'count' => 1])
+                ->values()
+                ->all()
+            : [];
 
         if (empty($items)) {
             return response()->json(['message' => '同封物が選択されていません'], 422);
@@ -732,15 +737,22 @@ class InvoiceController extends Controller
     }
 
     /**
-     * GET /api/v1/invoices/{invoice}/envelope?zaichu=1
+     * GET /api/v1/invoices/{invoice}/envelope?zaichu_labels[]=注文書在中&zaichu_labels[]=注文書・請書在中
      * 長3封筒 PDF をインラインで返す
-     *  - zaichu=1（既定）: 「請求書在中」朱印あり
-     *  - zaichu=0       : 一般用途（朱印なし）
+     *  - zaichu_labels[] が指定された場合: 各文言の朱印を左下方に縦に並べて印字
+     *  - 未指定 / 空配列: 朱印なし（一般用途）
      */
     public function envelope(Request $request, Invoice $invoice)
     {
-        $withZaichu = $request->boolean('zaichu', true);
-        $pdf = $this->pdfService->renderEnvelope($invoice, $withZaichu);
+        $raw = $request->input('zaichu_labels', []);
+        $labels = is_array($raw)
+            ? collect($raw)
+                ->filter(fn($l) => is_string($l) && trim($l) !== '')
+                ->map(fn($l) => mb_substr(trim($l), 0, 30))
+                ->values()
+                ->all()
+            : [];
+        $pdf = $this->pdfService->renderEnvelope($invoice, $labels);
         return response($pdf, 200)
             ->header('Content-Type', 'application/pdf')
             ->header('Content-Disposition', 'inline; filename="envelope-' . $invoice->invoice_number . '.pdf"');

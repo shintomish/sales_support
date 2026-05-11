@@ -62,9 +62,14 @@ class InvoicePdfService
     {
         $invoice->load('lines', 'customer');
 
-        // 電子印は invoice.approved=true のときのみ押印。請書側は常に印なし。
+        // 電子印は以下の場合のみ押印。
+        //   - 見積書(estimate): 担当者ベース運用のため承認なしで常に角印を押印
+        //   - 請求書/注文書: invoice.approved=true のときのみ押印
+        //   - 注文請書(acknowledgement): 取引先押印欄を空けるため常に印なし
+        $skipSeal = $isAcknowledgement
+            || ($invoice->doc_type !== 'estimate' && !$invoice->approved);
         $invoiceForRender = clone $invoice;
-        if ($isAcknowledgement || !$invoice->approved) {
+        if ($skipSeal) {
             $invoiceForRender->issuer_round_seal_snapshot  = null;
             $invoiceForRender->issuer_square_seal_snapshot = null;
         }
@@ -100,15 +105,15 @@ class InvoicePdfService
     /**
      * 長3封筒 PDF をバイナリで返す（保存はしない）
      *
-     * @param bool $withZaichu 「請求書在中」朱印の表示有無
+     * @param array<int,string> $zaichuLabels 朱印に表示する文言の配列。空配列なら朱印なし
      */
-    public function renderEnvelope(Invoice $invoice, bool $withZaichu = true): string
+    public function renderEnvelope(Invoice $invoice, array $zaichuLabels = []): string
     {
         $invoice->load(['customer.primaryContact']);
         $this->refreshIssuerFromTenant($invoice);
         $html = View::make('invoices.envelope', [
-            'invoice'    => $invoice,
-            'withZaichu' => $withZaichu,
+            'invoice'      => $invoice,
+            'zaichuLabels' => $zaichuLabels,
         ])->render();
         // 長3封筒: 235mm × 120mm（横向き）。Browsershot に明示指定
         return $this->htmlToCustomPdf($html, 235, 120);
