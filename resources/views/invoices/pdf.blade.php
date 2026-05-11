@@ -47,8 +47,8 @@
     $logoData = $resolveLogoFromUrl($invoice->issuer_logo_snapshot)
              ?? $resolveLogoFromPath(config('invoice.logo_path'));
 
-    // 電子印画像（base64）
-    $sealData = $resolveLogoFromUrl($invoice->issuer_seal_snapshot);
+    // 電子印画像（base64）— 請求書では丸印を使用
+    $sealData = $resolveLogoFromUrl($invoice->issuer_round_seal_snapshot);
 
     // 明細表のレイアウト（A4 1ページに収まる行数）
     $itemRows = 14;

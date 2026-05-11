@@ -28,7 +28,8 @@ class InvoiceIssuerController extends Controller
         'invoice_issuer_tel',
         'invoice_issuer_fax',
         'invoice_issuer_logo_path',
-        'invoice_issuer_seal_path',
+        'invoice_issuer_round_seal_path',
+        'invoice_issuer_square_seal_path',
         'invoice_issuer_url',
         'invoice_issuer_invoice_number',
         'invoice_email_subject_template',
@@ -38,6 +39,12 @@ class InvoiceIssuerController extends Controller
         'invoice_issuer_bank_account_type',
         'invoice_issuer_bank_account_number',
         'invoice_issuer_bank_account_holder',
+    ];
+
+    /** seal type → tenants カラム名 / Storage プレフィックス */
+    private const SEAL_MAP = [
+        'round'  => ['column' => 'invoice_issuer_round_seal_path',  'prefix' => 'round'],
+        'square' => ['column' => 'invoice_issuer_square_seal_path', 'prefix' => 'square'],
     ];
 
     /** GET /api/v1/settings/invoice-issuer */
@@ -136,52 +143,64 @@ class InvoiceIssuerController extends Controller
     }
 
     /**
-     * POST /api/v1/settings/invoice-issuer/seal
-     * 電子印画像をアップロードして tenants.invoice_issuer_seal_path に設定
+     * POST /api/v1/settings/invoice-issuer/seal/{type}
+     * 電子印画像をアップロード。type は round（請求書・注文書用）/ square（見積書用）。
      */
-    public function uploadSeal(Request $request): JsonResponse
+    public function uploadSeal(Request $request, string $type): JsonResponse
     {
         $user = Auth::user();
         if (!in_array($user->role, ['super_admin', 'tenant_admin'], true)) {
             return response()->json(['message' => '権限がありません'], 403);
+        }
+
+        if (!isset(self::SEAL_MAP[$type])) {
+            return response()->json(['message' => 'seal type は round または square を指定してください'], 422);
         }
 
         $request->validate([
             'seal' => ['required', 'file', 'mimes:png,jpg,jpeg,gif,webp', 'max:2048'],
         ]);
 
+        $column = self::SEAL_MAP[$type]['column'];
+        $prefix = self::SEAL_MAP[$type]['prefix'];
+
         $tenant = Tenant::query()->findOrFail($user->tenant_id);
 
-        if ($tenant->invoice_issuer_seal_path) {
-            try { $this->storage->delete($tenant->invoice_issuer_seal_path); }
+        if ($tenant->{$column}) {
+            try { $this->storage->delete($tenant->{$column}); }
             catch (\Throwable $e) { report($e); }
         }
 
         $url = $this->storage->upload(
             $request->file('seal'),
             sprintf('invoice-issuer-seals/%d', $tenant->id),
-            'seal',
+            $prefix . '_seal',
         );
 
-        $tenant->invoice_issuer_seal_path = $url;
+        $tenant->{$column} = $url;
         $tenant->save();
 
-        return response()->json(['invoice_issuer_seal_path' => $url]);
+        return response()->json([$column => $url]);
     }
 
-    /** DELETE /api/v1/settings/invoice-issuer/seal */
-    public function deleteSeal(): JsonResponse
+    /** DELETE /api/v1/settings/invoice-issuer/seal/{type} */
+    public function deleteSeal(string $type): JsonResponse
     {
         $user = Auth::user();
         if (!in_array($user->role, ['super_admin', 'tenant_admin'], true)) {
             return response()->json(['message' => '権限がありません'], 403);
         }
 
+        if (!isset(self::SEAL_MAP[$type])) {
+            return response()->json(['message' => 'seal type は round または square を指定してください'], 422);
+        }
+
+        $column = self::SEAL_MAP[$type]['column'];
         $tenant = Tenant::query()->findOrFail($user->tenant_id);
-        if ($tenant->invoice_issuer_seal_path) {
-            try { $this->storage->delete($tenant->invoice_issuer_seal_path); }
+        if ($tenant->{$column}) {
+            try { $this->storage->delete($tenant->{$column}); }
             catch (\Throwable $e) { report($e); }
-            $tenant->invoice_issuer_seal_path = null;
+            $tenant->{$column} = null;
             $tenant->save();
         }
 

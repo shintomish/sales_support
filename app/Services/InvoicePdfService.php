@@ -30,7 +30,8 @@ class InvoicePdfService
         // 下書き/発行直後は印影なしで生成し、tenant_admin / super_admin が承認した時に印影付きで再生成。
         $invoiceForRender = clone $invoice;
         if (!$invoice->approved) {
-            $invoiceForRender->issuer_seal_snapshot = null;
+            $invoiceForRender->issuer_round_seal_snapshot  = null;
+            $invoiceForRender->issuer_square_seal_snapshot = null;
         }
 
         $html = View::make('invoices.pdf', ['invoice' => $invoiceForRender])->render();
