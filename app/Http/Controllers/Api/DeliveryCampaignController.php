@@ -194,12 +194,20 @@ class DeliveryCampaignController extends Controller
     {
         $campaign = DeliveryCampaign::with([
             'user',
-            'projectMailSource',
+            'projectMailSource.email',
             'engineerMailSource',
             'sendHistories' => function ($query) {
                 $query->with(['replyEmail.attachments', 'engineer', 'publicProject'])->orderBy('id');
             },
         ])->findOrFail($id);
+
+        // 案件元請けドメイン: 配信元となった受信メールの from_address からドメイン抽出
+        // 配信先がこのドメインと一致する場合、抜き額露呈リスクがあるため再送信時に警告する
+        $fromAddress = $campaign->projectMailSource?->email?->from_address;
+        $sourceDomain = null;
+        if ($fromAddress && str_contains($fromAddress, '@')) {
+            $sourceDomain = strtolower(trim(substr(strrchr($fromAddress, '@'), 1)));
+        }
 
         return response()->json([
             'id'                      => $campaign->id,
@@ -208,6 +216,7 @@ class DeliveryCampaignController extends Controller
             'project_title'           => $campaign->projectMailSource?->title,
             'engineer_mail_source_id' => $campaign->engineer_mail_source_id,
             'engineer_mail_title'     => $campaign->engineerMailSource?->title,
+            'source_domain'           => $sourceDomain,
             'subject'                 => $campaign->subject,
             'body'                    => $campaign->body,
             'sent_at'                 => $campaign->sent_at?->toIso8601String(),
