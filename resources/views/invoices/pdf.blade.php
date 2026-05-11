@@ -84,8 +84,9 @@
     };
 
     // 明細表のレイアウト（A4 1ページに収まる行数）
-    // 注文書/請書 はテキスト情報が少なく明細表が広く取れるため行数を増やす
-    $itemRows = $isPurchaseOrder ? 18 : 14;
+    // 注文書/請書/見積書 はテキスト情報が少なく明細表が広く取れるため行数を増やす
+    $isExtendedLayout = $isPurchaseOrder || $isEstimate;
+    $itemRows = $isExtendedLayout ? 18 : 14;
 
     // 明細行を分類
     $basicLine     = $invoice->lines->first(fn($l) => str_contains((string) $l->description, '基本月額'));
@@ -182,6 +183,12 @@ body {
     line-height: 1.4;
     text-align: right;
 }
+/* 左メタ(納期等) と 番号ブロック(見積No.等) を同じ行に並べる */
+.meta-numbers { width: 100%; border-collapse: collapse; margin-bottom: 2mm; }
+.meta-numbers .meta-cell-left  { vertical-align: top; width: 65%; }
+.meta-numbers .meta-cell-right { vertical-align: top; width: 35%; text-align: right; }
+.meta-numbers .left-meta { margin-bottom: 0; }
+.meta-numbers .numbers-block { margin-bottom: 0; }
 .numbers-inner { display: inline-block; text-align: left; }
 .numbers-inner .num-row { white-space: nowrap; }
 .num-label { display: inline-block; min-width: 16mm; }
@@ -256,7 +263,7 @@ body {
 
 <div class="date-top">{{ $isAcknowledgement ? '　　　/　　/　　' : $reiwa($issuedAt) }}</div>
 
-<h1 class="title {{ $isPurchaseOrder ? 'spaced' : '' }}">{{ $docTitle }}</h1>
+<h1 class="title {{ ($isPurchaseOrder || $isEstimate) ? 'spaced' : '' }}">{{ $docTitle }}</h1>
 
 <table class="head">
     <tr>
@@ -286,7 +293,14 @@ body {
                         <div>〒{{ $invoice->issuer_postal_code_snapshot }}</div>
                     @endif
                     @if($invoice->issuer_address_snapshot)
-                        <div>{{ $invoice->issuer_address_snapshot }}</div>
+                        @php
+                            // 住所は全角/半角スペースで 2 行に分割（番地と建物名の区切り想定）
+                            $addrParts = preg_split('/[\s　]+/u', $invoice->issuer_address_snapshot, 2, PREG_SPLIT_NO_EMPTY);
+                        @endphp
+                        <div>{{ $addrParts[0] ?? '' }}</div>
+                        @if(!empty($addrParts[1]))
+                            <div>&nbsp;{{ $addrParts[1] }}</div>
+                        @endif
                     @endif
                     @if($invoice->issuer_tel_snapshot || $invoice->issuer_fax_snapshot)
                         <div>
@@ -296,7 +310,13 @@ body {
                         </div>
                     @endif
                     @if($invoice->issuer_name_snapshot)
-                        <div class="issuer-name">{{ $invoice->issuer_name_snapshot }}</div>
+                        <div class="issuer-name">
+                            @if($isAcknowledgement)
+                                {{ $invoice->issuer_name_snapshot }}
+                            @else
+                                <strong>{{ $invoice->issuer_name_snapshot }}</strong>
+                            @endif
+                        </div>
                     @endif
                     @if($sealData)
                         <img class="issuer-seal" src="{{ $sealData }}" alt="seal">
@@ -307,40 +327,47 @@ body {
     </tr>
 </table>
 
-<div class="numbers-block">
-    <div class="numbers-inner">
-        @if($isAcknowledgement)
-            <div class="num-row"><span class="num-label">請書No.</span><span class="under">{{ $invoice->acknowledgement_no }}</span></div>
-            <div class="num-row"><span class="num-label">注文No.</span><span class="under">{{ $invoice->invoice_number }}</span></div>
-            <div class="num-row"><span class="num-label">見積No.</span><span class="under">{{ $invoice->quote_number }}</span></div>
-        @elseif($isEstimate)
-            <div class="num-row"><span class="num-label">見積No.</span><span class="under">{{ $invoice->invoice_number }}</span></div>
-        @elseif($isPurchaseOrder)
-            <div class="num-row"><span class="num-label">注文No.</span><span class="under">{{ $invoice->invoice_number }}</span></div>
-            <div class="num-row"><span class="num-label">見積No.</span><span class="under">{{ $invoice->quote_number }}</span></div>
-        @else
-            <div class="num-row"><span class="num-label">請求No.</span><span class="under">{{ $invoice->invoice_number }}</span></div>
-            <div class="num-row"><span class="num-label">注文No.</span><span class="under">{{ $invoice->order_number }}</span></div>
-            <div class="num-row"><span class="num-label">見積No.</span><span class="under">{{ $invoice->quote_number }}</span></div>
-            <div class="num-row"><span class="num-label">登録番号</span><span class="under">{{ $invoice->issuer_invoice_number_snapshot }}</span></div>
-        @endif
-    </div>
-</div>
-
-<div class="left-meta">
-    @if($invoice->delivery_date_text)
-        <div><span class="meta-label">納期</span>：&nbsp;&nbsp;{{ $swapWording($invoice->delivery_date_text) }}</div>
-    @endif
-    @if($invoice->delivery_place_text)
-        <div><span class="meta-label">納入場所</span>：&nbsp;&nbsp;{{ $swapWording($invoice->delivery_place_text) }}</div>
-    @endif
-    @if($invoice->payment_terms_text)
-        <div><span class="meta-label">支払期限</span>：&nbsp;&nbsp;{{ $swapWording($invoice->payment_terms_text) }}</div>
-    @endif
-    @if($isEstimate && $invoice->valid_until_text)
-        <div><span class="meta-label">有効期間</span>：&nbsp;&nbsp;{{ $invoice->valid_until_text }}</div>
-    @endif
-</div>
+<table class="meta-numbers">
+    <tr>
+        <td class="meta-cell-left">
+            <div class="left-meta">
+                @if($invoice->delivery_date_text)
+                    <div><span class="meta-label">納期</span>：&nbsp;&nbsp;{{ $swapWording($invoice->delivery_date_text) }}</div>
+                @endif
+                @if($invoice->delivery_place_text)
+                    <div><span class="meta-label">納入場所</span>：&nbsp;&nbsp;{{ $swapWording($invoice->delivery_place_text) }}</div>
+                @endif
+                @if($invoice->payment_terms_text)
+                    <div><span class="meta-label">支払期限</span>：&nbsp;&nbsp;{{ $swapWording($invoice->payment_terms_text) }}</div>
+                @endif
+                @if($isEstimate && $invoice->valid_until_text)
+                    <div><span class="meta-label">有効期間</span>：&nbsp;&nbsp;{{ $invoice->valid_until_text }}</div>
+                @endif
+            </div>
+        </td>
+        <td class="meta-cell-right">
+            <div class="numbers-block">
+                <div class="numbers-inner">
+                    @if($isAcknowledgement)
+                        <div class="num-row"><span class="num-label">請書No.</span><span class="under">{{ $invoice->acknowledgement_no }}</span></div>
+                        <div class="num-row"><span class="num-label">注文No.</span><span class="under">{{ $invoice->invoice_number }}</span></div>
+                        <div class="num-row"><span class="num-label">見積No.</span><span class="under">{{ $invoice->quote_number }}</span></div>
+                    @elseif($isEstimate)
+                        <div class="num-row"><span class="num-label">見積No.</span><span class="under">{{ $invoice->invoice_number }}</span></div>
+                    @elseif($isPurchaseOrder)
+                        <div class="num-row"><span class="num-label">注文No.</span><span class="under">{{ $invoice->invoice_number }}</span></div>
+                        <div class="num-row"><span class="num-label">見積No.</span><span class="under">{{ $invoice->quote_number }}</span></div>
+                    @else
+                        <div class="num-row"><span class="num-label">請求No.</span><span class="under">{{ $invoice->invoice_number }}</span></div>
+                        <div class="num-row"><span class="num-label">注文No.</span><span class="under">{{ $invoice->order_number }}</span></div>
+                        <div class="num-row"><span class="num-label">見積No.</span><span class="under">{{ $invoice->quote_number }}</span></div>
+                        <div class="num-row"><span class="num-label">登録番号</span><span class="under">{{ $invoice->issuer_invoice_number_snapshot }}</span></div>
+                    @endif
+                </div>
+            </div>
+        </td>
+    </tr>
+</table>
 
 <div class="total-wrap">
     <div class="total-inner">
@@ -376,8 +403,8 @@ body {
     $rows[] = ['blank' => true];
 
     // 超過控除セクション
-    if ($isPurchaseOrder) {
-        // 注文書/請書: 6行に展開（数値は name 列のみ、qty/price/amount は空欄）
+    if ($isExtendedLayout) {
+        // 注文書/請書/見積書: 6行に展開（数値は name 列のみ、qty/price/amount は空欄）
         $rows[] = ['name' => '・超過/控除  (中間割)'];
         if ($invoice->client_overtime_hours_snapshot !== null) {
             $rows[] = ['name' => '・上限  ' . (int) $invoice->client_overtime_hours_snapshot . 'H以上'];
@@ -411,7 +438,7 @@ body {
             $rows[] = ['blank' => true];
         }
     } else {
-        // 請求書/見積書: 既存の短縮表示
+        // 請求書: 既存の短縮表示
         if ($rangeText) {
             $rows[] = ['name' => '・超過控除：' . $rangeText . $unitMinText];
             if ($invoice->client_overtime_unit_price_snapshot !== null) {
@@ -531,7 +558,7 @@ body {
     </tfoot>
 </table>
 
-<div class="remarks-block {{ $isPurchaseOrder ? 'tall' : '' }}">
+<div class="remarks-block {{ ($isPurchaseOrder || $isEstimate) ? 'tall' : '' }}">
     @if($isEstimate)
         <div>※御見積記載事項以外は別途御見積させていただきます。</div>
         @if($invoice->notes)

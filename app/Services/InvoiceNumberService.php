@@ -9,11 +9,11 @@ use RuntimeException;
 /**
  * 請求書/見積書/注文書/注文請書 番号採番サービス
  *
- * フォーマット:
- *   - 請求書       (kind=invoice):         INV-[customer.invoice_code]-YYYYMM-NNN   （3桁連番）
- *   - 見積書       (kind=estimate):        EST-[customer.invoice_code]-YYYYMM-NNNN  （4桁連番）
- *   - 注文書       (kind=purchase_order):  PO-[customer.invoice_code]-YYYYMM-NNN    （3桁連番）
- *   - 注文請書     (kind=acknowledgement): UKE-[customer.invoice_code]-YYYYMM-NNN   （3桁連番）
+ * フォーマット (全て 3 桁連番):
+ *   - 請求書       (kind=invoice):         INV-[customer.invoice_code]-YYYYMM-NNN
+ *   - 見積書       (kind=estimate):        EST-[customer.invoice_code]-YYYYMM-NNN
+ *   - 注文書       (kind=purchase_order):  ORD-[customer.invoice_code]-YYYYMM-NNN
+ *   - 注文請書     (kind=acknowledgement): OCF-[customer.invoice_code]-YYYYMM-NNN
  *
  * 連番は customer × year_month × kind 内で 1 から採番。
  * acknowledgement は doc_type='purchase_order' 行の acknowledgement_no カラムに保存するため、
@@ -31,9 +31,9 @@ class InvoiceNumberService
      */
     private const FORMATS = [
         'invoice'         => ['prefix' => 'INV', 'pad' => 3, 'doc_type' => 'invoice',        'column' => 'invoice_number'],
-        'estimate'        => ['prefix' => 'EST', 'pad' => 4, 'doc_type' => 'estimate',       'column' => 'invoice_number'],
-        'purchase_order'  => ['prefix' => 'PO',  'pad' => 3, 'doc_type' => 'purchase_order', 'column' => 'invoice_number'],
-        'acknowledgement' => ['prefix' => 'UKE', 'pad' => 3, 'doc_type' => 'purchase_order', 'column' => 'acknowledgement_no'],
+        'estimate'        => ['prefix' => 'EST', 'pad' => 3, 'doc_type' => 'estimate',       'column' => 'invoice_number'],
+        'purchase_order'  => ['prefix' => 'ORD', 'pad' => 3, 'doc_type' => 'purchase_order', 'column' => 'invoice_number'],
+        'acknowledgement' => ['prefix' => 'OCF', 'pad' => 3, 'doc_type' => 'purchase_order', 'column' => 'acknowledgement_no'],
     ];
 
     public function generate(Customer $customer, string $yearMonth, string $kind = 'invoice'): string
