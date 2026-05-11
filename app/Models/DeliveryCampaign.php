@@ -18,6 +18,7 @@ class DeliveryCampaign extends Model
         'send_type',
         'project_mail_id',
         'engineer_mail_source_id',
+        'source_email',
         'user_id',
         'subject',
         'body',

@@ -124,11 +124,19 @@ class DeliveryCampaignController extends Controller
         $validated = $request->validate([
             'project_mail_id'         => 'nullable|exists:project_mail_sources,id',
             'engineer_mail_source_id' => 'nullable|exists:engineer_mail_sources,id',
+            // 紐づき案件/技術者がない場合のみ使用する入手元メールアドレス。
+            // 再送信時の元請けドメイン警告に使う（紐づきありなら受信メール from_address を優先）。
+            'source_email'            => 'nullable|email|max:255',
             'subject'                 => 'required|string|max:500',
             'body'                    => 'required|string',
             'attachments'             => 'nullable|array',
             'attachments.*'           => 'file|max:10240',
         ]);
+
+        // 紐づき案件/技術者を選んでいる場合は source_email を無視（フロント側でも非表示）
+        if (!empty($validated['project_mail_id']) || !empty($validated['engineer_mail_source_id'])) {
+            $validated['source_email'] = null;
+        }
 
         // 未置換プレースホルダ検出（<%Name%> は配信時にバックエンドで置換するため除外）
         $unresolved = $this->findUnresolvedPlaceholders($validated['subject'] . "\n" . $validated['body']);
@@ -201,12 +209,14 @@ class DeliveryCampaignController extends Controller
             },
         ])->findOrFail($id);
 
-        // 案件元請けドメイン: 配信元となった受信メールの from_address からドメイン抽出
-        // 配信先がこのドメインと一致する場合、抜き額露呈リスクがあるため再送信時に警告する
-        $fromAddress = $campaign->projectMailSource?->email?->from_address;
+        // 案件元請けドメイン: 配信先がこのドメインと一致する場合、抜き額露呈リスクがあるため
+        // 再送信時に警告モーダルを出す。導出元は以下の優先順:
+        //   1. 紐づき案件メールの from_address（projectMailSource.email.from_address）
+        //   2. キャンペーン作成時に手動入力された source_email
+        $sourceAddress = $campaign->projectMailSource?->email?->from_address ?: $campaign->source_email;
         $sourceDomain = null;
-        if ($fromAddress && str_contains($fromAddress, '@')) {
-            $sourceDomain = strtolower(trim(substr(strrchr($fromAddress, '@'), 1)));
+        if ($sourceAddress && str_contains($sourceAddress, '@')) {
+            $sourceDomain = strtolower(trim(substr(strrchr($sourceAddress, '@'), 1)));
         }
 
         return response()->json([

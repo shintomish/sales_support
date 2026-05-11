@@ -32,11 +32,15 @@ class DeliveryCampaignService
 
         $hasEngineer = !empty($data['engineer_mail_source_id']);
 
+        $projectMailId = !$hasEngineer ? ($data['project_mail_id'] ?? null) : null;
+
         return DeliveryCampaign::create([
             'tenant_id'               => $this->tenantId,
             'send_type'               => 'delivery',
-            'project_mail_id'         => !$hasEngineer ? ($data['project_mail_id'] ?? null) : null,
+            'project_mail_id'         => $projectMailId,
             'engineer_mail_source_id' => $hasEngineer ? $data['engineer_mail_source_id'] : null,
+            // 紐づき案件/技術者がない時のみ、手動入力された入手元アドレスを記録
+            'source_email'            => (!$hasEngineer && !$projectMailId) ? ($data['source_email'] ?? null) : null,
             'user_id'                 => $this->userId,
             'subject'                 => $data['subject'],
             'body'                    => $data['body'],
