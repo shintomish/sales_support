@@ -30,10 +30,11 @@ class InvoiceController extends Controller
     public function index(Request $request): JsonResponse
     {
         $validated = $request->validate([
-            'year_month'  => ['nullable', 'regex:/^\d{4}-(0[1-9]|1[0-2])$/'],
-            'customer_id' => ['nullable', 'integer'],
-            'status'      => ['nullable', 'in:draft,issued'],
-            'q'           => ['nullable', 'string', 'max:200'],
+            'year_month'      => ['nullable', 'regex:/^\d{4}-(0[1-9]|1[0-2])$/'],
+            'customer_id'     => ['nullable', 'integer'],
+            'status'          => ['nullable', 'in:draft,issued'],
+            'approval_status' => ['nullable', 'in:draft,pending,approved,rejected'],
+            'q'               => ['nullable', 'string', 'max:200'],
         ]);
 
         $query = Invoice::with(['customer:id,company_name', 'deal:id,title'])
@@ -48,6 +49,9 @@ class InvoiceController extends Controller
         }
         if (!empty($validated['status'])) {
             $query->where('status', $validated['status']);
+        }
+        if (!empty($validated['approval_status'])) {
+            $query->where('approval_status', $validated['approval_status']);
         }
         if (!empty($validated['q'])) {
             $like = '%' . $validated['q'] . '%';
@@ -562,8 +566,25 @@ class InvoiceController extends Controller
     }
 
     /**
+     * POST /api/v1/invoices/{invoice}/submit-approval
+     * 承認申請 → approval_status を 'pending' に
+     * 申請者は誰でも可。下書き/却下後の再申請に対応。
+     */
+    public function submitForApproval(Invoice $invoice): JsonResponse
+    {
+        if ($invoice->approval_status === 'approved') {
+            return response()->json(['message' => '既に承認済みです'], 422);
+        }
+        $invoice->approval_status  = 'pending';
+        $invoice->approval_comment = null;
+        $invoice->save();
+
+        return response()->json(['invoice' => $invoice->fresh()->load('lines')]);
+    }
+
+    /**
      * POST /api/v1/invoices/{invoice}/approve
-     * 承認 → 電子印付き PDF を再生成
+     * 承認 → approval_status='approved' + approved=true + 電子印付き PDF 再生成
      * tenant_admin / super_admin のみ実行可
      */
     public function approve(Invoice $invoice): JsonResponse
@@ -573,9 +594,11 @@ class InvoiceController extends Controller
             return response()->json(['message' => '承認権限がありません'], 403);
         }
 
-        $invoice->approved    = true;
-        $invoice->approved_at = now();
-        $invoice->approved_by = $user->id;
+        $invoice->approval_status  = 'approved';
+        $invoice->approval_comment = null;
+        $invoice->approved         = true;
+        $invoice->approved_at      = now();
+        $invoice->approved_by      = $user->id;
         $invoice->save();
 
         $url = $this->pdfService->generateAndStore($invoice);
@@ -584,6 +607,35 @@ class InvoiceController extends Controller
             'pdf_url' => $url,
             'invoice' => $invoice->fresh()->load('lines'),
         ]);
+    }
+
+    /**
+     * POST /api/v1/invoices/{invoice}/reject
+     * 却下 → approval_status='rejected' + 理由を記録
+     * tenant_admin / super_admin のみ実行可
+     */
+    public function reject(Request $request, Invoice $invoice): JsonResponse
+    {
+        $user = \Illuminate\Support\Facades\Auth::user();
+        if (!$user || !in_array($user->role ?? null, ['tenant_admin', 'super_admin'], true)) {
+            return response()->json(['message' => '却下権限がありません'], 403);
+        }
+
+        $validated = $request->validate([
+            'comment' => ['required', 'string', 'max:1000'],
+        ]);
+
+        $invoice->approval_status  = 'rejected';
+        $invoice->approval_comment = $validated['comment'];
+        $invoice->approved         = false;
+        $invoice->approved_at      = null;
+        $invoice->approved_by      = null;
+        $invoice->save();
+
+        // 押印を外した PDF に再生成
+        $this->pdfService->generateAndStore($invoice->fresh());
+
+        return response()->json(['invoice' => $invoice->fresh()->load('lines')]);
     }
 
     /**

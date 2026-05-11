@@ -42,6 +42,8 @@ class Invoice extends Model
         'approved',
         'approved_at',
         'approved_by',
+        'approval_status',
+        'approval_comment',
         'pdf_path',
         'notes',
         'customer_name_snapshot',
