@@ -7,6 +7,7 @@ use App\Models\Deal;
 use App\Models\Invoice;
 use App\Models\InvoiceLine;
 use App\Services\InvoiceCreationService;
+use App\Services\InvoiceNumberService;
 use App\Services\InvoicePdfService;
 use App\Services\SupabaseStorageService;
 use Illuminate\Http\JsonResponse;
@@ -23,6 +24,7 @@ class InvoiceController extends Controller
     public function __construct(
         private readonly InvoiceCreationService $creationService,
         private readonly InvoicePdfService $pdfService,
+        private readonly InvoiceNumberService $numberService,
         private readonly SupabaseStorageService $storage,
     ) {}
 
@@ -30,6 +32,7 @@ class InvoiceController extends Controller
     public function index(Request $request): JsonResponse
     {
         $validated = $request->validate([
+            'doc_type'        => ['nullable', 'in:invoice,estimate,purchase_order'],
             'year_month'      => ['nullable', 'regex:/^\d{4}-(0[1-9]|1[0-2])$/'],
             'customer_id'     => ['nullable', 'integer'],
             'status'          => ['nullable', 'in:draft,issued'],
@@ -37,7 +40,10 @@ class InvoiceController extends Controller
             'q'               => ['nullable', 'string', 'max:200'],
         ]);
 
+        $docType = $validated['doc_type'] ?? 'invoice';
+
         $query = Invoice::with(['customer:id,company_name', 'deal:id,title'])
+            ->where('doc_type', $docType)
             ->orderByDesc('issued_date')
             ->orderByDesc('id');
 
@@ -96,6 +102,86 @@ class InvoiceController extends Controller
         return response()->json($invoice->load('lines'), 201);
     }
 
+    /**
+     * POST /api/v1/estimates  - 見積書を作成（勤務表非依存）
+     * 顧客と任意の案件を指定し、空テンプレート + 既定明細1行で発行する。
+     * 見積番号は EST-YYYYMM-NNNN 形式で自動採番する。
+     */
+    public function storeEstimate(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'customer_id'      => ['required', 'integer'],
+            'deal_id'          => ['nullable', 'integer'],
+            'issued_date'      => ['nullable', 'date'],
+            'valid_until_text' => ['nullable', 'string', 'max:50'],
+            'subject_name'     => ['nullable', 'string', 'max:255'],
+            'notes'            => ['nullable', 'string', 'max:2000'],
+        ]);
+
+        $user     = \Illuminate\Support\Facades\Auth::user();
+        $tenant   = \App\Models\Tenant::find($user?->tenant_id);
+        $customer = \App\Models\Customer::findOrFail($validated['customer_id']);
+
+        // 見積番号の自動採番: EST-{invoice_code}-YYYYMM-NNNN
+        // 連番は customer × year_month × doc_type で 0001 から
+        if (empty($customer->invoice_code)) {
+            throw ValidationException::withMessages([
+                'customer_id' => ['この顧客には請求コード(invoice_code)が設定されていないため見積書を発行できません'],
+            ]);
+        }
+        $issuedDate    = $validated['issued_date'] ?? now()->toDateString();
+        $yearMonth     = \Carbon\Carbon::parse($issuedDate)->format('Y-m');
+        $invoiceNumber = $this->numberService->generate($customer, $yearMonth, 'estimate');
+
+        $invoice = Invoice::create([
+            'tenant_id'                     => $tenant?->id,
+            'doc_type'                      => 'estimate',
+            'deal_id'                       => $validated['deal_id'] ?? null,
+            'customer_id'                   => $customer->id,
+            'year_month'                    => $yearMonth,
+            'invoice_number'                => $invoiceNumber,
+            'issued_date'                   => $issuedDate,
+            'valid_until_text'              => $validated['valid_until_text'] ?? '30日間',
+            'subject_name'                  => $validated['subject_name'] ?? null,
+            'notes'                         => $validated['notes'] ?? null,
+            'status'                        => 'draft',
+            'approval_status'               => 'draft',
+            'subtotal'                      => 0,
+            'tax'                           => 0,
+            'total'                         => 0,
+            'delivery_date_text'            => '御社ご指定日',
+            'delivery_place_text'           => '御社ご指定場所',
+            'payment_terms_text'            => '月末締め翌々月20日現金お支払',
+            'customer_name_snapshot'        => $customer->company_name,
+            'customer_address_snapshot'     => $customer->address,
+            'issuer_name_snapshot'          => $tenant?->invoice_issuer_name,
+            'issuer_postal_code_snapshot'   => $tenant?->invoice_issuer_postal_code,
+            'issuer_address_snapshot'       => $tenant?->invoice_issuer_address,
+            'issuer_tel_snapshot'           => $tenant?->invoice_issuer_tel,
+            'issuer_fax_snapshot'           => $tenant?->invoice_issuer_fax,
+            'issuer_logo_snapshot'          => $tenant?->invoice_issuer_logo_path,
+            'issuer_round_seal_snapshot'    => $tenant?->invoice_issuer_round_seal_path,
+            'issuer_square_seal_snapshot'   => $tenant?->invoice_issuer_square_seal_path,
+            'issuer_url_snapshot'           => $tenant?->invoice_issuer_url,
+            'issuer_invoice_number_snapshot'=> $tenant?->invoice_issuer_invoice_number,
+        ]);
+
+        // 既定の1行を追加（編集前提）
+        InvoiceLine::create([
+            'invoice_id'  => $invoice->id,
+            'sort_order'  => 0,
+            'description' => '',
+            'quantity'    => 1,
+            'unit'        => null,
+            'unit_price'  => 0,
+            'tax_rate'    => 0.10,
+            'amount'      => 0,
+            'is_expense'  => false,
+        ]);
+
+        return response()->json($invoice->load('lines'), 201);
+    }
+
     /** GET /api/v1/invoices/{invoice} */
     public function show(Invoice $invoice): JsonResponse
     {
@@ -114,6 +200,7 @@ class InvoiceController extends Controller
         $validated = $request->validate([
             'issued_date'                 => ['nullable', 'date'],
             'due_date'                    => ['nullable', 'date'],
+            'valid_until_text'            => ['nullable', 'string', 'max:50'],
             'notes'                       => ['nullable', 'string', 'max:2000'],
             'status'                      => ['nullable', 'in:draft,issued'],
             'order_number'                => ['nullable', 'string', 'max:100'],
@@ -126,6 +213,7 @@ class InvoiceController extends Controller
             'delivery_date_text'          => ['nullable', 'string', 'max:100'],
             'delivery_place_text'         => ['nullable', 'string', 'max:100'],
             'payment_terms_text'          => ['nullable', 'string', 'max:100'],
+            'invoice_number'              => ['nullable', 'string', 'max:100'],
             'lines'                       => ['nullable', 'array'],
             'lines.*.description'         => ['required_with:lines', 'string', 'max:500'],
             'lines.*.quantity'            => ['required_with:lines', 'numeric'],
@@ -136,8 +224,9 @@ class InvoiceController extends Controller
         ]);
 
         $metaKeys = [
-            'issued_date', 'due_date', 'notes', 'status',
-            'order_number', 'quote_number', 'subject_name', 'work_period_text',
+            'issued_date', 'due_date', 'valid_until_text', 'notes', 'status',
+            'order_number', 'quote_number', 'invoice_number',
+            'subject_name', 'work_period_text',
             'work_location', 'delivery_items_text', 'transportation_note_text',
             'delivery_date_text', 'delivery_place_text', 'payment_terms_text',
         ];

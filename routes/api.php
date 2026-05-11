@@ -98,6 +98,11 @@ Route::prefix('v1')->middleware(['supabase.auth'])->group(function () {
     Route::get('invoices/{invoice}/mail-template', [InvoiceController::class, 'mailTemplate']);
     Route::get('invoices/{invoice}/send-histories',[InvoiceController::class, 'sendHistories']);
     Route::get('invoice-send-histories',           [InvoiceController::class, 'allSendHistories']);
+
+    // ── 見積書（doc_type='estimate'）─────────────────────
+    // 一覧/取得/更新/削除/PDF生成/承認/送信履歴/メール は InvoiceController を流用。
+    // 一覧は doc_type=estimate を強制する想定でフロント側がクエリパラメータを付与する。
+    Route::post('estimates', [InvoiceController::class, 'storeEstimate']);
     Route::get('email-body-templates/me',  [EmailBodyTemplateController::class, 'show']);
     Route::put('email-body-templates/me',  [EmailBodyTemplateController::class, 'upsert']);
     Route::get('dashboard', [DashboardController::class, 'index']);

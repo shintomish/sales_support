@@ -47,8 +47,21 @@
     $logoData = $resolveLogoFromUrl($invoice->issuer_logo_snapshot)
              ?? $resolveLogoFromPath(config('invoice.logo_path'));
 
-    // 電子印画像（base64）— 請求書では丸印を使用
-    $sealData = $resolveLogoFromUrl($invoice->issuer_round_seal_snapshot);
+    // 帳票種別（請求書 / 見積書 / 注文書）
+    $docType = $invoice->doc_type ?? 'invoice';
+    $isEstimate     = $docType === 'estimate';
+    $isPurchaseOrder = $docType === 'purchase_order';
+
+    // 電子印画像（base64）
+    //   - 請求書/注文書: 丸印
+    //   - 見積書: 角印
+    $sealData = $isEstimate
+        ? $resolveLogoFromUrl($invoice->issuer_square_seal_snapshot)
+        : $resolveLogoFromUrl($invoice->issuer_round_seal_snapshot);
+
+    // タイトル
+    $docTitle = $isEstimate ? '御　見　積　書'
+              : ($isPurchaseOrder ? '注　文　書' : '請　求　書');
 
     // 明細表のレイアウト（A4 1ページに収まる行数）
     $itemRows = 14;
@@ -82,7 +95,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<title>請求書 {{ $invoice->invoice_number }}</title>
+<title>{{ $isEstimate ? '見積書' : ($isPurchaseOrder ? '注文書' : '請求書') }} {{ $invoice->invoice_number }}</title>
 <style>
 @page { size: A4; margin: 12mm 14mm 10mm 14mm; }
 * { box-sizing: border-box; }
@@ -202,7 +215,7 @@ body {
 
 <div class="date-top">{{ $reiwa($issuedAt) }}</div>
 
-<h1 class="title">請　求　書</h1>
+<h1 class="title">{{ $docTitle }}</h1>
 
 <table class="head">
     <tr>
@@ -240,10 +253,17 @@ body {
 
 <div class="numbers-block">
     <div class="numbers-inner">
-        <div class="num-row"><span class="num-label">請求No.</span><span class="under">{{ $invoice->invoice_number }}</span></div>
-        <div class="num-row"><span class="num-label">注文No.</span><span class="under">{{ $invoice->order_number }}</span></div>
-        <div class="num-row"><span class="num-label">見積No.</span><span class="under">{{ $invoice->quote_number }}</span></div>
-        <div class="num-row"><span class="num-label">登録番号</span><span class="under">{{ $invoice->issuer_invoice_number_snapshot }}</span></div>
+        @if($isEstimate)
+            <div class="num-row"><span class="num-label">見積No.</span><span class="under">{{ $invoice->invoice_number }}</span></div>
+        @elseif($isPurchaseOrder)
+            <div class="num-row"><span class="num-label">注文No.</span><span class="under">{{ $invoice->invoice_number }}</span></div>
+            <div class="num-row"><span class="num-label">見積No.</span><span class="under">{{ $invoice->quote_number }}</span></div>
+        @else
+            <div class="num-row"><span class="num-label">請求No.</span><span class="under">{{ $invoice->invoice_number }}</span></div>
+            <div class="num-row"><span class="num-label">注文No.</span><span class="under">{{ $invoice->order_number }}</span></div>
+            <div class="num-row"><span class="num-label">見積No.</span><span class="under">{{ $invoice->quote_number }}</span></div>
+            <div class="num-row"><span class="num-label">登録番号</span><span class="under">{{ $invoice->issuer_invoice_number_snapshot }}</span></div>
+        @endif
     </div>
 </div>
 
@@ -256,6 +276,9 @@ body {
     @endif
     @if($invoice->payment_terms_text)
         <div><span class="meta-label">支払期限</span>：&nbsp;&nbsp;{{ $invoice->payment_terms_text }}</div>
+    @endif
+    @if($isEstimate && $invoice->valid_until_text)
+        <div><span class="meta-label">有効期間</span>：&nbsp;&nbsp;{{ $invoice->valid_until_text }}</div>
     @endif
 </div>
 
@@ -412,15 +435,22 @@ body {
 </table>
 
 <div class="remarks-block">
-    @if($dueAt)
-        <div>■御支払期日：&nbsp;{{ $reiwaDow($dueAt) }}</div>
-    @endif
-    @if($invoice->issuer_bank_snapshot)
-        <div class="bank-row">■お振込先：<span class="bank-info">{{ $invoice->issuer_bank_snapshot }}</span></div>
-    @endif
-    <div>※振込手数料はお客様にてご負担くださいますようお願い申し上げます。</div>
-    @if($invoice->notes)
-        <div style="margin-top:2mm;">{!! nl2br(e($invoice->notes)) !!}</div>
+    @if($isEstimate)
+        <div>※御見積記載事項以外は別途御見積させていただきます。</div>
+        @if($invoice->notes)
+            <div style="margin-top:2mm;">{!! nl2br(e($invoice->notes)) !!}</div>
+        @endif
+    @else
+        @if($dueAt)
+            <div>■御支払期日：&nbsp;{{ $reiwaDow($dueAt) }}</div>
+        @endif
+        @if($invoice->issuer_bank_snapshot)
+            <div class="bank-row">■お振込先：<span class="bank-info">{{ $invoice->issuer_bank_snapshot }}</span></div>
+        @endif
+        <div>※振込手数料はお客様にてご負担くださいますようお願い申し上げます。</div>
+        @if($invoice->notes)
+            <div style="margin-top:2mm;">{!! nl2br(e($invoice->notes)) !!}</div>
+        @endif
     @endif
 </div>
 
