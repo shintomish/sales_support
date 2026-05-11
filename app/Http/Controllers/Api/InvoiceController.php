@@ -553,14 +553,18 @@ class InvoiceController extends Controller
             'year_month' => ['nullable', 'regex:/^\d{4}-(0[1-9]|1[0-2])$/'],
             'status'     => ['nullable', 'in:sent,failed'],
             'method'     => ['nullable', 'in:mail,post'],
+            'doc_type'   => ['nullable', 'in:invoice,estimate,purchase_order'],
             'q'          => ['nullable', 'string', 'max:200'],
         ]);
+
+        $docType = $v['doc_type'] ?? 'invoice';
 
         $q = \App\Models\InvoiceSendHistory::query()
             ->with([
                 'sender:id,name',
-                'invoice:id,invoice_number,customer_id,customer_name_snapshot,year_month,total',
+                'invoice:id,doc_type,invoice_number,customer_id,customer_name_snapshot,year_month,total',
             ])
+            ->whereHas('invoice', fn($iq) => $iq->where('doc_type', $docType))
             ->orderByDesc('sent_at');
 
         if (!empty($v['status'])) $q->where('status', $v['status']);
