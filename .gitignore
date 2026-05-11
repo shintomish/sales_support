@@ -29,6 +29,9 @@ Homestead.json
 Homestead.yaml
 Thumbs.db
 
+# 週次バックアップサマリ（ローカル参照用ログ）
+.last_backup_summary
+
 # Docker
 /mysql-data
 public/favicon.ico:com.dropbox.attrs
