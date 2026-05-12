@@ -905,6 +905,8 @@ class InvoiceController extends Controller
         }
         $invoice->approval_status  = 'pending';
         $invoice->approval_comment = null;
+        // 申請者を記録（承認完了後にこのユーザーへバッジ通知するため）
+        $invoice->submitted_by = \Illuminate\Support\Facades\Auth::id();
         $invoice->save();
 
         return response()->json(['invoice' => $invoice->fresh()->load('lines')]);
@@ -973,6 +975,12 @@ class InvoiceController extends Controller
      */
     public function destroy(Invoice $invoice): JsonResponse
     {
+        // 承認済の書類は削除不可（PDF 再生成も同じく不可）
+        if ($invoice->approved) {
+            return response()->json([
+                'message' => '承認済の書類は削除できません',
+            ], 422);
+        }
         if ($invoice->status === 'issued' && $invoice->pdf_path) {
             try {
                 $this->storage->delete($invoice->pdf_path);

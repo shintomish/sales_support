@@ -42,7 +42,7 @@ class NotificationController extends Controller
                 ->map(fn($i) => [
                     'id'             => $i->id,
                     'invoice_number' => $i->invoice_number,
-                    'doc_type'       => 'invoice',
+                    'doc_type'       => $i->doc_type,
                     'total'          => (int) $i->total,
                     'customer'       => $i->customer ? ['company_name' => $i->customer->company_name] : null,
                     'updated_at'     => optional($i->updated_at)->toIso8601String(),
@@ -60,7 +60,7 @@ class NotificationController extends Controller
                 ->map(fn($i) => [
                     'id'             => $i->id,
                     'invoice_number' => $i->invoice_number,
-                    'doc_type'       => 'invoice',
+                    'doc_type'       => $i->doc_type,
                     'total'          => (int) $i->total,
                     'customer'       => $i->customer ? ['company_name' => $i->customer->company_name] : null,
                     'approval_comment' => $i->approval_comment,
@@ -68,13 +68,35 @@ class NotificationController extends Controller
                 ]);
         }
 
+        // 直近で承認された自身の申請（一般メンバー向け・7日以内）
+        $recentlyApproved = collect();
+        if ($user && ! $isAdmin) {
+            $recentlyApproved = Invoice::with('customer')
+                ->where('approval_status', 'approved')
+                ->where('submitted_by', $user->id)
+                ->where('approved_at', '>=', $today->copy()->subDays(7))
+                ->orderBy('approved_at', 'desc')
+                ->limit(20)
+                ->get()
+                ->map(fn($i) => [
+                    'id'             => $i->id,
+                    'invoice_number' => $i->invoice_number,
+                    'doc_type'       => $i->doc_type,
+                    'total'          => (int) $i->total,
+                    'customer'       => $i->customer ? ['company_name' => $i->customer->company_name] : null,
+                    'approved_at'    => optional($i->approved_at)->toIso8601String(),
+                ]);
+        }
+
         return response()->json([
-            'overdue_tasks'            => $overdueTasks,
-            'overdue_tasks_count'      => $overdueTasks->count(),
-            'pending_approvals'        => $pendingApprovals,
-            'pending_approvals_count'  => $pendingApprovals->count(),
-            'rejected_invoices'        => $rejectedInvoices,
-            'rejected_invoices_count'  => $rejectedInvoices->count(),
+            'overdue_tasks'              => $overdueTasks,
+            'overdue_tasks_count'        => $overdueTasks->count(),
+            'pending_approvals'          => $pendingApprovals,
+            'pending_approvals_count'    => $pendingApprovals->count(),
+            'rejected_invoices'          => $rejectedInvoices,
+            'rejected_invoices_count'    => $rejectedInvoices->count(),
+            'recently_approved'          => $recentlyApproved,
+            'recently_approved_count'    => $recentlyApproved->count(),
         ]);
     }
 }
