@@ -71,6 +71,7 @@ class SesContract extends Model
         'settlement_unit_minutes',
         'payment_site',
         'order_number',
+        'quote_number',
         // 仕入れ側精算条件
         'vendor_deduction_unit_price',
         'vendor_deduction_hours',

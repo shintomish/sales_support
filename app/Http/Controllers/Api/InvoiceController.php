@@ -105,26 +105,46 @@ class InvoiceController extends Controller
 
     /**
      * POST /api/v1/estimates  - 見積書を作成（勤務表非依存）
-     * 顧客と任意の案件を指定し、空テンプレート + 既定明細1行で発行する。
-     * 見積番号は EST-YYYYMM-NNNN 形式で自動採番する。
+     *
+     *   通常モード: deal_id 指定 → SES台帳 (sesContract) から件名/作業期間/単価/控除/超過/精算単位/担当者を自動転記
+     *   例外モード: customer_id 指定 → 空テンプレート + 既定明細1行
+     *
+     * 見積番号は EST-XXX-YYYYMM-NNN 形式で自動採番。
+     * 通常モード時は ses_contracts.quote_number に発行番号をフィードバック。
      */
     public function storeEstimate(Request $request): JsonResponse
     {
         $validated = $request->validate([
-            'customer_id'      => ['required', 'integer'],
-            'deal_id'          => ['nullable', 'integer'],
+            'deal_id'          => ['nullable', 'integer'],   // 通常モード
+            'customer_id'      => ['nullable', 'integer'],   // 例外モード
             'issued_date'      => ['nullable', 'date'],
             'valid_until_text' => ['nullable', 'string', 'max:50'],
             'subject_name'     => ['nullable', 'string', 'max:255'],
             'notes'            => ['nullable', 'string', 'max:2000'],
         ]);
+        if (empty($validated['deal_id']) && empty($validated['customer_id'])) {
+            throw ValidationException::withMessages([
+                'customer_id' => ['取引先または案件 (SES台帳) を指定してください'],
+            ]);
+        }
 
-        $user     = \Illuminate\Support\Facades\Auth::user();
-        $tenant   = \App\Models\Tenant::find($user?->tenant_id);
-        $customer = \App\Models\Customer::findOrFail($validated['customer_id']);
+        $user   = \Illuminate\Support\Facades\Auth::user();
+        $tenant = \App\Models\Tenant::find($user?->tenant_id);
 
-        // 見積番号の自動採番: EST-{invoice_code}-YYYYMM-NNNN
-        // 連番は customer × year_month × doc_type で 0001 から
+        // 通常モード: deal_id → SES契約 / 顧客
+        $deal = null;
+        $contract = null;
+        if (!empty($validated['deal_id'])) {
+            $deal = Deal::with(['customer', 'sesContract'])->findOrFail($validated['deal_id']);
+            $customer = $deal->customer;
+            $contract = $deal->sesContract;
+            if (!$customer) {
+                throw ValidationException::withMessages(['deal_id' => ['案件に取引先が紐付いていません']]);
+            }
+        } else {
+            $customer = \App\Models\Customer::findOrFail($validated['customer_id']);
+        }
+
         if (empty($customer->invoice_code)) {
             throw ValidationException::withMessages([
                 'customer_id' => ['この顧客には顧客コード(invoice_code)が設定されていないため見積書を発行できません'],
@@ -134,54 +154,90 @@ class InvoiceController extends Controller
         $yearMonth     = \Carbon\Carbon::parse($issuedDate)->format('Y-m');
         $invoiceNumber = $this->numberService->generate($customer, $yearMonth, 'estimate');
 
+        // 件名: 入力値 → 案件タイトル → null
+        $subject = $validated['subject_name'] ?? $deal?->title;
+
+        // 作業期間文言と月数を契約から算出（通常モード時）
+        $workPeriod = null;
+        $months = 1;
+        if ($contract?->contract_period_start && $contract?->contract_period_end) {
+            $s = \Carbon\Carbon::parse($contract->contract_period_start);
+            $e = \Carbon\Carbon::parse($contract->contract_period_end);
+            $workPeriod = sprintf('%d年%d月%d日〜%d年%d月%d日',
+                $s->year, $s->month, $s->day, $e->year, $e->month, $e->day);
+            $months = max(1, ($e->year - $s->year) * 12 + ($e->month - $s->month) + 1);
+        }
+
         $invoice = Invoice::create([
-            'tenant_id'                     => $tenant?->id,
-            'doc_type'                      => 'estimate',
-            'deal_id'                       => $validated['deal_id'] ?? null,
-            'customer_id'                   => $customer->id,
-            'year_month'                    => $yearMonth,
-            'invoice_number'                => $invoiceNumber,
-            'issued_date'                   => $issuedDate,
-            'valid_until_text'              => $validated['valid_until_text'] ?? '30日間',
-            'subject_name'                  => $validated['subject_name'] ?? null,
-            'notes'                         => $validated['notes'] ?? null,
-            'status'                        => 'draft',
-            'approval_status'               => 'draft',
-            'subtotal'                      => 0,
-            'tax'                           => 0,
-            'total'                         => 0,
-            'delivery_date_text'            => '御社ご指定日',
-            'delivery_place_text'           => '御社ご指定場所',
-            'payment_terms_text'            => '月末締め翌々月20日現金お支払',
-            'transportation_note_text'      => 'お客様指示の下、移動が発生した場合は別途実費にて御請求致します。',
-            'customer_name_snapshot'        => $customer->company_name,
-            'customer_address_snapshot'     => $customer->address,
-            'issuer_name_snapshot'          => $tenant?->invoice_issuer_name,
-            'issuer_postal_code_snapshot'   => $tenant?->invoice_issuer_postal_code,
-            'issuer_address_snapshot'       => $tenant?->invoice_issuer_address,
-            'issuer_tel_snapshot'           => $tenant?->invoice_issuer_tel,
-            'issuer_fax_snapshot'           => $tenant?->invoice_issuer_fax,
-            'issuer_logo_snapshot'          => $tenant?->invoice_issuer_logo_path,
-            'issuer_round_seal_snapshot'    => $tenant?->invoice_issuer_round_seal_path,
-            'issuer_square_seal_snapshot'   => $tenant?->invoice_issuer_square_seal_path,
-            'issuer_url_snapshot'           => $tenant?->invoice_issuer_url,
-            'issuer_invoice_number_snapshot'=> $tenant?->invoice_issuer_invoice_number,
+            'tenant_id'                            => $tenant?->id,
+            'doc_type'                             => 'estimate',
+            'deal_id'                              => $deal?->id,
+            'customer_id'                          => $customer->id,
+            'year_month'                           => $yearMonth,
+            'invoice_number'                       => $invoiceNumber,
+            'issued_date'                          => $issuedDate,
+            'valid_until_text'                     => $validated['valid_until_text'] ?? '30日間',
+            'subject_name'                         => $subject,
+            'work_period_text'                     => $workPeriod,
+            'notes'                                => $validated['notes'] ?? null,
+            'status'                               => 'draft',
+            'approval_status'                      => 'draft',
+            'subtotal'                             => 0,
+            'tax'                                  => 0,
+            'total'                                => 0,
+            'delivery_date_text'                   => '御社ご指定日',
+            'delivery_place_text'                  => '御社ご指定場所',
+            'payment_terms_text'                   => '月末締め翌々月20日現金お支払',
+            'transportation_note_text'             => 'お客様指示の下、移動が発生した場合は別途実費にて御請求致します。',
+            // SES契約からの snapshot（通常モード時のみ非 null）
+            'engineer_name_snapshot'               => $contract?->engineer_name,
+            'settlement_unit_minutes_snapshot'     => $contract?->settlement_unit_minutes,
+            'client_deduction_hours_snapshot'      => $contract?->client_deduction_hours,
+            'client_overtime_hours_snapshot'       => $contract?->client_overtime_hours,
+            'client_deduction_unit_price_snapshot' => $contract?->client_deduction_unit_price,
+            'client_overtime_unit_price_snapshot'  => $contract?->client_overtime_unit_price,
+            'customer_name_snapshot'               => $customer->company_name,
+            'customer_address_snapshot'            => $customer->address,
+            'issuer_name_snapshot'                 => $tenant?->invoice_issuer_name,
+            'issuer_postal_code_snapshot'          => $tenant?->invoice_issuer_postal_code,
+            'issuer_address_snapshot'              => $tenant?->invoice_issuer_address,
+            'issuer_tel_snapshot'                  => $tenant?->invoice_issuer_tel,
+            'issuer_fax_snapshot'                  => $tenant?->invoice_issuer_fax,
+            'issuer_logo_snapshot'                 => $tenant?->invoice_issuer_logo_path,
+            'issuer_round_seal_snapshot'           => $tenant?->invoice_issuer_round_seal_path,
+            'issuer_square_seal_snapshot'          => $tenant?->invoice_issuer_square_seal_path,
+            'issuer_url_snapshot'                  => $tenant?->invoice_issuer_url,
+            'issuer_invoice_number_snapshot'       => $tenant?->invoice_issuer_invoice_number,
         ]);
 
-        // 既定の1行を追加（編集前提）
+        // 既定の1行: 通常モードは基本月額の単価×月数、例外モードは空行
+        $basicUnitPrice = (float) ($contract?->income_amount ?? 0);
+        $qty = $contract ? $months : 1;
         InvoiceLine::create([
             'invoice_id'  => $invoice->id,
             'sort_order'  => 0,
-            'description' => '',
-            'quantity'    => 1,
+            'description' => $basicUnitPrice > 0
+                ? sprintf('基本月額：%s円', number_format($basicUnitPrice))
+                : '',
+            'quantity'    => $qty,
             'unit'        => null,
-            'unit_price'  => 0,
+            'unit_price'  => $basicUnitPrice,
             'tax_rate'    => 0.10,
-            'amount'      => 0,
+            'amount'      => round($basicUnitPrice * $qty, 2),
             'is_expense'  => false,
         ]);
 
-        return response()->json($invoice->load('lines'), 201);
+        // 通常モード時は SES契約に見積番号をフィードバック
+        if ($contract) {
+            $contract->quote_number = $invoiceNumber;
+            $contract->save();
+        }
+
+        $invoice->load('lines');
+        $invoice->recalcAmounts();
+        $invoice->save();
+
+        return response()->json($invoice->fresh()->load('lines'), 201);
     }
 
     /**

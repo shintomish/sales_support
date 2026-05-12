@@ -61,6 +61,7 @@ class SesContractController extends Controller
             'settlement_unit_minutes'      => $sc?->settlement_unit_minutes,
             'payment_site'                 => $sc?->payment_site,
             'order_number'                 => $sc?->order_number,
+            'quote_number'                 => $sc?->quote_number,
             'vendor_deduction_unit_price'  => $sc?->vendor_deduction_unit_price,
             'vendor_deduction_hours'       => $sc?->vendor_deduction_hours,
             'vendor_overtime_unit_price'   => $sc?->vendor_overtime_unit_price,
@@ -102,6 +103,10 @@ class SesContractController extends Controller
         }
         if ($status = $request->get('status')) {
             $query->where('deals.status', $status);
+        }
+        // 契約終了日が指定日以降のもののみ（見積/注文書発行モーダルから利用）
+        if ($endFrom = $request->get('contract_period_end_from')) {
+            $query->whereHas('sesContract', fn($q) => $q->whereDate('contract_period_end', '>=', $endFrom));
         }
         $query->leftJoin('ses_contracts', 'deals.id', '=', 'ses_contracts.deal_id');
         // 顧客名ソート用 JOIN
@@ -176,6 +181,7 @@ class SesContractController extends Controller
             'settlement_unit_minutes'     => 'nullable|integer',
             'payment_site'                => 'nullable|integer',
             'order_number'                => 'nullable|string|max:100',
+            'quote_number'                => 'nullable|string|max:100',
             'vendor_deduction_unit_price' => 'nullable|numeric',
             'vendor_deduction_hours'      => 'nullable|numeric',
             'vendor_overtime_unit_price'  => 'nullable|numeric',
@@ -228,6 +234,7 @@ class SesContractController extends Controller
                 'settlement_unit_minutes'     => $v['settlement_unit_minutes'] ?? null,
                 'payment_site'                => $v['payment_site'] ?? null,
                 'order_number'                => $v['order_number'] ?? null,
+                'quote_number'                => $v['quote_number'] ?? null,
                 'vendor_deduction_unit_price' => $v['vendor_deduction_unit_price'] ?? null,
                 'vendor_deduction_hours'      => $v['vendor_deduction_hours'] ?? null,
                 'vendor_overtime_unit_price'  => $v['vendor_overtime_unit_price'] ?? null,
@@ -308,6 +315,7 @@ class SesContractController extends Controller
                 'settlement_unit_minutes'     => $request->input('settlement_unit_minutes'),
                 'payment_site'                => $request->input('payment_site'),
                 'order_number'                => $request->input('order_number'),
+                'quote_number'                => $request->input('quote_number'),
                 'vendor_deduction_unit_price' => $request->input('vendor_deduction_unit_price'),
                 'vendor_deduction_hours'      => $request->input('vendor_deduction_hours'),
                 'vendor_overtime_unit_price'  => $request->input('vendor_overtime_unit_price'),
