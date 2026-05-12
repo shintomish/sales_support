@@ -97,8 +97,15 @@ class ProjectMailScoringService
 
     /**
      * 未処理メールを一括スコアリング
+     *
+     * @param int|null $limit        処理件数の上限
+     * @param int|null $lookbackDays 何日前までのメールを対象とするか（既定1日／null=全期間）
+     *
+     * 既定で1日の窓を設けることで、毎15分のスケジューラ実行時に
+     * 全期間（数千件）を NOT EXISTS で再スキャンするのを防止する。
+     * 数日分の取りこぼしを再処理したい場合は手動で $lookbackDays を指定する。
      */
-    public function scorePending(?int $limit = null): int
+    public function scorePending(?int $limit = null, ?int $lookbackDays = 1): int
     {
         $query = Email::where('category', 'project')
             ->whereNotExists(function ($q) {
@@ -106,6 +113,7 @@ class ProjectMailScoringService
                   ->from('project_mail_sources')
                   ->whereColumn('project_mail_sources.email_id', 'emails.id');
             })
+            ->when($lookbackDays !== null, fn($q) => $q->where('received_at', '>=', now()->subDays($lookbackDays)))
             ->orderByDesc('received_at');
 
         if ($limit !== null) {
