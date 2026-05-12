@@ -21,7 +21,7 @@
     $logoData = $resolveLogoFromUrl($invoice->issuer_logo_snapshot)
              ?? $resolveLogoFromPath(config('invoice.logo_path'));
 
-    $items = $items ?? [['name' => '御請求書', 'count' => 1]];
+    $items = $items ?? [['name' => '御請求書', 'count' => 1, 'unit' => '通']];
 @endphp
 <!DOCTYPE html>
 <html lang="ja">
@@ -145,7 +145,7 @@ body {
         @foreach($items as $it)
             <tr>
                 <td class="name">・{{ $it['name'] }}</td>
-                <td class="count">{{ $it['count'] }}通</td>
+                <td class="count">{{ $it['count'] ?? 1 }}{{ $it['unit'] ?? '通' }}</td>
             </tr>
         @endforeach
     </table>

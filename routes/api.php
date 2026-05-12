@@ -90,7 +90,7 @@ Route::prefix('v1')->middleware(['supabase.auth'])->group(function () {
     Route::post('invoices/{invoice}/submit-approval', [InvoiceController::class, 'submitForApproval']);
     Route::post('invoices/{invoice}/approve',      [InvoiceController::class, 'approve']);
     Route::post('invoices/{invoice}/reject',       [InvoiceController::class, 'reject']);
-    Route::get('invoices/{invoice}/cover-letter',  [InvoiceController::class, 'coverLetter']);
+    Route::post('invoices/{invoice}/cover-letter', [InvoiceController::class, 'coverLetter']);
     Route::get('invoices/{invoice}/envelope',      [InvoiceController::class, 'envelope']);
     Route::post('invoices/{invoice}/send-mail',    [InvoiceController::class, 'sendMail']);
     Route::post('invoices/{invoice}/record-post',  [InvoiceController::class, 'recordPost']);

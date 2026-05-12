@@ -712,19 +712,28 @@ class InvoiceController extends Controller
     }
 
     /**
-     * GET /api/v1/invoices/{invoice}/cover-letter?items[]=御請求書&items[]=勤務表&items[]=御見積書
-     * 送付状 PDF をインラインで返す。items[] に同封物の表示名を順に並べる。
+     * POST /api/v1/invoices/{invoice}/cover-letter
+     *   body: { items: [{ name: '御見積書', count: 1, unit: '通' }, ...] }
+     * 送付状 PDF をインラインで返す。
      */
     public function coverLetter(Request $request, Invoice $invoice)
     {
-        $names = $request->input('items', []);
-        $items = is_array($names)
-            ? collect($names)
-                ->filter(fn($n) => is_string($n) && trim($n) !== '')
-                ->map(fn($n) => ['name' => mb_substr(trim($n), 0, 100), 'count' => 1])
-                ->values()
-                ->all()
-            : [];
+        $v = $request->validate([
+            'items'           => ['required', 'array', 'min:1'],
+            'items.*.name'    => ['required', 'string', 'max:100'],
+            'items.*.count'   => ['nullable', 'integer', 'min:1', 'max:9999'],
+            'items.*.unit'    => ['nullable', 'string', 'max:20'],
+        ]);
+
+        $items = collect($v['items'])
+            ->filter(fn($i) => is_array($i) && trim((string)($i['name'] ?? '')) !== '')
+            ->map(fn($i) => [
+                'name'  => mb_substr(trim($i['name']), 0, 100),
+                'count' => (int) ($i['count'] ?? 1) ?: 1,
+                'unit'  => mb_substr(trim((string)($i['unit'] ?? '通')) ?: '通', 0, 20),
+            ])
+            ->values()
+            ->all();
 
         if (empty($items)) {
             return response()->json(['message' => '同封物が選択されていません'], 422);
