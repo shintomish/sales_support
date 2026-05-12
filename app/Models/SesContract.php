@@ -76,6 +76,7 @@ class SesContract extends Model
         'vendor_deduction_hours',
         'vendor_overtime_unit_price',
         'vendor_overtime_hours',
+        'vendor_settlement_unit_minutes',
         'vendor_payment_site',
         // 契約期間
         'contract_start',
@@ -102,6 +103,7 @@ class SesContract extends Model
         'vendor_deduction_hours'       => 'decimal:2',
         'vendor_overtime_unit_price'   => 'decimal:2',
         'vendor_overtime_hours'        => 'decimal:2',
+        'vendor_settlement_unit_minutes' => 'integer',
         'vendor_payment_site'          => 'integer',
         'contract_start'               => 'date:Y-m-d',
         'contract_period_start'        => 'date:Y-m-d',
