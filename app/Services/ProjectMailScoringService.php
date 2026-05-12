@@ -17,6 +17,12 @@ class ProjectMailScoringService
 {
     private const URL_PATTERN = '/https?:\/\/[^\s\x{3000}"\'<>「」【】）\)]+/u';
 
+    /**
+     * ドメインボーナス集計のランタイムキャッシュ（テナント×ドメイン単位）。
+     * rescoreAll() で N 件処理する際、同一ドメインの集計クエリを毎回流すのを防ぐ。
+     */
+    private array $domainBonusCache = [];
+
     // ── ① 除外ワード ──────────────────────────────────────
 
     private const EXCLUDE_SUBJECT = [
@@ -250,6 +256,12 @@ class ProjectMailScoringService
         $skipDomains = ['smoothcontact.com', 'gmail.com', 'yahoo.co.jp', 'hotmail.com'];
         if (in_array($domain, $skipDomains, true)) return $empty;
 
+        // ランタイムキャッシュ（同一プロセス内の同テナント×同ドメインは再集計しない）
+        $cacheKey = "{$tenantId}:{$domain}";
+        if (isset($this->domainBonusCache[$cacheKey])) {
+            return $this->domainBonusCache[$cacheKey];
+        }
+
         // 判断済みレコードのみ集計（review = 未判断は除外）
         $rows = ProjectMailSource::where('tenant_id', $tenantId)
             ->whereNotIn('status', ['review'])
@@ -264,7 +276,9 @@ class ProjectMailScoringService
         $projectCount = (int) ($rows->project_count ?? 0);
 
         // 最低5件のサンプルが必要
-        if ($total < 5) return array_merge($empty, ['domain' => $domain, 'sample' => $total]);
+        if ($total < 5) {
+            return $this->domainBonusCache[$cacheKey] = array_merge($empty, ['domain' => $domain, 'sample' => $total]);
+        }
 
         $rate  = $projectCount / $total;
         $bonus = match(true) {
@@ -273,7 +287,12 @@ class ProjectMailScoringService
             default      => 0,
         };
 
-        return ['bonus' => $bonus, 'rate' => $rate, 'sample' => $total, 'domain' => $domain];
+        return $this->domainBonusCache[$cacheKey] = [
+            'bonus'  => $bonus,
+            'rate'   => $rate,
+            'sample' => $total,
+            'domain' => $domain,
+        ];
     }
 
     // ── 抽出（正規表現）──────────────────────────────────
