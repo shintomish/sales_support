@@ -158,14 +158,17 @@ class InvoiceController extends Controller
         $subject = $validated['subject_name'] ?? $deal?->title;
 
         // 作業期間文言と月数を契約から算出（通常モード時）
+        //   見積書は「延長」を前提とするため、見積上の作業期間は
+        //   現契約の terminate 翌日 ～ +3ヶ月相当 をデフォルトとする。
         $workPeriod = null;
         $months = 1;
-        if ($contract?->contract_period_start && $contract?->contract_period_end) {
-            $s = \Carbon\Carbon::parse($contract->contract_period_start);
-            $e = \Carbon\Carbon::parse($contract->contract_period_end);
+        if ($contract?->contract_period_end) {
+            $from = \Carbon\Carbon::parse($contract->contract_period_end)->addDay();
+            $to   = $from->copy()->addMonths(3)->subDay();
             $workPeriod = sprintf('%d年%d月%d日〜%d年%d月%d日',
-                $s->year, $s->month, $s->day, $e->year, $e->month, $e->day);
-            $months = max(1, ($e->year - $s->year) * 12 + ($e->month - $s->month) + 1);
+                $from->year, $from->month, $from->day,
+                $to->year,   $to->month,   $to->day);
+            $months = 3;
         }
 
         $invoice = Invoice::create([
