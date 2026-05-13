@@ -451,14 +451,14 @@ body {
             $rows[] = ['name' => '・支払サイト：' . $swapWording($invoice->payment_terms_text)];
             $rows[] = ['blank' => true];
         }
-        // 見積書では作業担当者を印字しない（運用上、SES契約の氏名は実体と合わないため）
-        if (!$isEstimate && $invoice->engineer_name_snapshot) {
+        // 作業担当者は入力がある場合のみ印字（編集画面で空欄にすれば非表示）
+        if ($invoice->engineer_name_snapshot) {
             $rows[] = ['name' => '・作業担当者：' . $invoice->engineer_name_snapshot];
         }
         if ($invoice->work_location) {
             $rows[] = ['name' => '・作業場所：' . $swapWording($invoice->work_location)];
         }
-        if ((!$isEstimate && $invoice->engineer_name_snapshot) || $invoice->work_location) {
+        if ($invoice->engineer_name_snapshot || $invoice->work_location) {
             $rows[] = ['blank' => true];
         }
     } else {
