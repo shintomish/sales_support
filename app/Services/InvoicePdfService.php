@@ -74,9 +74,11 @@ class InvoicePdfService
             $invoiceForRender->issuer_square_seal_snapshot = null;
         }
 
+        $tenant = \App\Models\Tenant::find($invoice->tenant_id);
         $html = View::make('invoices.pdf', [
             'invoice'           => $invoiceForRender,
             'isAcknowledgement' => $isAcknowledgement,
+            'tenant'            => $tenant,
         ])->render();
         $binary = $this->htmlToPdf($html);
 

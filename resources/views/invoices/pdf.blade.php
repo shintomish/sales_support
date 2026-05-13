@@ -287,6 +287,8 @@ body {
 }
 .remarks-block .bank-row { white-space: nowrap; }
 .remarks-block .bank-info { font-size: 8.5pt; letter-spacing: -0.02em; }
+/* Refinitiv では Bank Details が長くなるので折り返し許容 */
+.remarks-block .bank-row.wrap { white-space: normal; }
 /* 注文書/請書 は備考エリアを大きく取る */
 .remarks-block.tall { min-height: 22mm; }
 
@@ -328,17 +330,24 @@ body {
                     <img class="logo" src="{{ $logoData }}" alt="logo">
                 @endif
                 <div class="issuer-block">
-                    @if($invoice->issuer_postal_code_snapshot)
-                        <div>〒{{ $invoice->issuer_postal_code_snapshot }}</div>
-                    @endif
-                    @if($invoice->issuer_address_snapshot)
-                        @php
-                            // 住所は全角/半角スペースで 2 行に分割（番地と建物名の区切り想定）
-                            $addrParts = preg_split('/[\s　]+/u', $invoice->issuer_address_snapshot, 2, PREG_SPLIT_NO_EMPTY);
-                        @endphp
-                        <div>{{ $addrParts[0] ?? '' }}</div>
-                        @if(!empty($addrParts[1]))
-                            <div>&nbsp;{{ $addrParts[1] }}</div>
+                    @if($isRefinitiv && !empty($tenant?->invoice_issuer_address_en))
+                        {{-- Refinitiv 用: テナントに英文住所が設定されていればそれを使用 --}}
+                        @foreach(preg_split('/\R/u', (string) $tenant->invoice_issuer_address_en) as $line)
+                            @if(trim($line) !== '')<div>{{ $line }}</div>@endif
+                        @endforeach
+                    @else
+                        @if($invoice->issuer_postal_code_snapshot)
+                            <div>〒{{ $invoice->issuer_postal_code_snapshot }}</div>
+                        @endif
+                        @if($invoice->issuer_address_snapshot)
+                            @php
+                                // 住所は全角/半角スペースで 2 行に分割（番地と建物名の区切り想定）
+                                $addrParts = preg_split('/[\s　]+/u', $invoice->issuer_address_snapshot, 2, PREG_SPLIT_NO_EMPTY);
+                            @endphp
+                            <div>{{ $addrParts[0] ?? '' }}</div>
+                            @if(!empty($addrParts[1]))
+                                <div>&nbsp;{{ $addrParts[1] }}</div>
+                            @endif
                         @endif
                     @endif
                     @if($invoice->issuer_name_snapshot)
@@ -350,7 +359,7 @@ body {
                             @endif
                         </div>
                         @if($isRefinitiv)
-                            <div class="issuer-name"><strong>AIZEN SOLUTION</strong></div>
+                            <div class="issuer-name"><strong>{{ $tenant?->invoice_issuer_name_en ?: 'AIZEN SOLUTION' }}</strong></div>
                         @endif
                     @endif
                     @if($invoice->issuer_tel_snapshot || $invoice->issuer_fax_snapshot)
@@ -367,8 +376,9 @@ body {
                     @endif
                     @if($isRefinitiv)
                         @php
-                            $issuerEmail = optional(\Illuminate\Support\Facades\Auth::user())->email
-                                        ?? config('mail.from.address');
+                            $issuerEmail = $tenant?->invoice_issuer_email
+                                        ?: (optional(\Illuminate\Support\Facades\Auth::user())->email
+                                        ?? config('mail.from.address'));
                         @endphp
                         @if($issuerEmail)
                             <div>Email：{{ $issuerEmail }}</div>
@@ -386,20 +396,22 @@ body {
 <table class="meta-numbers">
     <tr>
         <td class="meta-cell-left">
-            <div class="left-meta">
-                @if($invoice->delivery_date_text)
-                    <div><span class="meta-label">納期</span>：&nbsp;&nbsp;{{ $swapWording($invoice->delivery_date_text) }}</div>
-                @endif
-                @if($invoice->delivery_place_text)
-                    <div><span class="meta-label">納入場所</span>：&nbsp;&nbsp;{{ $swapWording($invoice->delivery_place_text) }}</div>
-                @endif
-                @if($invoice->payment_terms_text)
-                    <div><span class="meta-label">支払期限</span>：&nbsp;&nbsp;{{ $swapWording($invoice->payment_terms_text) }}</div>
-                @endif
-                @if($isEstimate && $invoice->valid_until_text)
-                    <div><span class="meta-label">有効期間</span>：&nbsp;&nbsp;{{ $invoice->valid_until_text }}</div>
-                @endif
-            </div>
+            @if(!$isRefinitiv)
+                <div class="left-meta">
+                    @if($invoice->delivery_date_text)
+                        <div><span class="meta-label">納期</span>：&nbsp;&nbsp;{{ $swapWording($invoice->delivery_date_text) }}</div>
+                    @endif
+                    @if($invoice->delivery_place_text)
+                        <div><span class="meta-label">納入場所</span>：&nbsp;&nbsp;{{ $swapWording($invoice->delivery_place_text) }}</div>
+                    @endif
+                    @if($invoice->payment_terms_text)
+                        <div><span class="meta-label">支払期限</span>：&nbsp;&nbsp;{{ $swapWording($invoice->payment_terms_text) }}</div>
+                    @endif
+                    @if($isEstimate && $invoice->valid_until_text)
+                        <div><span class="meta-label">有効期間</span>：&nbsp;&nbsp;{{ $invoice->valid_until_text }}</div>
+                    @endif
+                </div>
+            @endif
         </td>
         <td class="meta-cell-right">
             <div class="numbers-block">
@@ -430,16 +442,28 @@ body {
     </tr>
 </table>
 
-<div class="total-wrap">
-    <div class="total-inner">
-        <div class="grand-total">
-            <span class="gt-label">合&nbsp;計&nbsp;金&nbsp;額</span>
-            <span class="gt-amount">￥{{ number_format((float) $invoice->total) }}</span>
-            <span class="gt-tax">（税込）</span>
+@if(!$isRefinitiv)
+    <div class="total-wrap">
+        <div class="total-inner">
+            <div class="grand-total">
+                <span class="gt-label">合&nbsp;計&nbsp;金&nbsp;額</span>
+                <span class="gt-amount">￥{{ number_format((float) $invoice->total) }}</span>
+                <span class="gt-tax">（税込）</span>
+            </div>
+            <div class="grand-total-sub">（内、消費税&nbsp;&nbsp;￥{{ number_format((float) $invoice->tax) }}）</div>
         </div>
-        <div class="grand-total-sub">（内、消費税&nbsp;&nbsp;￥{{ number_format((float) $invoice->tax) }}）</div>
     </div>
-</div>
+@else
+    <div class="total-wrap">
+        <div class="total-inner">
+            <div class="grand-total">
+                <span class="gt-label">Sum Total</span>
+                <span class="gt-amount">￥{{ number_format((float) $invoice->total) }}</span>
+                <span class="gt-tax">(Tax Included)</span>
+            </div>
+        </div>
+    </div>
+@endif
 
 @php
     // 明細レイアウト（Sick サンプル準拠）
@@ -580,6 +604,45 @@ body {
     }
     // 8% / 10% を必ず表示する（10% は計算、8% は空欄でも）
     $hasRate = function (string $r) use ($byRate) { return isset($byRate[$r]); };
+
+    // Refinitiv 専用: 明細を 1 行に集約（subject_name + 基本月額 / 控除 / 超過 / 経費 のみ表示）
+    if ($isRefinitiv) {
+        $rows = [];
+        if ($basicLine) {
+            $rows[] = [
+                'name'       => $invoice->subject_name ?: $basicLine->description,
+                'qty'        => '1',
+                'unit_price' => $basicLine->unit_price,
+                'amount'     => $basicLine->amount,
+            ];
+        }
+        if (!empty($deductionLine) && (float) $deductionLine->amount != 0) {
+            $rows[] = [
+                'name'       => '控除（精算下限未達）',
+                'qty'        => rtrim(rtrim(number_format((float) $deductionLine->quantity, 2), '0'), '.'),
+                'unit_price' => $deductionLine->unit_price,
+                'amount'     => $deductionLine->amount,
+                'amount_negative' => true,
+            ];
+        }
+        if (!empty($overtimeLine) && (float) $overtimeLine->amount != 0) {
+            $rows[] = [
+                'name'       => '超過（精算上限超）',
+                'qty'        => rtrim(rtrim(number_format((float) $overtimeLine->quantity, 2), '0'), '.'),
+                'unit_price' => $overtimeLine->unit_price,
+                'amount'     => $overtimeLine->amount,
+            ];
+        }
+        foreach ($expenseLines as $l) {
+            $rows[] = [
+                'name'       => $l->description,
+                'qty'        => rtrim(rtrim(number_format((float) $l->quantity, 2), '0'), '.'),
+                'unit_price' => $l->unit_price,
+                'amount'     => $l->amount,
+            ];
+        }
+        $padCount = max(0, $itemRows - count($rows));
+    }
 @endphp
 
 @if($isRefinitiv)
@@ -601,15 +664,18 @@ body {
                 @if(!empty($r['blank']))
                     <tr><td></td><td class="name blank">&nbsp;</td><td></td><td></td><td></td><td></td></tr>
                 @else
-                    @php $refRowIndex++; @endphp
+                    @php
+                        $refRowIndex++;
+                        $hasAmount = isset($r['amount']) && $r['amount'] !== null && (float) $r['amount'] != 0;
+                    @endphp
                     <tr>
                         <td class="num-center">{{ $refRowIndex }}</td>
                         <td class="name @if(!empty($r['indent'])) indent @endif">{{ $r['name'] }}</td>
                         <td class="qty">{{ $r['qty'] ?? '' }}</td>
-                        <td class="num-center">EA</td>
+                        <td class="num-center">{{ $hasAmount ? 'EA' : '' }}</td>
                         <td class="num">{{ isset($r['unit_price']) && $r['unit_price'] !== null ? '￥'.number_format((float) $r['unit_price']) : '' }}</td>
                         <td class="num @if(!empty($r['amount_negative'])) muted @endif">
-                            @if(isset($r['amount']) && $r['amount'] !== null && (float) $r['amount'] != 0)
+                            @if($hasAmount)
                                 ￥{{ number_format((float) $r['amount']) }}
                             @endif
                         </td>
@@ -739,14 +805,16 @@ body {
         @php
             // Payment Terms: payment_site から「NET DUE X DAYS」形式を組み立てる
             $paymentSite = optional($invoice->deal?->sesContract)->payment_site ?? 50;
+            $bankDetailsEn = $tenant?->invoice_issuer_bank_details_en ?: $invoice->issuer_bank_snapshot;
+            $bankHolderEn  = $tenant?->invoice_issuer_bank_account_holder_en
+                          ?: trim(($tenant?->invoice_issuer_bank_account_holder ?? '') . ' ' . ($tenant?->invoice_issuer_name_en ?: 'AIZEN SOLUTION'));
         @endphp
         <div>■Payment Terms: NET DUE {{ $paymentSite }} DAYS</div>
-        @if($invoice->issuer_bank_snapshot)
-            <div class="bank-row">■Bank Details: <span class="bank-info">{{ $invoice->issuer_bank_snapshot }}</span>
-                @if(optional($invoice)->issuer_name_snapshot)
-                    　■Bank Account Name: {{ $invoice->issuer_name_snapshot }} AIZEN SOLUTION
-                @endif
-            </div>
+        @if($bankDetailsEn)
+            <div class="bank-row">■Bank Details: <span class="bank-info">{{ $bankDetailsEn }}</span></div>
+        @endif
+        @if($bankHolderEn)
+            <div class="bank-row">■Bank Account Name: <span class="bank-info">{{ $bankHolderEn }}</span></div>
         @endif
         @if($invoice->notes)
             <div style="margin-top:2mm;">{!! nl2br(e($invoice->notes)) !!}</div>

@@ -90,7 +90,9 @@ class InvoiceCreationService
                 'due_date'                        => $dueDate,
                 'status'                          => 'draft',
                 'notes'                           => $options['notes'] ?? null,
-                'customer_name_snapshot'          => $customer->company_name,
+                'customer_name_snapshot'          => (($options['language'] ?? 'ja') === 'en' && !empty($customer->company_name_en))
+                    ? $customer->company_name_en
+                    : $customer->company_name,
                 'customer_address_snapshot'       => $customer->address,
                 'engineer_name_snapshot'          => $contract?->engineer_name,
                 'issuer_name_snapshot'            => $tenant?->invoice_issuer_name,
