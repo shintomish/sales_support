@@ -217,8 +217,8 @@ body {
 .numbers-inner { display: inline-block; text-align: left; }
 .numbers-inner .num-row { white-space: nowrap; }
 .num-label { display: inline-block; min-width: 16mm; }
-/* Refinitiv は英文ラベルが長いので幅を広げる + 赤色 PO Number */
-.num-row.ref .num-label { min-width: 42mm; text-align: left; }
+/* Refinitiv は英文ラベルが長いので幅を広げ、右寄せでコロン揃え */
+.num-row.ref .num-label { min-width: 42mm; text-align: right; padding-right: 2mm; }
 .num-row.ref.po .under { color: #d40000; font-weight: bold; }
 .under {
     border-bottom: 0.5pt solid #111;
@@ -254,8 +254,8 @@ body {
 .gt-amount { font-size: 15pt; margin-right: 4mm; }
 .gt-tax    { font-size: 10.5pt; }
 .grand-total-sub { text-align: center; font-size: 9.5pt; margin-top: 0.5mm; }
-/* Refinitiv 用: Sum Total を 1 行に収めるためラベル間隔を詰める */
-.grand-total.ref { white-space: nowrap; }
+/* Refinitiv 用: Sum Total を 1 行に収めるためラベル間隔を詰める + 下線を太く */
+.grand-total.ref { white-space: nowrap; border-bottom-width: 1.8pt; }
 .grand-total.ref .gt-label { letter-spacing: 0; margin-right: 3mm; font-size: 12pt; }
 .grand-total.ref .gt-tax   { font-size: 10pt; }
 
@@ -267,9 +267,9 @@ body {
 .col-price  { width: 16%; }
 .col-amount { width: 16%; }
 /* Refinitiv 専用 6 列レイアウト */
-.col-ref-no     { width: 8%;  text-align: center; }
-.col-ref-name   { width: 42%; }
-.col-ref-qty    { width: 11%; text-align: center; }
+.col-ref-no     { width: 12%; text-align: center; white-space: nowrap; }
+.col-ref-name   { width: 38%; }
+.col-ref-qty    { width: 11%; text-align: center; white-space: nowrap; }
 .col-ref-um     { width: 7%;  text-align: center; }
 .col-ref-price  { width: 16%; }
 .col-ref-amount { width: 16%; }
@@ -434,10 +434,10 @@ body {
                         <div class="num-row"><span class="num-label">注文No.</span><span class="under">{{ $invoice->invoice_number }}</span></div>
                         <div class="num-row"><span class="num-label">見積No.</span><span class="under">{{ $invoice->quote_number }}</span></div>
                     @elseif($isRefinitiv)
-                        <div class="num-row ref"><span class="num-label">Invoice Number</span><span class="under">{{ $invoice->invoice_number }}</span></div>
-                        <div class="num-row ref po"><span class="num-label">PO Number</span><span class="under">{{ $invoice->order_number }}</span></div>
-                        <div class="num-row ref"><span class="num-label">Quote number</span><span class="under">{{ $invoice->quote_number }}</span></div>
-                        <div class="num-row ref"><span class="num-label">Registration number</span><span class="under">{{ $invoice->issuer_invoice_number_snapshot }}</span></div>
+                        <div class="num-row ref"><span class="num-label">Invoice Number：</span><span class="under">{{ $invoice->invoice_number }}</span></div>
+                        <div class="num-row ref po"><span class="num-label">PO Number：</span><span class="under">{{ $invoice->order_number }}</span></div>
+                        <div class="num-row ref"><span class="num-label">Quote number：</span><span class="under">{{ $invoice->quote_number }}</span></div>
+                        <div class="num-row ref"><span class="num-label">Registration number：</span><span class="under">{{ $invoice->issuer_invoice_number_snapshot }}</span></div>
                     @else
                         <div class="num-row"><span class="num-label">請求No.</span><span class="under">{{ $invoice->invoice_number }}</span></div>
                         <div class="num-row"><span class="num-label">注文No.</span><span class="under">{{ $invoice->order_number }}</span></div>
@@ -814,6 +814,12 @@ body {
             // Payment Terms: payment_site から「NET DUE X DAYS」形式を組み立てる
             $paymentSite = optional($invoice->deal?->sesContract)->payment_site ?? 50;
             $bankDetailsEn = $tenant?->invoice_issuer_bank_details_en ?: $invoice->issuer_bank_snapshot;
+            // 項目間に空白を挿入: "Bank,Ltd(0001)Kawaguchi" → "Bank,Ltd (0001) Kawaguchi"
+            if ($bankDetailsEn) {
+                $bankDetailsEn = preg_replace('/(?<!\s)\(/', ' (', $bankDetailsEn);
+                $bankDetailsEn = preg_replace('/\)(?!\s|$)/', ') ', $bankDetailsEn);
+                $bankDetailsEn = preg_replace('/ +/', ' ', $bankDetailsEn);
+            }
             $bankHolderEn  = $tenant?->invoice_issuer_bank_account_holder_en
                           ?: trim(($tenant?->invoice_issuer_bank_account_holder ?? '') . ' ' . ($tenant?->invoice_issuer_name_en ?: 'AIZEN SOLUTION'));
         @endphp
