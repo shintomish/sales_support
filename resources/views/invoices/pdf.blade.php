@@ -96,7 +96,10 @@
     $itemRows = $isExtendedLayout ? 18 : 14;
 
     // 明細行を分類
-    $basicLine     = $invoice->lines->first(fn($l) => str_contains((string) $l->description, '基本月額'));
+    $basicLine     = $invoice->lines->first(fn($l) =>
+        str_contains((string) $l->description, '基本月額')
+        || ($isEnglish && str_contains((string) $l->description, 'yen/month'))
+    );
     $deductionLine = $invoice->lines->first(fn($l) => str_contains((string) $l->description, '控除') && !$l->is_expense);
     $overtimeLine  = $invoice->lines->first(fn($l) => str_contains((string) $l->description, '超過') && !$l->is_expense);
     $expenseLines  = $invoice->lines->where('is_expense', true)->values();
