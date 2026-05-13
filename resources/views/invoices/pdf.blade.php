@@ -258,6 +258,14 @@ body {
 .col-qty    { width: 12%; text-align: center; }
 .col-price  { width: 16%; }
 .col-amount { width: 16%; }
+/* Refinitiv 専用 6 列レイアウト */
+.col-ref-no     { width: 8%;  text-align: center; }
+.col-ref-name   { width: 42%; }
+.col-ref-qty    { width: 11%; text-align: center; }
+.col-ref-um     { width: 7%;  text-align: center; }
+.col-ref-price  { width: 16%; }
+.col-ref-amount { width: 16%; }
+.items td.num-center { text-align: center; font-variant-numeric: tabular-nums; }
 .items td.name   { text-align: left; }
 .items td.name.indent { padding-left: 6mm; }
 .items td.qty    { text-align: right; padding-right: 4mm; }
@@ -333,13 +341,6 @@ body {
                             <div>&nbsp;{{ $addrParts[1] }}</div>
                         @endif
                     @endif
-                    @if($invoice->issuer_tel_snapshot || $invoice->issuer_fax_snapshot)
-                        <div>
-                            @if($invoice->issuer_tel_snapshot)TEL：{{ $invoice->issuer_tel_snapshot }}@endif
-                            @if($invoice->issuer_tel_snapshot && $invoice->issuer_fax_snapshot)　@endif
-                            @if($invoice->issuer_fax_snapshot)FAX：{{ $invoice->issuer_fax_snapshot }}@endif
-                        </div>
-                    @endif
                     @if($invoice->issuer_name_snapshot)
                         <div class="issuer-name">
                             @if($isAcknowledgement)
@@ -348,6 +349,30 @@ body {
                                 <strong>{{ $invoice->issuer_name_snapshot }}</strong>
                             @endif
                         </div>
+                        @if($isRefinitiv)
+                            <div class="issuer-name"><strong>AIZEN SOLUTION</strong></div>
+                        @endif
+                    @endif
+                    @if($invoice->issuer_tel_snapshot || $invoice->issuer_fax_snapshot)
+                        @if($isRefinitiv)
+                            @if($invoice->issuer_tel_snapshot)<div>Phone Number：{{ $invoice->issuer_tel_snapshot }}</div>@endif
+                            @if($invoice->issuer_fax_snapshot)<div>Fax：{{ $invoice->issuer_fax_snapshot }}</div>@endif
+                        @else
+                            <div>
+                                @if($invoice->issuer_tel_snapshot)TEL：{{ $invoice->issuer_tel_snapshot }}@endif
+                                @if($invoice->issuer_tel_snapshot && $invoice->issuer_fax_snapshot)　@endif
+                                @if($invoice->issuer_fax_snapshot)FAX：{{ $invoice->issuer_fax_snapshot }}@endif
+                            </div>
+                        @endif
+                    @endif
+                    @if($isRefinitiv)
+                        @php
+                            $issuerEmail = optional(\Illuminate\Support\Facades\Auth::user())->email
+                                        ?? config('mail.from.address');
+                        @endphp
+                        @if($issuerEmail)
+                            <div>Email：{{ $issuerEmail }}</div>
+                        @endif
                     @endif
                     @if($sealData)
                         <img class="issuer-seal" src="{{ $sealData }}" alt="seal">
@@ -557,56 +582,111 @@ body {
     $hasRate = function (string $r) use ($byRate) { return isset($byRate[$r]); };
 @endphp
 
-<table class="items">
-    <thead>
-        <tr>
-            <th class="col-name">品&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;名</th>
-            <th class="col-qty">数&nbsp;&nbsp;量</th>
-            <th class="col-price">単&nbsp;&nbsp;価</th>
-            <th class="col-amount">金&nbsp;&nbsp;額</th>
-        </tr>
-    </thead>
-    <tbody>
-        @foreach($rows as $r)
-            @if(!empty($r['blank']))
+@if($isRefinitiv)
+    {{-- Refinitiv 専用: 明細番号 / 品番説明 / 数量(単位) / UM / 単価 / 小計 --}}
+    <table class="items items-ref">
+        <thead>
+            <tr>
+                <th class="col-ref-no">明細番号</th>
+                <th class="col-ref-name">品番／説明</th>
+                <th class="col-ref-qty">数量(単位)</th>
+                <th class="col-ref-um">UM</th>
+                <th class="col-ref-price">単&nbsp;&nbsp;価</th>
+                <th class="col-ref-amount">小&nbsp;&nbsp;計</th>
+            </tr>
+        </thead>
+        <tbody>
+            @php $refRowIndex = 0; @endphp
+            @foreach($rows as $r)
+                @if(!empty($r['blank']))
+                    <tr><td></td><td class="name blank">&nbsp;</td><td></td><td></td><td></td><td></td></tr>
+                @else
+                    @php $refRowIndex++; @endphp
+                    <tr>
+                        <td class="num-center">{{ $refRowIndex }}</td>
+                        <td class="name @if(!empty($r['indent'])) indent @endif">{{ $r['name'] }}</td>
+                        <td class="qty">{{ $r['qty'] ?? '' }}</td>
+                        <td class="num-center">EA</td>
+                        <td class="num">{{ isset($r['unit_price']) && $r['unit_price'] !== null ? '￥'.number_format((float) $r['unit_price']) : '' }}</td>
+                        <td class="num @if(!empty($r['amount_negative'])) muted @endif">
+                            @if(isset($r['amount']) && $r['amount'] !== null && (float) $r['amount'] != 0)
+                                ￥{{ number_format((float) $r['amount']) }}
+                            @endif
+                        </td>
+                    </tr>
+                @endif
+            @endforeach
+            @for($i = 0; $i < $padCount; $i++)
+                <tr><td></td><td class="name blank">&nbsp;</td><td></td><td></td><td></td><td></td></tr>
+            @endfor
+        </tbody>
+        <tfoot>
+            <tr><td></td><td></td><td></td><td colspan="2" class="sub-label">Total excl. Tax</td><td class="num">￥{{ number_format((float) $invoice->subtotal) }}</td></tr>
+            <tr>
+                <td></td><td></td><td></td>
+                <td colspan="2" class="sub-label">Tax 10%</td>
+                <td class="num">{{ $hasRate('0.1000') ? '￥'.number_format(round($byRate['0.1000'] * 0.10)) : '' }}</td>
+            </tr>
+            <tr>
+                <td></td><td></td><td></td>
+                <td colspan="2" class="sub-label">Transportation cost</td>
+                <td class="num">{{ $expenseTotal > 0 ? '￥'.number_format($expenseTotal) : '' }}</td>
+            </tr>
+            <tr><td></td><td></td><td></td><td colspan="2" class="sub-label total">Sum Total</td><td class="num total">￥{{ number_format((float) $invoice->total) }}</td></tr>
+        </tfoot>
+    </table>
+@else
+    <table class="items">
+        <thead>
+            <tr>
+                <th class="col-name">品&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;名</th>
+                <th class="col-qty">数&nbsp;&nbsp;量</th>
+                <th class="col-price">単&nbsp;&nbsp;価</th>
+                <th class="col-amount">金&nbsp;&nbsp;額</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach($rows as $r)
+                @if(!empty($r['blank']))
+                    <tr><td class="name blank">&nbsp;</td><td></td><td></td><td></td></tr>
+                @else
+                    <tr>
+                        <td class="name @if(!empty($r['indent'])) indent @endif">{{ $r['name'] }}</td>
+                        <td class="qty">{{ $r['qty'] ?? '' }}</td>
+                        <td class="num">{{ isset($r['unit_price']) && $r['unit_price'] !== null ? '￥'.number_format((float) $r['unit_price']) : '' }}</td>
+                        <td class="num @if(!empty($r['amount_negative'])) muted @endif">
+                            @if(isset($r['amount']) && $r['amount'] !== null && (float) $r['amount'] != 0)
+                                ￥{{ number_format((float) $r['amount']) }}
+                            @endif
+                        </td>
+                    </tr>
+                @endif
+            @endforeach
+            @for($i = 0; $i < $padCount; $i++)
                 <tr><td class="name blank">&nbsp;</td><td></td><td></td><td></td></tr>
-            @else
-                <tr>
-                    <td class="name @if(!empty($r['indent'])) indent @endif">{{ $r['name'] }}</td>
-                    <td class="qty">{{ $r['qty'] ?? '' }}</td>
-                    <td class="num">{{ isset($r['unit_price']) && $r['unit_price'] !== null ? '￥'.number_format((float) $r['unit_price']) : '' }}</td>
-                    <td class="num @if(!empty($r['amount_negative'])) muted @endif">
-                        @if(isset($r['amount']) && $r['amount'] !== null && (float) $r['amount'] != 0)
-                            ￥{{ number_format((float) $r['amount']) }}
-                        @endif
-                    </td>
-                </tr>
+            @endfor
+        </tbody>
+        <tfoot>
+            <tr><td></td><td colspan="2" class="sub-label">小　計</td><td class="num">￥{{ number_format((float) $invoice->subtotal) }}</td></tr>
+            {{-- 8%（あれば計算、なければ空欄表示） --}}
+            <tr>
+                <td></td>
+                <td colspan="2" class="sub-label">消費税（8%）</td>
+                <td class="num">{{ $hasRate('0.0800') ? '￥'.number_format(round($byRate['0.0800'] * 0.08)) : '' }}</td>
+            </tr>
+            {{-- 10%（あれば計算、なければ空欄） --}}
+            <tr>
+                <td></td>
+                <td colspan="2" class="sub-label">消費税（10%）</td>
+                <td class="num">{{ $hasRate('0.1000') ? '￥'.number_format(round($byRate['0.1000'] * 0.10)) : '' }}</td>
+            </tr>
+            @if($expenseTotal > 0)
+                <tr><td></td><td colspan="2" class="sub-label">経　費</td><td class="num">￥{{ number_format($expenseTotal) }}</td></tr>
             @endif
-        @endforeach
-        @for($i = 0; $i < $padCount; $i++)
-            <tr><td class="name blank">&nbsp;</td><td></td><td></td><td></td></tr>
-        @endfor
-    </tbody>
-    <tfoot>
-        <tr><td></td><td colspan="2" class="sub-label">小　計</td><td class="num">￥{{ number_format((float) $invoice->subtotal) }}</td></tr>
-        {{-- 8%（あれば計算、なければ空欄表示） --}}
-        <tr>
-            <td></td>
-            <td colspan="2" class="sub-label">消費税（8%）</td>
-            <td class="num">{{ $hasRate('0.0800') ? '￥'.number_format(round($byRate['0.0800'] * 0.08)) : '' }}</td>
-        </tr>
-        {{-- 10%（あれば計算、なければ空欄） --}}
-        <tr>
-            <td></td>
-            <td colspan="2" class="sub-label">消費税（10%）</td>
-            <td class="num">{{ $hasRate('0.1000') ? '￥'.number_format(round($byRate['0.1000'] * 0.10)) : '' }}</td>
-        </tr>
-        @if($expenseTotal > 0)
-            <tr><td></td><td colspan="2" class="sub-label">経　費</td><td class="num">￥{{ number_format($expenseTotal) }}</td></tr>
-        @endif
-        <tr><td></td><td colspan="2" class="sub-label total">合　計</td><td class="num total">￥{{ number_format((float) $invoice->total) }}</td></tr>
-    </tfoot>
-</table>
+            <tr><td></td><td colspan="2" class="sub-label total">合　計</td><td class="num total">￥{{ number_format((float) $invoice->total) }}</td></tr>
+        </tfoot>
+    </table>
+@endif
 
 @if($isRefinitiv && $vendorMeta)
     @php
@@ -652,6 +732,22 @@ body {
     @elseif($isPurchaseOrder)
         {{-- 注文書 / 注文請書: 備考 のみ（御支払期日/振込先/手数料は請求書専用） --}}
         <div>備考</div>
+        @if($invoice->notes)
+            <div style="margin-top:2mm;">{!! nl2br(e($invoice->notes)) !!}</div>
+        @endif
+    @elseif($isRefinitiv)
+        @php
+            // Payment Terms: payment_site から「NET DUE X DAYS」形式を組み立てる
+            $paymentSite = optional($invoice->deal?->sesContract)->payment_site ?? 50;
+        @endphp
+        <div>■Payment Terms: NET DUE {{ $paymentSite }} DAYS</div>
+        @if($invoice->issuer_bank_snapshot)
+            <div class="bank-row">■Bank Details: <span class="bank-info">{{ $invoice->issuer_bank_snapshot }}</span>
+                @if(optional($invoice)->issuer_name_snapshot)
+                    　■Bank Account Name: {{ $invoice->issuer_name_snapshot }} AIZEN SOLUTION
+                @endif
+            </div>
+        @endif
         @if($invoice->notes)
             <div style="margin-top:2mm;">{!! nl2br(e($invoice->notes)) !!}</div>
         @endif
