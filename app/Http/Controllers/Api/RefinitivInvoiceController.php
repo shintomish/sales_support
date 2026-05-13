@@ -82,6 +82,7 @@ class RefinitivInvoiceController extends Controller
             'issued_date'     => $v['issued_date'] ?? null,
             'order_number'    => $v['po_number'],
             'vendor_metadata' => $v['vendor_metadata'] ?? null,
+            'language'        => 'en',
         ]);
 
         return response()->json($invoice->load('lines'), 201);

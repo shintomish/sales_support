@@ -32,9 +32,6 @@
     $englishDate = function (?Carbon $d): string {
         return $d ? $d->format('j M Y') : '';
     };
-    // Refinitiv 専用レイアウト（vendor_metadata あり時）
-    $vendorMeta = is_array($invoice->vendor_metadata ?? null) ? $invoice->vendor_metadata : null;
-    $isRefinitiv = $vendorMeta !== null && !$isEstimate && !$isPurchaseOrder && !$isAcknowledgement;
     $refDate = function (?Carbon $d): string {
         return $d ? $d->format('j-M-Y') : '';
     };
@@ -68,6 +65,10 @@
     // 注文請書モード: purchase_order 行を「請書」フォーマットで描画する
     // 同一データから 注文書 と 注文請書 の 2 種類の PDF を出し分ける
     $isAcknowledgement = ($isAcknowledgement ?? false) && $isPurchaseOrder;
+
+    // Refinitiv 専用レイアウト（vendor_metadata あり時。請求書のみ適用）
+    $vendorMeta = is_array($invoice->vendor_metadata ?? null) ? $invoice->vendor_metadata : null;
+    $isRefinitiv = $vendorMeta !== null && !$isEstimate && !$isPurchaseOrder && !$isAcknowledgement;
 
     // 電子印画像（base64）
     //   - 請求書/注文書: 丸印
