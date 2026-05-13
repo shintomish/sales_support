@@ -26,7 +26,13 @@ class InvoiceCreationService
     ) {}
 
     /**
-     * @param array{issued_date?: string|null, due_date?: string|null, notes?: string|null} $options
+     * @param array{
+     *   issued_date?: string|null,
+     *   due_date?: string|null,
+     *   notes?: string|null,
+     *   order_number?: string|null,
+     *   vendor_metadata?: array|null,
+     * } $options
      */
     public function createFromDeal(Deal $deal, string $yearMonth, array $options = []): Invoice
     {
@@ -68,7 +74,8 @@ class InvoiceCreationService
                 'customer_id'                     => $customer->id,
                 'year_month'                      => $yearMonth,
                 'invoice_number'                  => $number,
-                'order_number'                    => $contract?->order_number,
+                'order_number'                    => $options['order_number'] ?? $contract?->order_number,
+                'vendor_metadata'                 => $options['vendor_metadata'] ?? null,
                 'subject_name'                    => $deal->title,
                 'work_period_text'                => $workPeriod,
                 'work_location'                   => null,

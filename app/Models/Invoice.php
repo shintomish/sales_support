@@ -21,6 +21,7 @@ class Invoice extends Model
         'tenant_id',
         'doc_type',
         'language',
+        'vendor_metadata',
         'deal_id',
         'customer_id',
         'year_month',
@@ -74,13 +75,14 @@ class Invoice extends Model
     ];
 
     protected $casts = [
-        'issued_date' => 'date:Y-m-d',
-        'due_date'    => 'date:Y-m-d',
-        'subtotal'    => 'decimal:2',
-        'tax'         => 'decimal:2',
-        'total'       => 'decimal:2',
-        'approved'    => 'boolean',
-        'approved_at' => 'datetime',
+        'issued_date'     => 'date:Y-m-d',
+        'due_date'        => 'date:Y-m-d',
+        'subtotal'        => 'decimal:2',
+        'tax'             => 'decimal:2',
+        'total'           => 'decimal:2',
+        'approved'        => 'boolean',
+        'approved_at'     => 'datetime',
+        'vendor_metadata' => 'array',
     ];
 
     public function deal(): BelongsTo

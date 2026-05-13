@@ -28,9 +28,15 @@
 
     // 英文モード（見積書のみ。'ja'/'en'）
     $isEnglish = ($invoice->language ?? 'ja') === 'en';
-    /** 英文日付 "13 May 2026" */
+    /** 英文日付 "13 May 2026" / "30-Apr-2026" */
     $englishDate = function (?Carbon $d): string {
         return $d ? $d->format('j M Y') : '';
+    };
+    // Refinitiv 専用レイアウト（vendor_metadata あり時）
+    $vendorMeta = is_array($invoice->vendor_metadata ?? null) ? $invoice->vendor_metadata : null;
+    $isRefinitiv = $vendorMeta !== null && !$isEstimate && !$isPurchaseOrder && !$isAcknowledgement;
+    $refDate = function (?Carbon $d): string {
+        return $d ? $d->format('j-M-Y') : '';
     };
 
     /**
@@ -76,7 +82,8 @@
     // タイトル
     $docTitle = $isAcknowledgement ? '注　文　請　書'
               : ($isEstimate ? '御　見　積　書'
-              : ($isPurchaseOrder ? '注　文　書' : '請　求　書'));
+              : ($isPurchaseOrder ? '注　文　書'
+              : ($isRefinitiv ? 'Invoice' : '請　求　書')));
 
     // 注文請書: 弊社/御社 wording の自動反転
     $swapWording = function (?string $text) use ($isAcknowledgement): string {
@@ -273,11 +280,18 @@ body {
 .remarks-block .bank-info { font-size: 8.5pt; letter-spacing: -0.02em; }
 /* 注文書/請書 は備考エリアを大きく取る */
 .remarks-block.tall { min-height: 22mm; }
+
+/* Refinitiv 注文書 由来の補足情報セクション */
+.ref-extra { width: 100%; border-collapse: collapse; margin-top: 1mm; font-size: 9pt; }
+.ref-extra td { border: 0.5pt solid #111; padding: 1mm 2mm; }
+.ref-extra .ref-section { background: #f4f4f4; font-weight: 600; font-size: 9.5pt; }
+.ref-extra .ref-label { width: 35mm; white-space: nowrap; }
+.ref-extra .ref-value { word-break: break-all; }
 </style>
 </head>
 <body>
 
-<div class="date-top">{{ $isAcknowledgement ? '　　　/　　/　　' : ($isEnglish ? $englishDate($issuedAt) : $reiwa($issuedAt)) }}</div>
+<div class="date-top">{{ $isAcknowledgement ? '　　　/　　/　　' : ($isRefinitiv ? $refDate($issuedAt) : ($isEnglish ? $englishDate($issuedAt) : $reiwa($issuedAt))) }}</div>
 
 <h1 class="title {{ ($isPurchaseOrder || $isEstimate) ? 'spaced' : '' }}">{{ $docTitle }}</h1>
 
@@ -373,6 +387,11 @@ body {
                     @elseif($isPurchaseOrder)
                         <div class="num-row"><span class="num-label">注文No.</span><span class="under">{{ $invoice->invoice_number }}</span></div>
                         <div class="num-row"><span class="num-label">見積No.</span><span class="under">{{ $invoice->quote_number }}</span></div>
+                    @elseif($isRefinitiv)
+                        <div class="num-row"><span class="num-label">Invoice Number</span><span class="under">{{ $invoice->invoice_number }}</span></div>
+                        <div class="num-row"><span class="num-label">PO Number</span><span class="under">{{ $invoice->order_number }}</span></div>
+                        <div class="num-row"><span class="num-label">Quote number</span><span class="under">{{ $invoice->quote_number }}</span></div>
+                        <div class="num-row"><span class="num-label">Registration number</span><span class="under">{{ $invoice->issuer_invoice_number_snapshot }}</span></div>
                     @else
                         <div class="num-row"><span class="num-label">請求No.</span><span class="under">{{ $invoice->invoice_number }}</span></div>
                         <div class="num-row"><span class="num-label">注文No.</span><span class="under">{{ $invoice->order_number }}</span></div>
@@ -587,6 +606,41 @@ body {
         <tr><td></td><td colspan="2" class="sub-label total">合　計</td><td class="num total">￥{{ number_format((float) $invoice->total) }}</td></tr>
     </tfoot>
 </table>
+
+@if($isRefinitiv && $vendorMeta)
+    @php
+        // Refinitiv 注文書から転記する「その他の情報」セクション
+        $refExtras = [
+            '金額による受入'      => $vendorMeta['amount_based_receipt']  ?? null,
+            '購入申請明細番号'    => $vendorMeta['purchase_request_line'] ?? null,
+            '申請者'              => $vendorMeta['requester']             ?? null,
+            '申請番号'            => $vendorMeta['request_number']        ?? null,
+            'Plant.ID'            => $vendorMeta['plant_id']              ?? null,
+            'Plant.Name'          => $vendorMeta['plant_name']            ?? null,
+            'TR_PlantID'          => $vendorMeta['tr_plant_id']           ?? null,
+            'Ship ToAddressName'  => $vendorMeta['ship_to_address_name']  ?? null,
+            '分類ドメイン'        => $vendorMeta['classification_domain'] ?? null,
+            '分類コード'          => $vendorMeta['classification_code']   ?? null,
+        ];
+        $refDeliveryDate = $vendorMeta['requested_delivery_date'] ?? null;
+    @endphp
+    <table class="ref-extra">
+        @if($refDeliveryDate)
+            <tr>
+                <td class="ref-label" colspan="2">希望納入日：{{ $refDeliveryDate }}</td>
+            </tr>
+        @endif
+        <tr>
+            <td class="ref-section" colspan="2">その他の情報</td>
+        </tr>
+        @foreach($refExtras as $label => $value)
+            <tr>
+                <td class="ref-label">{{ $label }}：</td>
+                <td class="ref-value">{{ $value ?? '' }}</td>
+            </tr>
+        @endforeach
+    </table>
+@endif
 
 <div class="remarks-block {{ ($isPurchaseOrder || $isEstimate) ? 'tall' : '' }}">
     @if($isEstimate)

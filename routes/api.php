@@ -25,6 +25,7 @@ use App\Http\Controllers\Api\WorkRecordController;
 use App\Http\Controllers\Api\BillingSummaryController;
 use App\Http\Controllers\Api\InvoiceController;
 use App\Http\Controllers\Api\InvoiceIssuerController;
+use App\Http\Controllers\Api\RefinitivInvoiceController;
 use App\Http\Controllers\Api\ReportRecipientController;
 use App\Http\Controllers\Api\FeedbackController;
 use App\Http\Controllers\Api\EmailBodyTemplateController;
@@ -83,6 +84,9 @@ Route::prefix('v1')->middleware(['supabase.auth'])->group(function () {
 
     Route::get('invoices',                [InvoiceController::class, 'index']);
     Route::post('invoices',               [InvoiceController::class, 'store']);
+    // Refinitiv (LSEG) 注文書 PDF 取込フロー
+    Route::post('invoices/refinitiv/parse', [RefinitivInvoiceController::class, 'parse']);
+    Route::post('invoices/refinitiv/issue', [RefinitivInvoiceController::class, 'issue']);
     Route::get('invoices/{invoice}',      [InvoiceController::class, 'show']);
     Route::put('invoices/{invoice}',      [InvoiceController::class, 'update']);
     Route::delete('invoices/{invoice}',   [InvoiceController::class, 'destroy']);
