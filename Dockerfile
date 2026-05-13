@@ -61,11 +61,16 @@ COPY . .
 RUN if [ ! -f .env ]; then cp .env.example .env; fi \
     && composer install --no-interaction --prefer-dist --optimize-autoloader
 # Browsershot 用 puppeteer (Chromium 自動ダウンロード)
-# キャッシュは /var/www/.cache/puppeteer に置かれ、ランタイムで HOME=/tmp に切替えても
-# Browsershot が PUPPETEER_CACHE_DIR を見るため動作する
-ENV PUPPETEER_CACHE_DIR=/var/www/.cache/puppeteer
-RUN npm install puppeteer && chmod -R 755 /var/www/.cache
-RUN chown -R www-data:www-data /var/www/storage /var/www/bootstrap/cache /var/www/.cache
+# - /var/www は dev/prod とも host から bind mount されるため、イメージ内 node_modules や
+#   .cache は隠される。puppeteer は global (npm root -g = /usr/lib/node_modules) に入れる。
+#   Browsershot の launcher が NODE_PATH=`npm root -g` を渡すので解決される。
+# - Chromium キャッシュもマウント対象外の /opt/puppeteer-cache に置く。
+ENV PUPPETEER_CACHE_DIR=/opt/puppeteer-cache
+RUN mkdir -p /opt/puppeteer-cache \
+    && npm install -g puppeteer \
+    && chown -R www-data:www-data /opt/puppeteer-cache \
+    && chmod -R 755 /opt/puppeteer-cache
+RUN chown -R www-data:www-data /var/www/storage /var/www/bootstrap/cache
 
 # Laravel スケジューラーを毎分実行するcron設定
 RUN echo "* * * * * www-data /usr/local/bin/php /var/www/artisan schedule:run >> /var/www/storage/logs/schedule.log 2>&1" > /etc/cron.d/laravel-scheduler \

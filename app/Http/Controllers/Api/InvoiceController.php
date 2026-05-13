@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Deal;
 use App\Models\Invoice;
 use App\Models\InvoiceLine;
+use App\Services\ClaudeService;
 use App\Services\InvoiceCreationService;
 use App\Services\InvoiceNumberService;
 use App\Services\InvoicePdfService;
@@ -26,7 +27,21 @@ class InvoiceController extends Controller
         private readonly InvoicePdfService $pdfService,
         private readonly InvoiceNumberService $numberService,
         private readonly SupabaseStorageService $storage,
+        private readonly ClaudeService $claude,
     ) {}
+
+    /**
+     * POST /api/v1/estimates/translate-title
+     *  英文見積モードで案件選択時に件名を英訳プレビューする。
+     */
+    public function translateTitle(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'ja_title' => ['required', 'string', 'max:255'],
+        ]);
+        $en = $this->claude->translateProjectTitle($validated['ja_title']);
+        return response()->json(['en_title' => $en]);
+    }
 
     /** GET /api/v1/invoices */
     public function index(Request $request): JsonResponse
@@ -120,8 +135,11 @@ class InvoiceController extends Controller
             'issued_date'      => ['nullable', 'date'],
             'valid_until_text' => ['nullable', 'string', 'max:50'],
             'subject_name'     => ['nullable', 'string', 'max:255'],
+            'language'         => ['nullable', 'in:ja,en'],
             'notes'            => ['nullable', 'string', 'max:2000'],
         ]);
+        $language = $validated['language'] ?? 'ja';
+        $isEnglish = $language === 'en';
         if (empty($validated['deal_id']) && empty($validated['customer_id'])) {
             throw ValidationException::withMessages([
                 'customer_id' => ['取引先または案件 (SES台帳) を指定してください'],
@@ -159,21 +177,30 @@ class InvoiceController extends Controller
 
         // 作業期間文言と月数を契約から算出（通常モード時）
         //   見積書は「延長」を前提とするため、見積上の作業期間は
-        //   現契約の terminate 翌日 ～ +3ヶ月相当 をデフォルトとする。
+        //   現契約終了月の「翌月1日」～ +3ヶ月−1日 をデフォルトとする。
+        //   (契約終了日が月末の29/28等の場合でも、起点は常に翌月1日に丸める)
         $workPeriod = null;
         $months = 1;
         if ($contract?->contract_period_end) {
-            $from = \Carbon\Carbon::parse($contract->contract_period_end)->addDay();
+            $from = \Carbon\Carbon::parse($contract->contract_period_end)->addMonth()->startOfMonth();
             $to   = $from->copy()->addMonths(3)->subDay();
-            $workPeriod = sprintf('%d年%d月%d日〜%d年%d月%d日',
-                $from->year, $from->month, $from->day,
-                $to->year,   $to->month,   $to->day);
+            if ($isEnglish) {
+                // 英文: "1 Apr 2026 - 30 Jun 2026"
+                $workPeriod = sprintf('%d %s %d - %d %s %d',
+                    $from->day, $from->format('M'), $from->year,
+                    $to->day,   $to->format('M'),   $to->year);
+            } else {
+                $workPeriod = sprintf('%d年%d月%d日〜%d年%d月%d日',
+                    $from->year, $from->month, $from->day,
+                    $to->year,   $to->month,   $to->day);
+            }
             $months = 3;
         }
 
         $invoice = Invoice::create([
             'tenant_id'                            => $tenant?->id,
             'doc_type'                             => 'estimate',
+            'language'                             => $language,
             'deal_id'                              => $deal?->id,
             'customer_id'                          => $customer->id,
             'year_month'                           => $yearMonth,
@@ -216,12 +243,17 @@ class InvoiceController extends Controller
         // 既定の1行: 通常モードは基本月額の単価×月数、例外モードは空行
         $basicUnitPrice = (float) ($contract?->income_amount ?? 0);
         $qty = $contract ? $months : 1;
+        if ($basicUnitPrice > 0) {
+            $description = $isEnglish
+                ? sprintf('%s yen/month', number_format($basicUnitPrice))
+                : sprintf('基本月額：%s円', number_format($basicUnitPrice));
+        } else {
+            $description = '';
+        }
         InvoiceLine::create([
             'invoice_id'  => $invoice->id,
             'sort_order'  => 0,
-            'description' => $basicUnitPrice > 0
-                ? sprintf('基本月額：%s円', number_format($basicUnitPrice))
-                : '',
+            'description' => $description,
             'quantity'    => $qty,
             'unit'        => null,
             'unit_price'  => $basicUnitPrice,
@@ -309,11 +341,12 @@ class InvoiceController extends Controller
         // 件名: 入力値 → 案件タイトル
         $subject = $validated['subject_name'] ?? $deal?->title;
 
-        // 作業期間: 注文書も「延長」前提 — 現契約終了の翌日 〜 +3ヶ月−1日
+        // 作業期間: 注文書も「延長」前提 — 現契約終了月の「翌月1日」～ +3ヶ月−1日
+        //   (契約終了日が月末でない場合も常に翌月1日始まりに丸める)
         $workPeriod = null;
         $months = 1;
         if ($contract?->contract_period_end) {
-            $from = \Carbon\Carbon::parse($contract->contract_period_end)->addDay();
+            $from = \Carbon\Carbon::parse($contract->contract_period_end)->addMonth()->startOfMonth();
             $to   = $from->copy()->addMonths(3)->subDay();
             $workPeriod = sprintf('%d年%d月%d日〜%d年%d月%d日',
                 $from->year, $from->month, $from->day,

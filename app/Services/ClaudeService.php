@@ -37,6 +37,44 @@ class ClaudeService
     }
 
     /**
+     * 案件タイトルを英訳する（見積書 英文モード用）
+     *  - 例: "Mizuho FG データ分析支援" → "Mizuho FG Data Consulting"
+     *  - 固有名詞・略号はそのまま残し、説明部分のみ簡潔に英訳する
+     *  - 失敗時は元の文字列をフォールバックとして返す
+     */
+    public function translateProjectTitle(string $jaTitle): string
+    {
+        $jaTitle = trim($jaTitle);
+        if ($jaTitle === '') {
+            return '';
+        }
+
+        $prompt = <<<PROMPT
+You are a professional translator for Japanese SES (System Engineering Service) project titles.
+Translate the following project title to a concise English business title suitable for a quotation document.
+
+Rules:
+- Keep proper nouns (company names like "Mizuho FG", "Rakuten Securities") as-is in English/romaji
+- Keep technical acronyms (PM, QA, ASP, WM, etc.) as-is
+- Use Title Case
+- Do not add quotes or punctuation around the result
+- Output the translated title only, no explanation, no quotation marks
+
+Japanese title:
+{$jaTitle}
+PROMPT;
+
+        try {
+            $en = trim($this->ask($prompt));
+            // Claude が引用符で囲んできた場合に除去
+            $en = trim($en, "\"' \t\r\n");
+            return $en !== '' ? $en : $jaTitle;
+        } catch (\Throwable $e) {
+            return $jaTitle;
+        }
+    }
+
+    /**
      * 提案メール草稿を生成
      */
     public function generateProposal(array $mail, array $engineer): array

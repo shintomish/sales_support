@@ -103,6 +103,8 @@ Route::prefix('v1')->middleware(['supabase.auth'])->group(function () {
     // 一覧/取得/更新/削除/PDF生成/承認/送信履歴/メール は InvoiceController を流用。
     // 一覧は doc_type=estimate を強制する想定でフロント側がクエリパラメータを付与する。
     Route::post('estimates', [InvoiceController::class, 'storeEstimate']);
+    // 英文モード時の件名英訳プレビュー
+    Route::post('estimates/translate-title', [InvoiceController::class, 'translateTitle']);
 
     // ── 注文書（doc_type='purchase_order'）+ 注文請書 ─────
     // 作成のみ独立エンドポイント。一覧/取得/更新/PDF生成は InvoiceController を流用。

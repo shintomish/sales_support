@@ -28,6 +28,7 @@ class Customer extends Model
         'payment_site',
         'vendor_payment_site',
         'invoice_delivery_method',
+        'quotation_language',
         'primary_contact_id',
         'secondary_contact_ids',
     ];
@@ -35,6 +36,7 @@ class Customer extends Model
     protected $casts = [
         'is_supplier'           => 'boolean',
         'is_customer'           => 'boolean',
+        'quotation_language'    => 'boolean',
         'secondary_contact_ids' => 'array',
     ];
 

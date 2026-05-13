@@ -26,6 +26,13 @@
     $issuedAt = $invoice->issued_date instanceof Carbon ? $invoice->issued_date : null;
     $dueAt    = $invoice->due_date instanceof Carbon ? $invoice->due_date : null;
 
+    // 英文モード（見積書のみ。'ja'/'en'）
+    $isEnglish = ($invoice->language ?? 'ja') === 'en';
+    /** 英文日付 "13 May 2026" */
+    $englishDate = function (?Carbon $d): string {
+        return $d ? $d->format('j M Y') : '';
+    };
+
     /**
      * ロゴデータの解決（base64 埋め込み）
      */
@@ -261,7 +268,7 @@ body {
 </head>
 <body>
 
-<div class="date-top">{{ $isAcknowledgement ? '　　　/　　/　　' : $reiwa($issuedAt) }}</div>
+<div class="date-top">{{ $isAcknowledgement ? '　　　/　　/　　' : ($isEnglish ? $englishDate($issuedAt) : $reiwa($issuedAt)) }}</div>
 
 <h1 class="title {{ ($isPurchaseOrder || $isEstimate) ? 'spaced' : '' }}">{{ $docTitle }}</h1>
 
@@ -384,21 +391,34 @@ body {
     // 明細レイアウト（Sick サンプル準拠）
     $rows = [];
 
-    if ($invoice->subject_name) $rows[] = ['name' => '・件名：' . $invoice->subject_name];
+    // 件名行: language='en' の見積書は subject_name 自体が英文で保存されている
+    if ($invoice->subject_name) {
+        $rows[] = ['name' => $isEnglish
+            ? '・' . $invoice->subject_name
+            : '・件名：' . $invoice->subject_name];
+    }
     $rows[] = ['blank' => true];
 
-    if ($invoice->work_period_text) $rows[] = ['name' => '・作業期間：' . $invoice->work_period_text];
+    // 作業期間: 英文時は DB に既に英文形式("1 Apr 2026 - 30 Jun 2026")で保存されている
+    if ($invoice->work_period_text) {
+        $rows[] = ['name' => $isEnglish
+            ? '・' . $invoice->work_period_text
+            : '・作業期間：' . $invoice->work_period_text];
+    }
     $rows[] = ['blank' => true];
 
+    // 基本月額行: 英文時は description が "X yen/month" で保存済み
     if ($basicLine) {
         $rows[] = [
-            'name' => '・基本月額：' . $basicLine->description,
+            'name' => $isEnglish
+                ? '・' . $basicLine->description
+                : '・基本月額：' . $basicLine->description,
             'qty'  => rtrim(rtrim(number_format((float) $basicLine->quantity, 2), '0'), '.'),
             'unit_price' => $basicLine->unit_price,
             'amount' => $basicLine->amount,
         ];
     } else {
-        $rows[] = ['name' => '・基本月額：'];
+        $rows[] = ['name' => $isEnglish ? '・' : '・基本月額：'];
     }
     $rows[] = ['blank' => true];
 

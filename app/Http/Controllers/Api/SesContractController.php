@@ -108,6 +108,10 @@ class SesContractController extends Controller
         if ($endFrom = $request->get('contract_period_end_from')) {
             $query->whereHas('sesContract', fn($q) => $q->whereDate('contract_period_end', '>=', $endFrom));
         }
+        // 英文見積モード: quotation_language=ON の顧客に紐づく案件のみ
+        if ($request->boolean('quotation_language')) {
+            $query->whereHas('customer', fn($q) => $q->where('quotation_language', true));
+        }
         $query->leftJoin('ses_contracts', 'deals.id', '=', 'ses_contracts.deal_id');
         // 顧客名ソート用 JOIN
         if ($request->get('sort_by') === 'customer_name') {

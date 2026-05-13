@@ -158,7 +158,8 @@ class InvoicePdfService
             ->noSandbox()
             ->setNodeEnv([
                 'HOME'                => '/tmp',
-                'PUPPETEER_CACHE_DIR' => '/var/www/.cache/puppeteer',
+                // /var/www は bind mount で隠されるため、puppeteer cache は /opt 配下に置く
+                'PUPPETEER_CACHE_DIR' => env('PUPPETEER_CACHE_DIR', '/opt/puppeteer-cache'),
             ])
             ->setOption('args', [
                 '--no-sandbox',
@@ -198,7 +199,8 @@ class InvoicePdfService
             ->noSandbox()
             ->setNodeEnv([
                 'HOME'                => '/tmp',
-                'PUPPETEER_CACHE_DIR' => '/var/www/.cache/puppeteer',
+                // /var/www は bind mount で隠されるため、puppeteer cache は /opt 配下に置く
+                'PUPPETEER_CACHE_DIR' => env('PUPPETEER_CACHE_DIR', '/opt/puppeteer-cache'),
             ])
             ->setOption('args', [
                 '--no-sandbox',
