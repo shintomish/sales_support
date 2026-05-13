@@ -114,6 +114,7 @@ Route::prefix('v1')->middleware(['supabase.auth'])->group(function () {
     Route::put('email-body-templates/me',  [EmailBodyTemplateController::class, 'upsert']);
     Route::get('dashboard', [DashboardController::class, 'index']);
     Route::get('notifications', [NotificationController::class, 'index']);
+    Route::post('notifications/mark-read', [NotificationController::class, 'markRead']);
 
     // ★ 業種一覧（customers resourceより前に記載すること）
     Route::get('customers/industries', [CustomerController::class, 'industries']);
