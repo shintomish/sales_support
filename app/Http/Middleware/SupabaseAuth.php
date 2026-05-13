@@ -35,7 +35,12 @@ class SupabaseAuth
                 return response()->json(["message" => "Invalid token."], 401);
             }
 
-            $user = User::where("supabase_uid", $supabaseUid)->first();
+            // User lookup を 60秒キャッシュ（role/tenant 変更は 1分以内に反映）
+            $user = Cache::remember(
+                "user_by_supabase_uid:{$supabaseUid}",
+                60,
+                fn() => User::where("supabase_uid", $supabaseUid)->first()
+            );
             if (!$user) {
                 return response()->json(["message" => "User not found."], 401);
             }
