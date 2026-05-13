@@ -294,6 +294,78 @@ class KagoyaMailService
         );
     }
 
+    /**
+     * 添付ファイル名の抽出（MIME encoded-word / RFC 5987 / RFC 2231 連結に対応）
+     *
+     * 対応する Content-Disposition の形式:
+     *   filename="=?utf-8?B?...?="                  ← MIME encoded-word
+     *   filename*=UTF-8''Y.S%5F%E3%82%B9...         ← RFC 5987 単行
+     *   filename*0*=UTF-8''Y.S%5F
+     *   filename*1*=%E3%82%B9...xlsx                ← RFC 2231 連結
+     *   filename="plain.txt"                        ← シンプル
+     * フォールバックで Content-Type: name= も見る。
+     */
+    private function parseAttachmentFilename(string $partDisp, string $partCt): ?string
+    {
+        // 1. RFC 2231 連結形式: filename*0(*)= , filename*1(*)= ...
+        if (preg_match_all(
+            '/filename\*(\d+)(\*?)=\s*("[^"]*"|[^;\r\n]+)/i',
+            $partDisp,
+            $mm,
+            PREG_SET_ORDER
+        ) && count($mm) > 0) {
+            $parts = [];
+            $charset = null;
+            $anyEncoded = false;
+            foreach ($mm as $m) {
+                $idx     = (int) $m[1];
+                $encoded = ($m[2] === '*');
+                $val     = trim($m[3], "\" \t");
+                // 先頭で charset'lang'value を含むのは encoded フラグ付きの最初の要素のみ
+                if ($encoded && $charset === null && preg_match("/^([^']*)'([^']*)'(.*)$/", $val, $cm)) {
+                    $charset = $cm[1] !== '' ? $cm[1] : 'UTF-8';
+                    $val = $cm[3];
+                }
+                if ($encoded) $anyEncoded = true;
+                $parts[$idx] = ['encoded' => $encoded, 'value' => $val];
+            }
+            ksort($parts);
+            $assembled = '';
+            foreach ($parts as $p) {
+                $assembled .= $p['encoded'] ? urldecode($p['value']) : $p['value'];
+            }
+            if ($anyEncoded && $charset !== null) {
+                return @mb_convert_encoding($assembled, 'UTF-8', $charset) ?: $assembled;
+            }
+            return $assembled;
+        }
+
+        // 2. RFC 5987 単行: filename*=charset'lang'value
+        if (preg_match(
+            "/filename\*=\s*([A-Za-z0-9\-]+)'([^']*)'([^;\r\n]+)/i",
+            $partDisp,
+            $m
+        )) {
+            $charset = $m[1] !== '' ? $m[1] : 'UTF-8';
+            $value   = urldecode(trim($m[3], "\" \t"));
+            return @mb_convert_encoding($value, 'UTF-8', $charset) ?: $value;
+        }
+
+        // 3. シンプルな filename="..." or filename=...
+        if (preg_match('/filename=\s*("([^"]*)"|([^;\r\n]+))/i', $partDisp, $m)) {
+            $raw = $m[2] !== '' ? $m[2] : ($m[3] ?? '');
+            return $this->decodeHeader(trim($raw));
+        }
+
+        // 4. Content-Type: name= フォールバック
+        if (preg_match('/name=\s*("([^"]*)"|([^;\r\n]+))/i', $partCt, $m)) {
+            $raw = $m[2] !== '' ? $m[2] : ($m[3] ?? '');
+            return $this->decodeHeader(trim($raw));
+        }
+
+        return null;
+    }
+
     private function parseFrom(string $from): array
     {
         if (preg_match('/^(.*?)\s*<(.+?)>$/', $from, $m)) {
@@ -336,15 +408,11 @@ class KagoyaMailService
 
                     if (str_contains(strtolower($partDisp), 'attachment') ||
                         (str_contains(strtolower($partDisp), 'filename') && !str_contains(strtolower($partCt), 'text/'))) {
-                        // 1. Content-Disposition の filename
-                        // 2. Content-Type の name パラメータ（古い MUA は name を使う）
+                        // filename の取得優先順位:
+                        // 1. Content-Disposition: filename (MIME encoded-word / RFC5987 / RFC2231 連結すべて対応)
+                        // 2. Content-Type: name パラメータ（古い MUA は name を使う）
                         // 3. MIME から拡張子を推測した attachment.<ext>
-                        $filename = null;
-                        if (preg_match('/filename\*?="?([^";\r\n]+)"?/i', $partDisp, $fm)) {
-                            $filename = $this->decodeHeader(trim($fm[1]));
-                        } elseif (preg_match('/name="?([^";\r\n]+)"?/i', $partCt, $nm)) {
-                            $filename = $this->decodeHeader(trim($nm[1]));
-                        }
+                        $filename = $this->parseAttachmentFilename($partDisp, $partCt);
                         $mime = trim(explode(';', $partCt)[0]);
                         if ($filename === null || $filename === '' || $filename === 'unknown') {
                             $filename = 'attachment' . self::extensionForMime($mime);
