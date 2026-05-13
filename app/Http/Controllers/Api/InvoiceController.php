@@ -450,6 +450,7 @@ class InvoiceController extends Controller
             'subject_name'                => ['nullable', 'string', 'max:255'],
             'work_period_text'            => ['nullable', 'string', 'max:100'],
             'work_location'               => ['nullable', 'string', 'max:255'],
+            'engineer_name_snapshot'      => ['nullable', 'string', 'max:255'],
             'delivery_items_text'         => ['nullable', 'string', 'max:255'],
             'transportation_note_text'    => ['nullable', 'string', 'max:1000'],
             'delivery_date_text'          => ['nullable', 'string', 'max:100'],
@@ -470,6 +471,7 @@ class InvoiceController extends Controller
             'order_number', 'quote_number', 'invoice_number',
             'subject_name', 'work_period_text',
             'work_location', 'delivery_items_text', 'transportation_note_text',
+            'engineer_name_snapshot',
             'delivery_date_text', 'delivery_place_text', 'payment_terms_text',
         ];
         $invoice->fill(array_intersect_key($validated, array_flip($metaKeys)));
