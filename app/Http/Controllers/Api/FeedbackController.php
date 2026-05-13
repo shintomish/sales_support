@@ -107,7 +107,7 @@ class FeedbackController extends Controller
 
     private function notify(FeedbackReport $feedback, User $user): void
     {
-        $to = config('mail.feedback_notify_to') ?: env('FEEDBACK_NOTIFY_TO');
+        $to = config('mail.feedback_notify_to');
         if (!$to) {
             Log::warning('FeedbackNotification skipped: FEEDBACK_NOTIFY_TO not set', ['feedback_id' => $feedback->id]);
             return;

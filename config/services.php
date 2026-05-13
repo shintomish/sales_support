@@ -50,11 +50,23 @@ return [
         'url'              => env('SUPABASE_URL'),
         'service_role_key' => env('SUPABASE_SERVICE_ROLE_KEY'),
         'bucket'           => env('SUPABASE_BUCKET', 'business-cards'),
+        'jwks_url'         => env('SUPABASE_JWKS_URL'),
     ],
 
     'gmail' => [
         'client_id'     => env('GMAIL_CLIENT_ID'),
         'client_secret' => env('GMAIL_CLIENT_SECRET'),
         'redirect_uri'  => env('GMAIL_REDIRECT_URI', 'http://localhost:8090/api/v1/gmail/callback'),
+    ],
+
+    'puppeteer' => [
+        'cache_dir'       => env('PUPPETEER_CACHE_DIR', '/opt/puppeteer-cache'),
+        'executable_path' => env('PUPPETEER_EXECUTABLE_PATH'),
+    ],
+
+    'kagoya_pop3' => [
+        'host'     => env('KAGOYA_POP3_HOST'),
+        'username' => env('KAGOYA_POP3_USERNAME'),
+        'password' => env('KAGOYA_POP3_PASSWORD'),
     ],
 ];

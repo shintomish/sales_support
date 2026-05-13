@@ -159,7 +159,7 @@ class InvoicePdfService
             ->setNodeEnv([
                 'HOME'                => '/tmp',
                 // /var/www は bind mount で隠されるため、puppeteer cache は /opt 配下に置く
-                'PUPPETEER_CACHE_DIR' => env('PUPPETEER_CACHE_DIR', '/opt/puppeteer-cache'),
+                'PUPPETEER_CACHE_DIR' => config('services.puppeteer.cache_dir'),
             ])
             ->setOption('args', [
                 '--no-sandbox',
@@ -171,7 +171,7 @@ class InvoicePdfService
                 '--disable-breakpad',
                 '--user-data-dir=/tmp/chromium-data',
             ]);
-        if ($chromePath = env('PUPPETEER_EXECUTABLE_PATH')) {
+        if ($chromePath = config('services.puppeteer.executable_path')) {
             $shot->setChromePath($chromePath);
         }
         return $shot->pdf();
@@ -200,7 +200,7 @@ class InvoicePdfService
             ->setNodeEnv([
                 'HOME'                => '/tmp',
                 // /var/www は bind mount で隠されるため、puppeteer cache は /opt 配下に置く
-                'PUPPETEER_CACHE_DIR' => env('PUPPETEER_CACHE_DIR', '/opt/puppeteer-cache'),
+                'PUPPETEER_CACHE_DIR' => config('services.puppeteer.cache_dir'),
             ])
             ->setOption('args', [
                 '--no-sandbox',
@@ -214,7 +214,7 @@ class InvoicePdfService
             ]);
 
         // 環境変数で Chromium のパスが指定されている場合のみ明示
-        if ($chromePath = env('PUPPETEER_EXECUTABLE_PATH')) {
+        if ($chromePath = config('services.puppeteer.executable_path')) {
             $shot->setChromePath($chromePath);
         }
 

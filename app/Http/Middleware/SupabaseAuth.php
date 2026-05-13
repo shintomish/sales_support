@@ -22,7 +22,7 @@ class SupabaseAuth
 
         try {
             $jwks = Cache::remember("supabase_jwks", 3600, function () {
-                $response = Http::get(env("SUPABASE_JWKS_URL"));
+                $response = Http::get(config('services.supabase.jwks_url'));
                 return $response->json();
             });
 

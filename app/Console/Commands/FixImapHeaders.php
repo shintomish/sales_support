@@ -127,9 +127,9 @@ class FixImapHeaders extends Command
 
     private function connect(): bool
     {
-        $host = env('KAGOYA_POP3_HOST');
-        $user = env('KAGOYA_POP3_USERNAME');
-        $pass = env('KAGOYA_POP3_PASSWORD');
+        $host = config('services.kagoya_pop3.host');
+        $user = config('services.kagoya_pop3.username');
+        $pass = config('services.kagoya_pop3.password');
         $this->socket = @fsockopen("ssl://{$host}", 993, $errno, $errstr, 15);
         if (!$this->socket) return false;
         stream_set_timeout($this->socket, 60);

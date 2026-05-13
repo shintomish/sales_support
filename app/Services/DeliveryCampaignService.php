@@ -60,7 +60,7 @@ class DeliveryCampaignService
      */
     public function sendCampaign(DeliveryCampaign $campaign, array $attachmentPaths = []): void
     {
-        $testTo      = env('MAIL_DELIVERY_TEST_TO');
+        $testTo      = config('mail.delivery_test_to');
         $senderEmail = config('mail.from.address') ?? '';
 
         $addresses = DeliveryAddress::where('tenant_id', $this->tenantId)
@@ -151,7 +151,7 @@ class DeliveryCampaignService
     public function resendHistory(DeliverySendHistory $history): DeliverySendHistory
     {
         $campaign    = $history->campaign;
-        $testTo      = env('MAIL_DELIVERY_TEST_TO');
+        $testTo      = config('mail.delivery_test_to');
         $senderEmail = config('mail.from.address') ?? '';
 
         $toEmail   = $testTo ?: $history->email;

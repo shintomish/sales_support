@@ -404,10 +404,10 @@ class KagoyaMailService
 
     private function connect(): bool
     {
-        $host = env('KAGOYA_POP3_HOST');
+        $host = config('services.kagoya_pop3.host');
         $port = 993;
-        $user = env('KAGOYA_POP3_USERNAME');
-        $pass = env('KAGOYA_POP3_PASSWORD');
+        $user = config('services.kagoya_pop3.username');
+        $pass = config('services.kagoya_pop3.password');
 
         $this->socket = @fsockopen("ssl://{$host}", $port, $errno, $errstr, 15);
         if (!$this->socket) {

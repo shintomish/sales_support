@@ -26,7 +26,7 @@ class GmailOAuthController extends Controller
         $state = $request->query('state'); // user_idを受け取る
 
         if (!$code || !$state) {
-            return redirect(env('FRONTEND_URL', 'http://localhost:3000') . '/emails?error=no_code');
+            return redirect(config('app.frontend_url') . '/emails?error=no_code');
         }
 
         try {
@@ -42,7 +42,7 @@ class GmailOAuthController extends Controller
             // stateからユーザーを特定
             $user = \App\Models\User::find((int) $state);
             if (!$user) {
-                return redirect(env('FRONTEND_URL', 'http://localhost:3000') . '/emails?error=oauth_failed');
+                return redirect(config('app.frontend_url') . '/emails?error=oauth_failed');
             }
 
             GmailToken::updateOrCreate(
@@ -58,11 +58,11 @@ class GmailOAuthController extends Controller
                 ]
             );
 
-            return redirect(env('FRONTEND_URL', 'http://localhost:3000') . '/emails?connected=1');
+            return redirect(config('app.frontend_url') . '/emails?connected=1');
 
         } catch (\Exception $e) {
             \Illuminate\Support\Facades\Log::error('Gmail OAuth callback error: ' . $e->getMessage());
-            return redirect(env('FRONTEND_URL', 'http://localhost:3000') . '/emails?error=oauth_failed');
+            return redirect(config('app.frontend_url') . '/emails?error=oauth_failed');
         }
     }
 
