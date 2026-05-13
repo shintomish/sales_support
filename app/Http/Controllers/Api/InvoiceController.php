@@ -609,18 +609,48 @@ class InvoiceController extends Controller
         $userName   = $tpl?->name ?? $user?->name ?? '';
         $userNameEn = $tpl?->name_en;
 
-        $defaultSubject = '【請求書】{invoice_number}({year_month_text}分)';
-        $defaultBody = "{customer_name} 様\n\n"
-            . "いつも大変お世話になっております。\n"
-            . "{issuer_name}の{user_name}です。\n\n"
-            . "{year_month_text}分の請求書を添付にてお送りいたします。\n\n"
-            . "請求番号: {invoice_number}\n"
-            . "請求金額: ￥{total}（税込）\n"
-            . "お支払期限: {due_date}\n\n"
-            . "ご確認のほど、何卒よろしくお願い申し上げます。\n";
+        [$defaultSubject, $defaultBody, $subjectCol, $bodyCol] = match ($invoice->doc_type) {
+            'estimate' => [
+                '【お見積書】{invoice_number}',
+                "{customer_name} 様\n\n"
+                    . "いつも大変お世話になっております。\n"
+                    . "{issuer_name}の{user_name}です。\n\n"
+                    . "お見積書を添付にてお送りいたします。\n\n"
+                    . "見積番号: {invoice_number}\n"
+                    . "見積金額: ￥{total}（税込）\n\n"
+                    . "ご確認のほど、何卒よろしくお願い申し上げます。\n",
+                'estimate_email_subject_template',
+                'estimate_email_body_template',
+            ],
+            'purchase_order' => [
+                '【ご注文書】{invoice_number}',
+                "{customer_name} 様\n\n"
+                    . "いつも大変お世話になっております。\n"
+                    . "{issuer_name}の{user_name}です。\n\n"
+                    . "注文書を添付にてお送りいたします。\n\n"
+                    . "注文番号: {invoice_number}\n"
+                    . "注文金額: ￥{total}（税込）\n\n"
+                    . "ご確認のほど、何卒よろしくお願い申し上げます。\n",
+                'purchase_order_email_subject_template',
+                'purchase_order_email_body_template',
+            ],
+            default => [
+                '【請求書】{invoice_number}({year_month_text}分)',
+                "{customer_name} 様\n\n"
+                    . "いつも大変お世話になっております。\n"
+                    . "{issuer_name}の{user_name}です。\n\n"
+                    . "{year_month_text}分の請求書を添付にてお送りいたします。\n\n"
+                    . "請求番号: {invoice_number}\n"
+                    . "請求金額: ￥{total}（税込）\n"
+                    . "お支払期限: {due_date}\n\n"
+                    . "ご確認のほど、何卒よろしくお願い申し上げます。\n",
+                'invoice_email_subject_template',
+                'invoice_email_body_template',
+            ],
+        };
 
-        $subject = $tenant?->invoice_email_subject_template ?: $defaultSubject;
-        $body    = $tenant?->invoice_email_body_template    ?: $defaultBody;
+        $subject = $tenant?->{$subjectCol} ?: $defaultSubject;
+        $body    = $tenant?->{$bodyCol}    ?: $defaultBody;
 
         // 署名（社内既定書式）
         $sep = '_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/_/';
