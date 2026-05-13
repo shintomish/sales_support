@@ -226,7 +226,9 @@ class InvoiceController extends Controller
             'client_overtime_hours_snapshot'       => $contract?->client_overtime_hours,
             'client_deduction_unit_price_snapshot' => $contract?->client_deduction_unit_price,
             'client_overtime_unit_price_snapshot'  => $contract?->client_overtime_unit_price,
-            'customer_name_snapshot'               => $customer->company_name,
+            'customer_name_snapshot'               => $isEnglish
+                ? ($customer->company_name_en ?: $customer->company_name)
+                : $customer->company_name,
             'customer_address_snapshot'            => $customer->address,
             'issuer_name_snapshot'                 => $tenant?->invoice_issuer_name,
             'issuer_postal_code_snapshot'          => $tenant?->invoice_issuer_postal_code,

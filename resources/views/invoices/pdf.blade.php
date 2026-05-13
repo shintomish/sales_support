@@ -282,7 +282,7 @@ body {
                 @if($isAcknowledgement)
                     {{ $invoice->issuer_name_snapshot }}&nbsp;&nbsp;御中
                 @else
-                    {{ $invoice->customer_name_snapshot ?? $invoice->customer?->company_name }}&nbsp;&nbsp;御中
+                    {{ $invoice->customer_name_snapshot ?? $invoice->customer?->company_name }}@if(!$isEnglish)&nbsp;&nbsp;御中@endif
                 @endif
             </div>
         </td>
