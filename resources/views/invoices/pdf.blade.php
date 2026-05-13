@@ -101,7 +101,8 @@
     // 明細表のレイアウト（A4 1ページに収まる行数）
     // 注文書/請書/見積書 はテキスト情報が少なく明細表が広く取れるため行数を増やす
     $isExtendedLayout = $isPurchaseOrder || $isEstimate;
-    $itemRows = $isExtendedLayout ? 18 : 14;
+    // Refinitiv は明細 1 行のみ + その他情報セクションが続くため空行を最小限に
+    $itemRows = $isRefinitiv ? 4 : ($isExtendedLayout ? 18 : 14);
 
     // 明細行を分類
     // sort_order=0 の non-expense 行を basicLine とみなす（description が空でも単価行スロットに出す）
@@ -216,6 +217,9 @@ body {
 .numbers-inner { display: inline-block; text-align: left; }
 .numbers-inner .num-row { white-space: nowrap; }
 .num-label { display: inline-block; min-width: 16mm; }
+/* Refinitiv は英文ラベルが長いので幅を広げる + 赤色 PO Number */
+.num-row.ref .num-label { min-width: 42mm; text-align: left; }
+.num-row.ref.po .under { color: #d40000; font-weight: bold; }
 .under {
     border-bottom: 0.5pt solid #111;
     padding: 0 2mm;
@@ -250,6 +254,10 @@ body {
 .gt-amount { font-size: 15pt; margin-right: 4mm; }
 .gt-tax    { font-size: 10.5pt; }
 .grand-total-sub { text-align: center; font-size: 9.5pt; margin-top: 0.5mm; }
+/* Refinitiv 用: Sum Total を 1 行に収めるためラベル間隔を詰める */
+.grand-total.ref { white-space: nowrap; }
+.grand-total.ref .gt-label { letter-spacing: 0; margin-right: 3mm; font-size: 12pt; }
+.grand-total.ref .gt-tax   { font-size: 10pt; }
 
 .items { width: 100%; border-collapse: collapse; font-size: 9pt; margin-bottom: 1mm; page-break-inside: avoid; }
 .items th, .items td { border: 0.5pt solid #111; padding: 0.3mm 2mm; }
@@ -426,10 +434,10 @@ body {
                         <div class="num-row"><span class="num-label">注文No.</span><span class="under">{{ $invoice->invoice_number }}</span></div>
                         <div class="num-row"><span class="num-label">見積No.</span><span class="under">{{ $invoice->quote_number }}</span></div>
                     @elseif($isRefinitiv)
-                        <div class="num-row"><span class="num-label">Invoice Number</span><span class="under">{{ $invoice->invoice_number }}</span></div>
-                        <div class="num-row"><span class="num-label">PO Number</span><span class="under">{{ $invoice->order_number }}</span></div>
-                        <div class="num-row"><span class="num-label">Quote number</span><span class="under">{{ $invoice->quote_number }}</span></div>
-                        <div class="num-row"><span class="num-label">Registration number</span><span class="under">{{ $invoice->issuer_invoice_number_snapshot }}</span></div>
+                        <div class="num-row ref"><span class="num-label">Invoice Number</span><span class="under">{{ $invoice->invoice_number }}</span></div>
+                        <div class="num-row ref po"><span class="num-label">PO Number</span><span class="under">{{ $invoice->order_number }}</span></div>
+                        <div class="num-row ref"><span class="num-label">Quote number</span><span class="under">{{ $invoice->quote_number }}</span></div>
+                        <div class="num-row ref"><span class="num-label">Registration number</span><span class="under">{{ $invoice->issuer_invoice_number_snapshot }}</span></div>
                     @else
                         <div class="num-row"><span class="num-label">請求No.</span><span class="under">{{ $invoice->invoice_number }}</span></div>
                         <div class="num-row"><span class="num-label">注文No.</span><span class="under">{{ $invoice->order_number }}</span></div>
@@ -456,7 +464,7 @@ body {
 @else
     <div class="total-wrap">
         <div class="total-inner">
-            <div class="grand-total">
+            <div class="grand-total ref">
                 <span class="gt-label">Sum Total</span>
                 <span class="gt-amount">￥{{ number_format((float) $invoice->total) }}</span>
                 <span class="gt-tax">(Tax Included)</span>

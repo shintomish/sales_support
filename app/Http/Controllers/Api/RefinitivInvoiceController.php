@@ -83,6 +83,8 @@ class RefinitivInvoiceController extends Controller
             'order_number'    => $v['po_number'],
             'vendor_metadata' => $v['vendor_metadata'] ?? null,
             'language'        => 'en',
+            // 注文書の品名行 (例: "Aizen - JBIC - Market data consulting Apr-Jun2026") を件名に転用
+            'subject_name'    => $v['vendor_metadata']['description'] ?? null,
         ]);
 
         return response()->json($invoice->load('lines'), 201);

@@ -33,6 +33,7 @@ class InvoiceCreationService
      *   order_number?: string|null,
      *   vendor_metadata?: array|null,
      *   language?: string|null,
+     *   subject_name?: string|null,
      * } $options
      */
     public function createFromDeal(Deal $deal, string $yearMonth, array $options = []): Invoice
@@ -78,7 +79,7 @@ class InvoiceCreationService
                 'order_number'                    => $options['order_number'] ?? $contract?->order_number,
                 'vendor_metadata'                 => $options['vendor_metadata'] ?? null,
                 'language'                        => $options['language'] ?? 'ja',
-                'subject_name'                    => $deal->title,
+                'subject_name'                    => $options['subject_name'] ?? $deal->title,
                 'work_period_text'                => $workPeriod,
                 'work_location'                   => null,
                 'delivery_items_text'             => '作業報告書',
