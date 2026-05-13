@@ -65,9 +65,12 @@ RUN if [ ! -f .env ]; then cp .env.example .env; fi \
 #   .cache は隠される。puppeteer は global (npm root -g = /usr/lib/node_modules) に入れる。
 #   Browsershot の launcher が NODE_PATH=`npm root -g` を渡すので解決される。
 # - Chromium キャッシュもマウント対象外の /opt/puppeteer-cache に置く。
+# - puppeteer バージョンを pin し、`current` シンボリックリンクで .env のパスを
+#   バージョン非依存にする（Chrome バージョン更新時のパス書き換え運用を回避）。
 ENV PUPPETEER_CACHE_DIR=/opt/puppeteer-cache
 RUN mkdir -p /opt/puppeteer-cache \
-    && npm install -g puppeteer \
+    && npm install -g puppeteer@24.43.1 \
+    && ln -sfn "$(ls -d /opt/puppeteer-cache/chrome/linux-*/ | head -1)" /opt/puppeteer-cache/chrome/current \
     && chown -R www-data:www-data /opt/puppeteer-cache \
     && chmod -R 755 /opt/puppeteer-cache
 RUN chown -R www-data:www-data /var/www/storage /var/www/bootstrap/cache
