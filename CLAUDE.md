@@ -55,6 +55,14 @@ docker compose exec app tail -f storage/logs/sales_sup-$(date +%Y-%m-%d).log
 - Schedule::call()でジョブ直接実行（Queueワーカー不要）
 - Supabase Realtimeループ防止: INSERTイベントのみ購読
 - **新規テーブル作成 migration では `up()` 内に `DB::statement('ALTER TABLE public.{name} ENABLE ROW LEVEL SECURITY')` を必ず追加**（Supabase の PostgREST 経由で外部公開されるのを防ぐため。policy は作らず default deny で運用。Laravel は service_role でバイパス）
+- **Supabase Data API 用 GRANT（2026-10-30 強制適用）**: 新規テーブル作成 migration では、Data API 経由でアクセスする可能性があるテーブルに対し以下を明示する。Supabase 公式変更により public スキーマのデフォルト権限が廃止されるため、grant を書かないとフロントの Realtime / supabase-js から読めなくなる。
+  ```php
+  // Realtime / supabase-js でフロントから読む場合
+  DB::statement('GRANT SELECT ON public.{name} TO authenticated');
+  // Laravel バックエンドは元々 service_role で全権限を持つが念のため明示
+  DB::statement('GRANT SELECT, INSERT, UPDATE, DELETE ON public.{name} TO service_role');
+  ```
+  Realtime/Data API でフロントから触らないテーブル（Laravel 経由のみ）は authenticated への grant 不要。
 
 ## ディレクトリ構成
 ```
