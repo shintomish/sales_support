@@ -66,24 +66,23 @@ return [
         ],
 
         'daily' => [
-            'driver' => 'daily',
-            'path' => storage_path('logs/sales_sup.log'),
-            'level' => env('LOG_LEVEL', 'debug'),
-            'days' => env('LOG_DAILY_DAYS', 30),
-            'replace_placeholders' => true,
-            'tap' => [\App\Logging\JstFormatter::class],
+            'driver' => 'custom',
+            'via'    => \App\Logging\JstDailyFactory::class,
+            'path'   => storage_path('logs/sales_sup.log'),
+            'level'  => env('LOG_LEVEL', 'debug'),
+            'days'   => env('LOG_DAILY_DAYS', 30),
         ],
 
         // 監査ログ専用チャネル
         //   - LOG_LEVEL とは独立して常に info 以上を記録（誰がいつ何を操作したかの証跡）
         //   - ファイルを分離し、アプリログ (sales_sup-*.log) と混在しないように
+        //   - JstDailyFactory でファイル名/ローテーションを日本時間基準にする
         'audit' => [
-            'driver' => 'daily',
-            'path' => storage_path('logs/audit.log'),
-            'level' => 'info',
-            'days' => env('LOG_AUDIT_DAYS', 365),
-            'replace_placeholders' => true,
-            'tap' => [\App\Logging\JstFormatter::class],
+            'driver' => 'custom',
+            'via'    => \App\Logging\JstDailyFactory::class,
+            'path'   => storage_path('logs/audit.log'),
+            'level'  => 'info',
+            'days'   => env('LOG_AUDIT_DAYS', 365),
         ],
 
         'slack' => [
