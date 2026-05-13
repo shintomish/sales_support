@@ -57,7 +57,7 @@ class LogUserActivity
         $segments = explode('/', $path);
         $resource = $segments[2] ?? $path;
 
-        Log::channel('daily')->info('[USER_ACTIVITY]', [
+        Log::channel('audit')->info('[USER_ACTIVITY]', [
             'action'    => $action,
             'resource'  => $resource,
             'path'      => $path,

@@ -74,6 +74,18 @@ return [
             'tap' => [\App\Logging\JstFormatter::class],
         ],
 
+        // 監査ログ専用チャネル
+        //   - LOG_LEVEL とは独立して常に info 以上を記録（誰がいつ何を操作したかの証跡）
+        //   - ファイルを分離し、アプリログ (sales_sup-*.log) と混在しないように
+        'audit' => [
+            'driver' => 'daily',
+            'path' => storage_path('logs/audit.log'),
+            'level' => 'info',
+            'days' => env('LOG_AUDIT_DAYS', 365),
+            'replace_placeholders' => true,
+            'tap' => [\App\Logging\JstFormatter::class],
+        ],
+
         'slack' => [
             'driver' => 'slack',
             'url' => env('LOG_SLACK_WEBHOOK_URL'),
