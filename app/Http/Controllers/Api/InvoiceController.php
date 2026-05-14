@@ -757,7 +757,7 @@ class InvoiceController extends Controller
         $q = \App\Models\InvoiceSendHistory::query()
             ->with([
                 'sender:id,name',
-                'invoice:id,doc_type,invoice_number,customer_id,customer_name_snapshot,year_month,total',
+                'invoice:id,doc_type,invoice_number,customer_id,customer_name_snapshot,year_month,total,subject_name',
             ])
             ->whereHas('invoice', fn($iq) => $iq->where('doc_type', $docType))
             ->orderByDesc('sent_at');
@@ -773,7 +773,8 @@ class InvoiceController extends Controller
                 $qq->where('subject', 'ilike', $like)
                    ->orWhereHas('invoice', fn($iq) =>
                        $iq->where('invoice_number', 'ilike', $like)
-                          ->orWhere('customer_name_snapshot', 'ilike', $like));
+                          ->orWhere('customer_name_snapshot', 'ilike', $like)
+                          ->orWhere('subject_name', 'ilike', $like));
             });
         }
 
@@ -814,6 +815,7 @@ class InvoiceController extends Controller
                 'invoice_number'       => $r->invoice?->invoice_number,
                 'invoice_year_month'   => $r->invoice?->year_month,
                 'invoice_total'        => $r->invoice?->total,
+                'invoice_subject_name' => $r->invoice?->subject_name,
                 'customer_name'        => $r->invoice?->customer_name_snapshot,
             ];
         });
