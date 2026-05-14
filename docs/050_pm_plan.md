@@ -431,3 +431,48 @@ Supabase が 2026-10-30 に `public` スキーマのデフォルト権限を廃�
 - 「電子印を完全に廃止」ではなく「**請求書・注文書では使わない**」というスコープ。見積書の角印（`invoice_issuer_square_seal_path`）は **担当者ベース運用** のためそのまま継続
 - 既存テナント（アイゼン・ソリューション）の Storage 上の丸印画像は事前に削除済（B 案）
 - DB スキーマは変更しないため、ロールバック時はコードを戻すだけで丸印自動押印が復活する
+
+## 13. UI/UX 微調整 + PDF 金額ズレ修正（2026-05-14）
+
+### 13.1 背景
+
+2026-05-14 朝に現場（管理部）から複数の要望と 1 件のバグ報告が同時に上がった。いずれも本番運用で日常的に当たる箇所のため当日内に対応し、リリース済。
+
+### 13.2 要望・修正内容
+
+| # | 種別 | 範囲 | 内容 |
+|---|---|---|---|
+| ① | 要望 | 見積書発行モーダル（SES台帳→見積書発行） | 英文モード時は「契約終了済の SES契約」もリストに含める（過去案件の英文見積を発行できるよう、`contract_period_end_from` フィルタを英文時のみ外す） |
+| ② | 要望 | 請求書/見積書/注文書 PDF | 超過控除セクションのラベルから「(中間割)」「(10円未満切り捨て)」を削除。SES台帳に超過控除データ（`client_deduction_*` / `client_overtime_*`）が何もなければ **セクション自体を出力しない**（`$hasOvertimeDeduction` 条件で囲む） |
+| ③ | 要望 | 勤務表編集モーダル（`/ses-contracts/{id}/timesheets`） | 「□請求書あり」チェックボックスと条件表示の「請求書受領日」フィールドを撤去（運用で使われなかったため） |
+| ④ | 要望 | 請求書一覧 / 見積書一覧 / 注文書一覧 | 操作列に **【複写】ボタン** を追加。当月扱いで番号を採番（`InvoiceNumberService` 経由）→ `status='draft'`・`approved=false`・PDF/承認関連フィールド全リセット → 明細を全コピーして下書きを開く。`due_date=null`、履歴リンクは持ち越さない |
+| ⑤ | 要望 | 下書き編集画面（請求書/見積書/注文書 共通） | 摘要明細行の表記から「【基本月額】」「基本月額：」を削除。`description` は **金額のみ**（例：`350,000円`）を保持し、PDF 側で「・基本月額：」ラベルを付与する設計に統一 |
+| ⑥ | バグ修正 | 請求書 PDF | 一度 PDF を発行後、明細を編集して保存し、PDF を再生成すると **金額欄が下の行にズレる**事象。`pdf.blade.php` の basicLine 検出が `description` の文字列「基本月額」キーワードに依存していたため、ユーザー編集でキーワードが消えると `extraLines` 側へ流れていた |
+
+### 13.3 実装対応
+
+| 範囲 | ファイル | 変更内容 |
+|---|---|---|
+| フロント (見積モーダル) | `sales_support_next/src/app/estimates/page.tsx` | 英文モード時は `contract_period_end_from` を送信しないよう三項分岐に変更 |
+| バックエンド (PDF) | `sales_support/resources/views/invoices/pdf.blade.php` | basicLine 検出を `sort_order === 0 && !is_expense` のみに簡素化。description キーワード判定を廃止。超過控除セクション全体を `$hasOvertimeDeduction` で条件付け／ラベルから補足文言を削除 |
+| フロント (勤務表) | `sales_support_next/src/app/ses-contracts/[id]/timesheets/page.tsx` | 「請求書あり」Field とその条件表示「請求書受領日」Field を削除 |
+| フロント (一覧3画面) | `sales_support_next/src/app/{estimates,invoices,purchase-orders}/page.tsx` | `useRouter` + `busyId` state + `handleDuplicate()` を追加。操作列に【複写】ボタン（操作列幅 70→110px） |
+| バックエンド (複写API) | `app/Http/Controllers/Api/InvoiceController.php` + `routes/api.php` | `POST /api/v1/invoices/{invoice}/duplicate` を新設。doc_type ごとに `estimate` / `purchase_order` / `invoice` を判定して新番号採番、`replicate()` で 13 フィールドをリセットして明細を `InvoiceLine::create()` で全コピー、`recalcAmounts()` 実行 |
+| バックエンド (基本月額表記) | `app/Services/InvoiceCreationService.php` / `app/Http/Controllers/Api/InvoiceController.php` | 明細 description の `'%s円 【基本月額】'` → `'%s円'` に統一（新規発行・控除/超過/交通費の追加処理含む） |
+| フロント (下書きガイド) | `sales_support_next/src/app/invoices/[id]/page.tsx` | 基本月額行のガイド文を金額のみ表記前提に更新 |
+
+### 13.4 検証ポイント
+
+- [x] 英文モードの見積モーダルで、契約終了済 SES契約が候補に出ること
+- [x] PDF の超過控除セクションがラベル簡素化されていること／超過控除データなしの SES案件で **セクション自体が出ない** こと
+- [x] 勤務表モーダルから「請求書あり」チェックが消えていること
+- [x] 請求書/見積書/注文書 一覧の【複写】ボタンで、当月の新番号で下書きが開くこと（明細・取引先がコピーされ、`due_date=null` で承認・PDF 関連が全クリア）
+- [x] 下書き編集画面の摘要明細行が金額のみ表記であること
+- [x] 既存の PDF を再生成しても金額欄が basicLine 行に表示され、extraLines にズレ落ちないこと（バグ⑥ 再現テスト）
+
+### 13.5 補足
+
+- ⑥ のバグは「description のフリーテキスト判定」を「sort_order 番号判定」に置き換えたことで根治。ユーザーが摘要欄を自由編集しても basicLine が見失われない
+- ④ の複写は **当月採番＋下書き状態** が前提。月跨ぎで複写された結果として年月をまたぐ番号体系が壊れることはない
+- ⑤ の表記簡素化により、PDF と編集画面で「基本月額：」ラベルの責務が PDF 側に統一された
+
