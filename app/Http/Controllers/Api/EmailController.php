@@ -160,9 +160,20 @@ class EmailController extends Controller
             ]);
         } catch (\Exception $e) {
             Log::error('Email sync failed: ' . $e->getMessage());
-            if (str_contains($e->getMessage(), 'invalid_grant')) {
+            $msg = $e->getMessage();
+            // Gmail トークン失効
+            if (str_contains($msg, 'invalid_grant')) {
                 return response()->json([
                     'message'       => 'Gmailトークンが失効しました。再接続してください。',
+                    'token_expired' => true,
+                ], 401);
+            }
+            // Gmail スコープ不足（同意画面で必要権限を外して承認した等）。再連携で復旧するため 401 で返す
+            if (str_contains($msg, 'ACCESS_TOKEN_SCOPE_INSUFFICIENT')
+                || str_contains($msg, 'insufficientPermissions')
+                || str_contains($msg, 'Insufficient Permission')) {
+                return response()->json([
+                    'message'       => 'Gmailの権限が不足しています。再接続して、同意画面でGmailの権限をすべて許可してください。',
                     'token_expired' => true,
                 ], 401);
             }
