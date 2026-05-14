@@ -90,6 +90,7 @@ Route::prefix('v1')->middleware(['supabase.auth'])->group(function () {
     Route::get('invoices/{invoice}',      [InvoiceController::class, 'show']);
     Route::put('invoices/{invoice}',      [InvoiceController::class, 'update']);
     Route::delete('invoices/{invoice}',   [InvoiceController::class, 'destroy']);
+    Route::post('invoices/{invoice}/duplicate',    [InvoiceController::class, 'duplicate']);
     Route::post('invoices/{invoice}/pdf',          [InvoiceController::class, 'generatePdf']);
     Route::post('invoices/{invoice}/submit-approval', [InvoiceController::class, 'submitForApproval']);
     Route::post('invoices/{invoice}/approve',      [InvoiceController::class, 'approve']);

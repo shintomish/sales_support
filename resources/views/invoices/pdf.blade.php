@@ -510,24 +510,32 @@ body {
 
     // 超過控除セクション
     if ($isExtendedLayout) {
-        // 注文書/請書/見積書: 6行に展開（数値は name 列のみ、qty/price/amount は空欄）
-        $rows[] = ['name' => '・超過/控除  (中間割)'];
-        if ($invoice->client_overtime_hours_snapshot !== null) {
-            $rows[] = ['name' => '・上限  ' . (int) $invoice->client_overtime_hours_snapshot . 'H以上'];
+        // SES台帳に超過控除データが存在する場合のみ表示
+        $hasOvertimeDeduction =
+            $invoice->client_overtime_hours_snapshot !== null
+            || $invoice->client_deduction_hours_snapshot !== null
+            || $invoice->client_overtime_unit_price_snapshot !== null
+            || $invoice->client_deduction_unit_price_snapshot !== null
+            || $invoice->settlement_unit_minutes_snapshot !== null;
+        if ($hasOvertimeDeduction) {
+            $rows[] = ['name' => '・超過/控除'];
+            if ($invoice->client_overtime_hours_snapshot !== null) {
+                $rows[] = ['name' => '・上限  ' . (int) $invoice->client_overtime_hours_snapshot . 'H以上'];
+            }
+            if ($invoice->client_deduction_hours_snapshot !== null) {
+                $rows[] = ['name' => '・下限  ' . (int) $invoice->client_deduction_hours_snapshot . 'H未満'];
+            }
+            if ($invoice->client_overtime_unit_price_snapshot !== null) {
+                $rows[] = ['name' => '・超過  ' . number_format((float) $invoice->client_overtime_unit_price_snapshot) . '円'];
+            }
+            if ($invoice->client_deduction_unit_price_snapshot !== null) {
+                $rows[] = ['name' => '・控除  ' . number_format((float) $invoice->client_deduction_unit_price_snapshot) . '円'];
+            }
+            if ($invoice->settlement_unit_minutes_snapshot !== null) {
+                $rows[] = ['name' => '・精算単位：' . (int) $invoice->settlement_unit_minutes_snapshot . '分'];
+            }
+            $rows[] = ['blank' => true];
         }
-        if ($invoice->client_deduction_hours_snapshot !== null) {
-            $rows[] = ['name' => '・下限  ' . (int) $invoice->client_deduction_hours_snapshot . 'H未満'];
-        }
-        if ($invoice->client_overtime_unit_price_snapshot !== null) {
-            $rows[] = ['name' => '・超過  ' . number_format((float) $invoice->client_overtime_unit_price_snapshot) . '円(10円未満切り捨て)'];
-        }
-        if ($invoice->client_deduction_unit_price_snapshot !== null) {
-            $rows[] = ['name' => '・控除  ' . number_format((float) $invoice->client_deduction_unit_price_snapshot) . '円(10円未満切り捨て)'];
-        }
-        if ($invoice->settlement_unit_minutes_snapshot !== null) {
-            $rows[] = ['name' => '・精算単位：' . (int) $invoice->settlement_unit_minutes_snapshot . '分'];
-        }
-        $rows[] = ['blank' => true];
 
         // 支払サイト（注文書独自）
         if ($invoice->payment_terms_text) {

@@ -1059,4 +1059,76 @@ class InvoiceController extends Controller
         $invoice->delete();
         return response()->json(null, 204);
     }
+
+    /**
+     * POST /api/v1/invoices/{invoice}/duplicate
+     *
+     * 既存の見積/注文/請求から下書きを複写する。
+     *   - doc_type は元と同じ
+     *   - 採番は当月で新規（issued_date=今日 / year_month=当月）
+     *   - 注文書は acknowledgement_no も同時採番
+     *   - status=draft / approval_status=draft / 承認/PDF/受領メタは全リセット
+     *   - 元データへのリンクは保持しない（quote_number 等の SES台帳フィードバックも行わない）
+     *   - 明細は全件コピー（quantity / unit_price / amount / is_expense 維持）
+     *   - due_date は元と同じ値をコピーしない（issued_date が変わるため null にして再入力）
+     */
+    public function duplicate(Invoice $invoice): JsonResponse
+    {
+        $customer = $invoice->customer;
+        if (!$customer || empty($customer->invoice_code)) {
+            throw ValidationException::withMessages([
+                'customer_id' => ['取引先に invoice_code が設定されていないため複写できません'],
+            ]);
+        }
+
+        $issuedDate = now()->toDateString();
+        $yearMonth  = \Carbon\Carbon::parse($issuedDate)->format('Y-m');
+
+        $kind = match ($invoice->doc_type) {
+            'estimate'       => 'estimate',
+            'purchase_order' => 'purchase_order',
+            default          => 'invoice',
+        };
+        $newNumber = $this->numberService->generate($customer, $yearMonth, $kind);
+        $newAckNo  = $invoice->doc_type === 'purchase_order'
+            ? $this->numberService->generate($customer, $yearMonth, 'acknowledgement')
+            : null;
+
+        $new = $invoice->replicate(['id', 'created_at', 'updated_at']);
+        $new->invoice_number           = $newNumber;
+        $new->acknowledgement_no       = $newAckNo;
+        $new->year_month               = $yearMonth;
+        $new->issued_date              = $issuedDate;
+        $new->due_date                 = null;
+        $new->status                   = 'draft';
+        $new->approval_status          = 'draft';
+        $new->approved                 = false;
+        $new->approved_at              = null;
+        $new->approved_by              = null;
+        $new->submitted_by             = null;
+        $new->approval_comment         = null;
+        $new->pdf_path                 = null;
+        $new->acknowledgement_pdf_path = null;
+        $new->save();
+
+        foreach ($invoice->lines as $line) {
+            InvoiceLine::create([
+                'invoice_id'  => $new->id,
+                'sort_order'  => $line->sort_order,
+                'description' => $line->description,
+                'quantity'    => $line->quantity,
+                'unit'        => $line->unit,
+                'unit_price'  => $line->unit_price,
+                'tax_rate'    => $line->tax_rate,
+                'amount'      => $line->amount,
+                'is_expense'  => $line->is_expense,
+            ]);
+        }
+
+        $new->load('lines');
+        $new->recalcAmounts();
+        $new->save();
+
+        return response()->json($new->fresh()->load('lines'), 201);
+    }
 }
