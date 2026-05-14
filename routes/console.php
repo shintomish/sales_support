@@ -11,15 +11,17 @@ Artisan::command('inspire', function () {
 })->purpose('Display an inspiring quote');
 
 // ── メール自動同期（15分毎）— Gmail API
-Schedule::call(function () {
-    (new SyncEmailsJob())->handle(app(\App\Services\GmailService::class));
-})
-    ->everyFifteenMinutes()
-    ->name('sync-emails')
-    ->withoutOverlapping()
-    ->onFailure(function () {
-        \Illuminate\Support\Facades\Log::error('[Schedule] SyncEmailsJob 失敗');
-    });
+// 2026-05-14: Kagoya IMAP 一本化のため停止（取込重複と Gmail 転送 SPF Softfail 解消）
+// 復活させる場合はコメントを外すだけで OK。OAuth トークンと添付 fallback は維持。
+// Schedule::call(function () {
+//     (new SyncEmailsJob())->handle(app(\App\Services\GmailService::class));
+// })
+//     ->everyFifteenMinutes()
+//     ->name('sync-emails')
+//     ->withoutOverlapping()
+//     ->onFailure(function () {
+//         \Illuminate\Support\Facades\Log::error('[Schedule] SyncEmailsJob 失敗');
+//     });
 
 // ── メール自動同期（15分毎）— KAGOYA POP3 直接受信
 Schedule::call(function () {
@@ -91,17 +93,19 @@ Schedule::command('emails:cleanup')
     });
 
 // ── 分類済みメールをGmailゴミ箱に移動（毎日 2:00 JST）
-Schedule::command('gmail:trash-classified')
-    ->dailyAt('02:00')
-    ->timezone('Asia/Tokyo')
-    ->name('trash-classified-emails')
-    ->withoutOverlapping()
-    ->onSuccess(function () {
-        Log::info('[Schedule] 分類済みメールのゴミ箱移動 完了');
-    })
-    ->onFailure(function () {
-        Log::error('[Schedule] 分類済みメールのゴミ箱移動 失敗');
-    });
+// 2026-05-14: Gmail API 取込停止に伴い、ゴミ箱移動も停止
+// 復活させる場合はコメントを外すだけで OK
+// Schedule::command('gmail:trash-classified')
+//     ->dailyAt('02:00')
+//     ->timezone('Asia/Tokyo')
+//     ->name('trash-classified-emails')
+//     ->withoutOverlapping()
+//     ->onSuccess(function () {
+//         Log::info('[Schedule] 分類済みメールのゴミ箱移動 完了');
+//     })
+//     ->onFailure(function () {
+//         Log::error('[Schedule] 分類済みメールのゴミ箱移動 失敗');
+//     });
 
 // ── Vision API キーローテーション（90日毎 / 毎月1日 0:00）
 Schedule::command('vision:rotate-key')
