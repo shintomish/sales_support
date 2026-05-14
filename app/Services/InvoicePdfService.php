@@ -64,10 +64,9 @@ class InvoicePdfService
 
         // 電子印は以下の場合のみ押印。
         //   - 見積書(estimate): 担当者ベース運用のため承認なしで常に角印を押印
-        //   - 請求書/注文書: invoice.approved=true のときのみ押印
+        //   - 請求書/注文書: 電子印は使用しない（2026-05-14 社長指示）。承認後は紙印刷→物理印→スキャンPDFで運用
         //   - 注文請書(acknowledgement): 取引先押印欄を空けるため常に印なし
-        $skipSeal = $isAcknowledgement
-            || ($invoice->doc_type !== 'estimate' && !$invoice->approved);
+        $skipSeal = $invoice->doc_type !== 'estimate';
         $invoiceForRender = clone $invoice;
         if ($skipSeal) {
             $invoiceForRender->issuer_round_seal_snapshot  = null;
