@@ -136,7 +136,8 @@ class InvoiceCreationService
      * 試算結果から明細行を組み立てる
      *
      * 新仕様（INV_Aizen 2026-05-05）:
-     *  - 基本額の摘要は「{金額}円【基本月額】」表記（ses_contracts.income_amount 由来）
+     *  - 基本額の摘要は「{金額}円」表記（ses_contracts.income_amount 由来）
+     *    ※PDF側で「基本月額：」ラベルが付与されるため description には金額のみ保持
      *  - 件名/作業期間/作業場所/支払条件はメタ情報として invoices テーブルに保持し、
      *    PDF/編集画面で表示する。明細行（金額計上）は基本額・控除・超過・交通費のみ。
      *
@@ -148,7 +149,7 @@ class InvoiceCreationService
 
         if ($calc['basic'] > 0) {
             $lines[] = [
-                'description' => sprintf('%s円 【基本月額】', number_format((float) $calc['basic'])),
+                'description' => sprintf('%s円', number_format((float) $calc['basic'])),
                 'quantity'    => 1,
                 'unit'        => null,
                 'unit_price'  => $calc['basic'],
@@ -190,7 +191,7 @@ class InvoiceCreationService
         if (empty($lines)) {
             // 何も計上できない場合は基本額0の1行を入れる（編集前提）
             $lines[] = [
-                'description' => '0円 【基本月額】',
+                'description' => '0円',
                 'quantity'    => 1,
                 'unit'        => null,
                 'unit_price'  => 0,

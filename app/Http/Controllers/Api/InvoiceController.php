@@ -246,9 +246,10 @@ class InvoiceController extends Controller
         $basicUnitPrice = (float) ($contract?->income_amount ?? 0);
         $qty = $contract ? $months : 1;
         if ($basicUnitPrice > 0) {
+            // 「基本月額」ラベルは PDF 側で付与されるため description には金額のみ保持
             $description = $isEnglish
                 ? sprintf('%s yen/month', number_format($basicUnitPrice))
-                : sprintf('基本月額：%s円', number_format($basicUnitPrice));
+                : sprintf('%s円', number_format($basicUnitPrice));
         } else {
             $description = '';
         }
@@ -407,7 +408,7 @@ class InvoiceController extends Controller
             'invoice_id'  => $invoice->id,
             'sort_order'  => 0,
             'description' => $basicUnitPrice > 0
-                ? sprintf('基本月額：%s円', number_format($basicUnitPrice))
+                ? sprintf('%s円', number_format($basicUnitPrice))
                 : '',
             'quantity'    => $qty,
             'unit'        => null,

@@ -105,15 +105,11 @@
     $itemRows = $isRefinitiv ? 4 : ($isExtendedLayout ? 18 : 14);
 
     // 明細行を分類
-    // sort_order=0 の non-expense 行を basicLine とみなす（description が空でも単価行スロットに出す）
+    //   basicLine = sort_order=0 の非経費行（description は金額のみ保持／PDF側で「基本月額：」を付与）
+    //   description のキーワード判定に依存しない（ユーザー編集でズレるバグを防ぐ）
     $basicLine     = $invoice->lines->first(fn($l) =>
         !$l->is_expense
         && (int) $l->sort_order === 0
-        && (
-            str_contains((string) $l->description, '基本月額')
-            || ($isEnglish && str_contains((string) $l->description, 'yen/month'))
-            || trim((string) $l->description) === ''
-        )
     );
     $deductionLine = $invoice->lines->first(fn($l) => str_contains((string) $l->description, '控除') && !$l->is_expense);
     $overtimeLine  = $invoice->lines->first(fn($l) => str_contains((string) $l->description, '超過') && !$l->is_expense);
