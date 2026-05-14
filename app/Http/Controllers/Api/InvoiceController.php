@@ -984,7 +984,8 @@ class InvoiceController extends Controller
 
     /**
      * POST /api/v1/invoices/{invoice}/approve
-     * 承認 → approval_status='approved' + approved=true + 電子印付き PDF 再生成
+     * 承認 → approval_status='approved' + approved=true
+     * 電子印は廃止 (2026-05-14)。承認後は紙印刷→物理印→スキャンPDFを差し替える運用。
      * tenant_admin / super_admin のみ実行可
      */
     public function approve(Invoice $invoice): JsonResponse
@@ -1001,10 +1002,7 @@ class InvoiceController extends Controller
         $invoice->approved_by      = $user->id;
         $invoice->save();
 
-        $url = $this->pdfService->generateAndStore($invoice);
-
         return response()->json([
-            'pdf_url' => $url,
             'invoice' => $invoice->fresh()->load('lines'),
         ]);
     }
@@ -1032,8 +1030,7 @@ class InvoiceController extends Controller
         $invoice->approved_by      = null;
         $invoice->save();
 
-        // 押印を外した PDF に再生成
-        $this->pdfService->generateAndStore($invoice->fresh());
+        // 電子印は廃止 (2026-05-14)。PDF 再生成不要、フラグのみ更新。
 
         return response()->json(['invoice' => $invoice->fresh()->load('lines')]);
     }
