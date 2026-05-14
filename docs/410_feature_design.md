@@ -2,8 +2,8 @@
 
 **対象システム**: SES企業向け営業支援システム  
 **作成日**: 2026-04-03  
-**バージョン**: 1.1
-**最終更新**: 2026-04-29(emails画面のAI機能削除・スケジュール現況・送信種別 等を実装に同期)
+**バージョン**: 1.2
+**最終更新**: 2026-05-13(監査ログを audit チャネルに分離・ログを JST 基準ローテーションに変更)
 
 ---
 
@@ -476,3 +476,13 @@ Supabase Realtime で `emails` テーブルの INSERT を購読。
 - Claude API タイムアウト: 30秒
 - URL フェッチタイムアウト: 10秒
 - 抽出テキスト上限: 4,000文字
+
+## 10. ログ運用（2026-05-13 改訂）
+
+| チャネル | 出力先 | 用途 | レベル |
+|---|---|---|---|
+| `daily` (app) | `storage/logs/sales_sup-YYYY-MM-DD.log` | 通常のアプリログ | `LOG_LEVEL` env 設定（本番は `error`） |
+| `audit` | `storage/logs/audit.log` | `LogUserActivity` ミドルウェアによる監査ログ（誰が・いつ・どの API を叩いたか） | 常に `info`（`LOG_LEVEL` と独立） |
+
+- ローテーションは **JST 基準**（`JstDailyFactory` / `JstRotatingFileHandler`）。UTC 基準だと日本時間の 09:00 でファイルが切替わってしまうため、`storage/logs/sales_sup-YYYY-MM-DD.log` の YYYY-MM-DD が JST と一致するように変更
+- 監査ログは Gmail/IMAP 取込ジョブ・案件 / 技術者メール画面の操作・配信操作などにも適用される

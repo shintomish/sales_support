@@ -1,6 +1,6 @@
 # 配信管理 — AWS SES 本番運用・配信停止機能・バウンス処理
 
-> 作成日: 2026-04-15 / 最終更新: 2026-05-10（停止理由コードを実装に合わせて訂正：2 種）
+> 作成日: 2026-04-15 / 最終更新: 2026-05-13（監査ログ audit チャネル分離・JST ログローテーションを追記）
 
 ---
 
@@ -259,3 +259,18 @@ postmaster(`mailer-daemon`)等からのバウンスメールをGmail側で受信
 - 不達検出時は配信先マスタを自動で `is_active=false` に更新
 - 無効化されたアドレスの手動復活が必要な場合は、配信管理画面の **配信先一覧タブ** で個別 or 一括有効化可能（一括有効/無効・スナップショット保存/復元 2026-04-26 実装）
 - AWS SES 本番運用中（2026-04-17〜）。SES Suppression List との連携は今後検討
+
+---
+
+## 7. 監査ログ運用（2026-05-13 追記）
+
+配信操作（キャンペーン作成・送信・再送信・配信停止）は `LogUserActivity` ミドルウェアにより **監査ログ専用チャネル** に記録されます。
+
+| 項目 | 内容 |
+|---|---|
+| 出力先 | `storage/logs/audit.log`（アプリログ `sales_sup-YYYY-MM-DD.log` とは別ファイル） |
+| レベル | 常に `info`（`LOG_LEVEL=error` の本番でも記録される） |
+| ローテーション | JST 基準（`JstDailyFactory` / `JstRotatingFileHandler`） |
+| 記録内容 | ユーザー ID・テナント ID・HTTP メソッド・パス・IP・User-Agent・タイムスタンプ |
+
+詳細は `config/logging.php` の `audit` チャネル定義および `app/Http/Middleware/LogUserActivity.php` を参照。

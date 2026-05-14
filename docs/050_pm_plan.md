@@ -1,6 +1,6 @@
 # スーパーPM計画書 — 10人チームで営業支援プロジェクトをリリースする
 
-> 作成日: 2026-04-09 / 最終更新: 2026-05-11（クローズ済み項目の状態反映）
+> 作成日: 2026-04-09 / 最終更新: 2026-05-13（doc_type 拡張 A〜G 完了・Refinitiv 注文書取込フロー本番反映）
 
 ---
 
@@ -52,7 +52,7 @@
 - ~~APIドキュメント整備~~ **✅ 2026-04-11 完了**（PHPアトリビュート方式・28エンドポイント）
 - ~~メール送信（SendGrid）実装~~ **✅ 2026-04-15 完了**（→ 2026-04-17 AWS SES 本番切替済）
 - ~~本番環境の監視ダッシュボード構築~~ **✅ 2026-04-11 完了** → UptimeRobot（死活監視）+ Sentry（エラー監視）
-- 残：**勤務表・請求書管理 (#8)** — 🟡 進行中（請求書/見積書は2026-05-11実装済、注文書 + 送信履歴/メールテンプレ doc_type 対応が残）
+- 残：**勤務表・請求書管理 (#8)** — ✅ ほぼ完了(2026-05-13)。見積書/注文書/請求書を `invoices.doc_type` で統合管理、送信履歴 (doc_type 別画面)・メールテンプレ (doc_type 別タブ)・英文モード・電子印・承認ワークフローを全て本番反映。残作業は **billing-summaries 画面のスマホ対応 (#29)** のみ
 
 ### Phase 2（2〜4週）: クローズドβ
 
@@ -143,7 +143,7 @@ Assertions: 216
 | 提案スレッド機能(送受信履歴一元化) | 高 | 中 | Phase 1 | ✅ 完了(2026-04-25) | — |
 | 配信先管理(一括有効/無効・スナップショット復元) | 中 | 中 | Phase 1 | ✅ 完了(2026-04-26) | — |
 | メール分類精度向上(自社/技術者/案件の判定強化) | 中 | 中 | Phase 1 | ✅ 完了(2026-04-29) | — |
-| **勤務表・請求書管理(work_records活用)** | 高 | 中 | Phase 1 | 🟡 進行中(2026-05-11 請求書/見積書 実装済・注文書 + doc_type 周辺残) | [#8](https://github.com/shintomish/sales_support/issues/8) |
+| **勤務表・請求書管理(work_records活用)** | 高 | 中 | Phase 1 | ✅ 完了(2026-05-13 doc_type 統合 A〜G 全完了・Refinitiv 注文書取込本番反映) | [#8](https://github.com/shintomish/sales_support/issues/8) |
 | バックアップ手順書 | 高 | 中 | Phase 1 | ✅ 完了(2026-05-04 dev リストアリハーサル含む / 週次手動運用稼働中) | [#1](https://github.com/shintomish/sales_support/issues/1) |
 | 追加テスト実装(Contact/Task他) | 中 | 中 | Phase 1 | ✅ 完了(2026-05-02 Contact/Task) | [#4](https://github.com/shintomish/sales_support/issues/4) |
 | **forgot password (パスワード再設定)** | 高 | 中 | Phase 1 | ✅ 完了(2026-05-01) | [#13](https://github.com/shintomish/sales_support/issues/13) |
@@ -320,3 +320,66 @@ Assertions: 216
 - **ノートPC運用ストレス** は今回の UX 改善で解消。営業現場からの一次フィードバックを当日中に反映
 - 残る大物は **Phase 1: 勤務表・請求書管理 (#8)** と **Phase 2-3: スマホ対応 (#29)・案件マーケット公開**（バックアップ #1 は週次手動運用に移行・クローズ）
 - βユーザー獲得（#3）はやはり律速。技術側の整備は十分なので、次は営業/PM が前に出るフェーズ
+
+---
+
+## 11. 2026-05-13 doc_type 拡張ロールアウト・Refinitiv 取引対応・本番パフォーマンス改善
+
+> 営業（松村悠大）からの英文見積/注文書/請求書要望と、Refinitiv（リフィニティブ・ジャパン）案件の SAP Business Network 経由注文書 PDF 取込を起点に、見積書／注文書／請求書まわりを一括で本番反映。あわせて本番 VPS のパフォーマンス改善・ログ整備・Supabase 権限整備まで実施。
+
+### 11.1 doc_type 拡張ロールアウト (A〜G 完了)
+
+`invoices` テーブルに `doc_type` (`invoice` / `estimate` / `purchase_order`) 列を持たせ、見積書／注文書／請求書を 1 テーブルで統合管理する設計が本日完了。残課題は H（`billing-summaries` のスマホ対応 = #29）のみ。
+
+| ブロック | 内容 | 状態 |
+|---|---|---|
+| A | 共通基盤（`doc_type` 列・スナップショット・PDF テンプレ統合） | ✅ |
+| B | 見積書フロー（SES台帳起点・通常 / 例外モード両対応） | ✅ |
+| C | 注文書フロー（仕入先絞り込み・所属会社宛先） | ✅ |
+| D | 承認通知 UX（doc_type 別バッジ＋承認後トースト＋削除制限） | ✅ |
+| E | 送信履歴 doc_type 別画面（`/estimate-send-histories` 新設、請求書既存と並列） | ✅ |
+| F | メールテンプレ doc_type 別タブ（`/settings/invoice-issuer` に 3 タブ） | ✅ |
+| G | 英文モード（`language='en'`・英文社名・英文住所・英文銀行情報） | ✅ |
+| H | `billing-summaries` のスマホ対応 (#29) | 🔴 別管理（次期） |
+
+### 11.2 Refinitiv (LSEG) 注文書 PDF → 請求書ドラフト発行フロー（新規）
+
+> 詳細は `070_refinitiv_invoice_flow.md` に分離。本節は経緯と意思決定のみ。
+
+- **背景**: Refinitiv は注文書を SAP Business Network 経由の PDF で送付してくる。「その他の情報」欄に申請者・申請番号・Plant.ID・分類コード等の必須情報があり、これを請求書側にもれなく転記する手間が事故源だった
+- **対応**: PDF を Claude Sonnet 4 で構造化（`RefinitivPoParserService`）し、抽出結果をフロントで確認・編集してから `/api/v1/invoices/refinitiv/issue` で **英文モードの請求書ドラフト** を発行する 2 ステップ運用に
+- **DB**: `invoices.vendor_metadata` (JSONB) を追加（NULL でないレコードは Refinitiv 専用 PDF レイアウトで出力）
+- **画面**: `/billing-summaries` のオレンジボタン「📋 Refinitiv注文書から請求書発行」モーダル
+
+### 11.3 監査ログ audit チャネル分離・JST ログローテーション
+
+| 改善 | 内容 |
+|---|---|
+| `audit` チャネル | `LogUserActivity` ミドルウェアの監査出力を `storage/logs/audit.log` に分離。`LOG_LEVEL` 設定とは独立して常に info で記録 |
+| JST 基準ローテーション | アプリログのファイル名 / ローテーションを JST 基準に変更（`JstDailyFactory` / `JstRotatingFileHandler`）。`storage/logs/sales_sup-YYYY-MM-DD.log` の日付ズレを解消 |
+
+### 11.4 Supabase Data API GRANT 整備（2026-10-30 強制適用に先行対応）
+
+Supabase が 2026-10-30 に `public` スキーマのデフォルト権限を廃止する変更を予告。Realtime 購読対象テーブル（`tasks` / `deals` / `activities` / `business_cards` / `emails` 等）に対し `authenticated` / `service_role` への明示 GRANT を migration 化（`2026_05_14_003130_grant_data_api_access_for_realtime_tables.php`）。
+
+> 以後の新規テーブル migration では **RLS と並んで GRANT も明示** を CLAUDE.md にルール化済。
+
+### 11.5 本番パフォーマンス改善
+
+| 改善 | 内容 |
+|---|---|
+| env→config 全廃 | `app/` 配下の `env()` 直呼出しを廃止し `config/*.php` 経由に統一 → `php artisan config:cache` が本番で安全に使えるようになった |
+| SupabaseAuth キャッシュ | `SupabaseAuth` ミドルウェアの User lookup を 60 秒キャッシュ |
+| Puppeteer 固定 | Dockerfile で puppeteer をバージョン pin + `chrome/current` シンボリックリンクで `.env` パス安定化 |
+| 添付ファイル名復号 | RFC 5987 / RFC 2231 形式の添付ファイル名を正しくデコード（一部メールクライアント対応） |
+
+### 11.6 承認通知バッジ既読フラグ（D ブロック）
+
+サイドバーの「承認待ち／差戻し」バッジを **誰がいつ消したか** を追跡する `invoice_notification_reads` テーブルを新設。承認サマリーリンクをクリックすると `POST /api/v1/notifications/mark-read` で既読化を発行する。
+
+### 11.7 本日(2026-05-13)時点の総括
+
+- **Phase 1 #8（勤務表・請求書管理）が事実上クローズ**。残るは H ブロックの `billing-summaries` スマホ対応のみで、これは #29 に統合
+- **Refinitiv 取引対応** が完了し、注文書受信から請求書発行まで PDF 1 枚→ドラフト発行までの 2 クリック運用に短縮
+- **本番パフォーマンス改善** で体感速度が向上。同時にログ整備・Supabase 権限整備など運用基盤も同時に底上げ
+- 残課題は **βユーザー獲得 (#3)** と **スマホ対応 (#29)**。技術側は十分にリリース水準
