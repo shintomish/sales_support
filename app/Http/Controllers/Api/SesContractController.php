@@ -103,6 +103,9 @@ class SesContractController extends Controller
         }
         if ($status = $request->get('status')) {
             $query->where('deals.status', $status);
+        } elseif (!$request->boolean('include_expired')) {
+            // status 未指定かつ include_expired=1 未指定なら、期限切れ案件は既定で除外
+            $query->where('deals.status', '!=', '期限切れ');
         }
         // 契約終了日が指定日以降のもののみ（見積/注文書発行モーダルから利用）
         if ($endFrom = $request->get('contract_period_end_from')) {
@@ -378,16 +381,19 @@ class SesContractController extends Controller
                 importedBy: auth()->id(),
             );
             $log = $service->import($fullTmpPath, $uploadedFile->getClientOriginalName());
+            $expiredCount = $service->getExpiredCount();
         } finally {
             Storage::disk('local')->delete($tmpPath);
         }
+        $expiredPart = $expiredCount > 0 ? "、完了扱い: {$expiredCount}件" : '';
         return response()->json([
             'message' => $log->status === 'failed' ? 'インポートに失敗しました。'
-                : "インポートが完了しました（新規: {$log->created_count}件、更新: {$log->updated_count}件）",
+                : "インポートが完了しました（新規: {$log->created_count}件、更新: {$log->updated_count}件{$expiredPart}）",
             'log' => [
                 'id' => $log->id, 'status' => $log->status,
                 'total_rows' => $log->total_rows, 'created_count' => $log->created_count,
                 'updated_count' => $log->updated_count, 'skipped_count' => $log->skipped_count,
+                'expired_count' => $expiredCount,
                 'error_count' => $log->error_count, 'error_details' => $log->error_details ?? [],
             ],
         ], $log->status === 'failed' ? 422 : 200);

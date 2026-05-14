@@ -89,11 +89,14 @@ class DealImportService
 
     private int   $tenantId;
     private int   $importedBy;
-    private array $errors   = [];
-    private int   $created  = 0;
-    private int   $updated  = 0;
-    private int   $skipped  = 0;
-    private int   $total    = 0;
+    private array $errors        = [];
+    private int   $created       = 0;
+    private int   $updated       = 0;
+    private int   $skipped       = 0;
+    private int   $total         = 0;
+    private int   $expired       = 0;
+    /** Excel から取り込めた deal_id（インポート対象外の判定用） */
+    private array $touchedIds    = [];
 
     public function __construct(int $tenantId, int $importedBy)
     {
@@ -145,6 +148,15 @@ class DealImportService
                 }
             }
 
+            // Excel に存在しない既存 SES 案件を「期限切れ」に自動更新
+            // (Excel では完了案件を非表示にする運用に追従)
+            $this->expired = Deal::where('tenant_id', $this->tenantId)
+                ->where('deal_type', 'ses')
+                ->whereNotIn('id', $this->touchedIds)
+                ->where('status', '!=', '期限切れ')
+                ->whereNull('deleted_at')
+                ->update(['status' => '期限切れ']);
+
             $log->markCompleted([
                 'total_rows'     => $this->total,
                 'created_count'  => $this->created,
@@ -159,6 +171,12 @@ class DealImportService
         }
 
         return $log->fresh();
+    }
+
+    /** 直近の import() 実行で「期限切れ」に自動更新した件数 */
+    public function getExpiredCount(): int
+    {
+        return $this->expired;
     }
 
     // ── プライベートメソッド ──────────────────────────────
@@ -291,6 +309,9 @@ class DealImportService
             $deal = Deal::create($dealData);
             $this->created++;
         }
+
+        // インポートで触れた deal_id を記録（後段で未掲載=完了案件の判定に使用）
+        $this->touchedIds[] = $deal->id;
 
         // ── 4. SesContract の upsert ─────────────────────
         SesContract::updateOrCreate(
