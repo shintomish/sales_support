@@ -178,7 +178,7 @@ PROMPT;
                 'x-api-key'         => $this->apiKey,
                 'content-type'      => 'application/json',
             ])->post($this->apiUrl, [
-                'model'      => 'claude-sonnet-4-20250514',
+                'model'      => config('services.anthropic.model'),
                 'max_tokens' => 300,
                 'messages'   => [['role' => 'user', 'content' => $prompt]],
             ]);

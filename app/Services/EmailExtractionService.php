@@ -282,7 +282,7 @@ class EmailExtractionService
             'anthropic-version' => '2023-06-01',
             'content-type'      => 'application/json',
         ])->timeout(30)->post($this->apiUrl, [
-            'model'      => 'claude-sonnet-4-20250514',
+            'model'      => config('services.anthropic.model'),
             'max_tokens' => 1024,
             'messages'   => [['role' => 'user', 'content' => $prompt]],
         ]);

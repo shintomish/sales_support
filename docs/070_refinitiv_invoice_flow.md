@@ -75,7 +75,7 @@ multipart/form-data:
 
 **処理**:
 1. `smalot/pdfparser` で PDF から生テキスト抽出
-2. Claude Sonnet 4 (`claude-sonnet-4-20250514`) に渡して JSON 化
+2. Claude Sonnet 4.6 (`config('services.anthropic.model')` 経由) に渡して JSON 化
 3. `raw_text` を除いた抽出結果を JSON で返却
 
 **レスポンス**:

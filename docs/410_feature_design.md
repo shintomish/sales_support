@@ -246,7 +246,7 @@ Gmail と連携し、SES営業に関わるメール（案件情報・技術者�
 
 > ⚠️ **現状の利用状況**: emails 画面UIでは利用していない（2026-04 リファクタで削除）。サービスクラスとしては残存。実運用の抽出は `ProjectMailScoringService` / `EngineerMailScoringService` の正規表現ベースに置き換わった。本節は履歴目的で残置。
 
-Claude API（`claude-sonnet-4-20250514`）を使用して構造化データを抽出。
+Claude API（Sonnet 4.6 / `config('services.anthropic.model')` 経由）を使用して構造化データを抽出。
 
 **処理フロー:**
 ```

@@ -67,7 +67,7 @@ class RefinitivPoParserService
             'x-api-key'         => $this->apiKey,
             'content-type'      => 'application/json',
         ])->timeout(60)->post($this->apiUrl, [
-            'model'      => 'claude-sonnet-4-20250514',
+            'model'      => config('services.anthropic.model'),
             'max_tokens' => 1024,
             'messages'   => [
                 ['role' => 'user', 'content' => $prompt],

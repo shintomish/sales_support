@@ -27,7 +27,7 @@ Laravel 11 + Supabase PostgreSQL + Docker構成。
 - Supabase Auth（ES256 JWT / firebase/php-jwt）
 - Supabase Storage（名刺画像）
 - Google Cloud Vision API（OCR）
-- Claude API（claude-sonnet-4-20250514）
+- Claude API（claude-sonnet-4-6 / `config('services.anthropic.model')` 経由）
 - Gmail API（OAuth2・受信のみ）
 - Docker（PHP-FPM + Nginx）
 

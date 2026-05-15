@@ -37,6 +37,9 @@ return [
 
     'anthropic' => [
         'api_key' => env('ANTHROPIC_API_KEY'),
+        // 2026-06-15 9AM PT に claude-sonnet-4-20250514 retire のため Sonnet 4.6 に移行。
+        // .env CLAUDE_MODEL で上書き可能。
+        'model'   => env('CLAUDE_MODEL', 'claude-sonnet-4-6'),
     ],
 
     'google_vision' => [
