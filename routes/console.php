@@ -24,6 +24,8 @@ Artisan::command('inspire', function () {
 //     });
 
 // ── メール自動同期（15分毎）— KAGOYA POP3 直接受信
+// production 環境限定: ローカル/dev は KAGOYA_POP3_* env を持たないため
+// 起動するたびに DNS 失敗のエラーログが残るのを防ぐ。
 Schedule::call(function () {
     $count = app(\App\Services\KagoyaMailService::class)->syncEmails();
     if ($count > 0) {
@@ -31,6 +33,7 @@ Schedule::call(function () {
     }
 })
     ->everyFifteenMinutes()
+    ->environments(['production'])
     ->name('sync-kagoya-pop3')
     ->withoutOverlapping()
     ->onFailure(function () {
