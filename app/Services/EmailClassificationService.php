@@ -104,15 +104,43 @@ class EmailClassificationService
         }
 
         $emails = $query->get();
+        if ($emails->isEmpty()) {
+            return 0;
+        }
 
+        // 個別 UPDATE のループだと Sentry の N+1 検出に引っかかるため
+        // 分類結果を配列化して 1 回の upsert にまとめる。
+        // Email モデルに observer / event は無いので Eloquent イベントを
+        // バイパスしても問題なし (2026-05-17 確認)。
+        $now  = Carbon::now();
+        $rows = [];
         $count = 0;
         foreach ($emails as $email) {
             try {
-                $this->classify($email);
+                [$category, $reason, $urls] = $this->determineCategory($email);
+                $rows[] = [
+                    'id'             => $email->id,
+                    'category'       => $category,
+                    'classified_at'  => $now,
+                    'extracted_data' => json_encode([
+                        'classification_reason' => $reason,
+                        'urls'                  => $urls,
+                        'has_attachments'       => $email->attachments->isNotEmpty(),
+                    ], JSON_UNESCAPED_UNICODE),
+                    'updated_at'     => $now,
+                ];
                 $count++;
             } catch (\Throwable $e) {
                 Log::error("[EmailClassification] email_id={$email->id} 失敗: " . $e->getMessage());
             }
+        }
+
+        if (!empty($rows)) {
+            \Illuminate\Support\Facades\DB::table('emails')->upsert(
+                $rows,
+                ['id'],
+                ['category', 'classified_at', 'extracted_data', 'updated_at']
+            );
         }
 
         return $count;
