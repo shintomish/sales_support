@@ -1,6 +1,6 @@
 # スーパーPM計画書 — 10人チームで営業支援プロジェクトをリリースする
 
-> 作成日: 2026-04-09 / 最終更新: 2026-05-14（請求書・注文書の電子印廃止指示を反映）
+> 作成日: 2026-04-09 / 最終更新: 2026-05-16（Claude Sonnet 4.6 移行 + Issue #29 スマホ対応の大半をクローズ）
 
 ---
 
@@ -258,7 +258,7 @@ Assertions: 216
 | 案件マーケット公開化 PoC | 中 | 低 | Phase 2-3 | 未着手 | 収益モデル/法務確定後に着手 |
 | フリーランス技術者マッチング | 中 | 低 | Phase 2-3 | 未着手 | スキーマ拡張の前段検討が必要 |
 | `public_projects.commission_rate` 列追加 | 中 | 低 | Phase 2 | 未着手 | 公開化着手時にセットで対応 |
-| **スマホ対応(レスポンシブUI全面適用)** | 中 | 低 | Phase 2-3 | 未着手 | [#29](https://github.com/shintomish/sales_support/issues/29) 営業担当者の外出先利用想定 |
+| **スマホ対応(レスポンシブUI全面適用)** | 中 | 中 | Phase 2 | ✅ 大半完了(2026-05-15/16) 残: 名刺 OCR モーダル / 44px タッチ / 公開ページ | [#29](https://github.com/shintomish/sales_support/issues/29) |
 
 ### 9.6 本日(2026-05-06)時点の総括
 
@@ -475,4 +475,104 @@ Supabase が 2026-10-30 に `public` スキーマのデフォルト権限を廃�
 - ⑥ のバグは「description のフリーテキスト判定」を「sort_order 番号判定」に置き換えたことで根治。ユーザーが摘要欄を自由編集しても basicLine が見失われない
 - ④ の複写は **当月採番＋下書き状態** が前提。月跨ぎで複写された結果として年月をまたぐ番号体系が壊れることはない
 - ⑤ の表記簡素化により、PDF と編集画面で「基本月額：」ラベルの責務が PDF 側に統一された
+
+---
+
+## 14. 2026-05-15 Issue #29 スマホ対応 第1弾 + 月別売上集計設計
+
+### 14.1 Issue #29 第1弾: Sidebar 折りたたみ + 一覧/モーダル系の mobile 化
+
+ノートPC 24inch / 27inch 環境差での「画面が収まらない」問題と外出先スマホ運用を見据え、UI 層を一気に整備。
+
+| 範囲 | 対応内容 |
+|---|---|
+| Sidebar | デスクトップ折りたたみ (`w-64` ↔ `w-16`) + localStorage 永続化、md 未満は **off-canvas drawer + ハンバーガーボタン** |
+| 配信管理 | `max-w-7xl` 撤廃、タブ固定 + 各タブ scroll + sticky ページネーション、横スクロール対応 |
+| 帳票一覧 (請求書/見積書/注文書/送信履歴/billing-summaries) | カード化 + `max-w-7xl` 撤廃 + 作成モーダル grid 1列化 + Sticky フッター |
+| 送信履歴 | 「件名」列が郵送時 `(郵送)` 固定 → `invoice.subject_name` 表示に変更し、検索対象にも追加 |
+| 承認操作 UX | 一覧で承認/却下/申請完了時にトースト通知 + `approval_status=pending` フィルタを自動リセットして結果可視化 |
+| SES台帳 Excel インポート | Excel 未掲載の SES 案件を自動 `期限切れ` 更新。一覧は既定で `期限切れ` 除外 + 「期限切れも表示」チェックボックス |
+
+**docs/120 `モバイルレスポンシブ デザイン指針`** を新設し、共通パターン（テーブル横スクロール / アコーディオン / モーダル / Sticky フッター / ページネーション）を集約。以後の改修はチェックリスト適用方式。
+
+### 14.2 mobile drawer 実装の試行錯誤（撤退ログ）
+
+初版は `<aside fixed -translate-x-full md:sticky>` で全体構造を組み替える方針で実装したが、Next.js 16 + Turbopack + WSL2 環境で hydration が完全停止する事象が発生。`git stash` で完全破棄し、後日 **既存 sticky 構造を維持した最小差分**（ハンバーガーボタン + 既存 aside の `fixed` 切替のみ）で再実装した。
+
+**学び**: Sidebar 共通コンポーネントの構造大変更はリスクが高い。最小差分・段階的に進める方針を `feedback_*` メモリにも反映。
+
+### 14.3 月別売上集計 設計メモ (`docs/460_monthly_sales_aggregation.md`)
+
+半期決算会議で参照する月別売上が、現状 `deals.updated_at` 基準で不正確という問題提起。実装は **業務側ヒアリング待ちで未着手**だが、論点 5 つ（集計粒度・月の判定基準・月またぎ按分・テーブル設計・ダッシュボード切替時期）を整理して `docs/460` に保留。
+
+Phase 3 で 経理「入金表」（売上先入金サイト日／仕入先支払日 順）の CSV エクスポート → 弥生会計取込が別スコープで控える。
+
+### 14.4 本日(2026-05-15)時点の総括
+
+- Issue #29 の **第1弾（Sidebar + 一覧/モーダル）が本番反映完了**。docs/120 で共通パターンを固定化したため、以後の画面追加コストは低い
+- mobile drawer の初版失敗で 1 セッション分の時間を浪費。再現性のある教訓として `feedback_*` 化
+- 月別売上集計は「設計検討フェーズ」として温存。業務側に Excel 集計ロジックの確認が必要
+
+---
+
+## 15. 2026-05-16 Claude Sonnet 4.6 移行 + Issue #29 第2弾完了 + 細目修正
+
+### 15.1 Claude モデル ID 移行 (`claude-sonnet-4-20250514` → `claude-sonnet-4-6`)
+
+Anthropic 公式で 2026-06-15 9AM PT に `claude-sonnet-4-20250514` 系が retire される予告に対応。
+
+| 範囲 | 内容 |
+|---|---|
+| 設定 | `config/services.php` に `anthropic.model = env('CLAUDE_MODEL', 'claude-sonnet-4-6')` を新設 |
+| ハードコード除去 | `ClaudeService` / `EmailExtractionService` / `MatchingService` / `RefinitivPoParserService` の 5 箇所を `config('services.anthropic.model')` 経由に置換 |
+| ドキュメント | `CLAUDE.md` / `docs/410` / `docs/070` のモデル表記更新 |
+| 本番デプロイ | `.env` に `CLAUDE_MODEL=claude-sonnet-4-6` 明示追加 + `config:clear` |
+
+検証: ローカル tinker で `app(ClaudeService::class)->ask('Reply with just the word: ready')` を実行し、`ready` が返ることを確認。
+
+### 15.2 Issue #29 第2弾: 帳票詳細 + SES編集 + CRM/メール/名刺/ダッシュボード
+
+10 画面を順次 mobile 対応:
+
+| # | 画面 | 対応 |
+|---|---|---|
+| 1 | ダッシュボード | KPI/グリッド/フォントの md 切替（既存 `grid-cols-N md:grid-cols-N` 微調整） |
+| 2 | タスク一覧 | カード化（期限超過/今日バッジ付き） |
+| 3 | 顧客 / 担当者 | カード化（区分バッジ + 業種 + 電話） |
+| 4 | 商談 / 活動 | カード化 |
+| 5 | 名刺管理 | 画像サムネ付きカード化 |
+| 6 | メール一覧 / 案件メール / 技術者メール | split-pane を mobile では選択時に list↔detail 切替・戻るボタン追加。内部 grid を md 切替 |
+| 7 | 帳票詳細 (invoices/[id]) | 3 帳票共通の grid/padding/モーダル mobile 対応（estimates/purchase-orders は薄いラッパ） |
+| 8 | SES契約編集 | header/footer flex-wrap + タブバー横スクロール |
+
+**特殊対応 (案件/技術者メール 要確認モード)**:
+- sticky top-0 が SidebarWrapper の overflow-auto コンテナと組み合わさり mobile で破綻 → `flex flex-col h-full` + `flex-shrink-0` ヘッダー + `flex-1 overflow-y-auto` リストに変更
+- ReviewRow を mobile で 2 段組（上=スコアバッジ+アクション / 下=タイトル幅広）にリファクタして件名表示領域を確保
+
+### 15.3 ローカル Kagoya スケジュール無効化
+
+ローカル `.env` に `KAGOYA_POP3_*` が無いため、`sync-kagoya-pop3` schedule が 15 分ごとに DNS 失敗エラーをログに残していた。`routes/console.php` の該当 `Schedule::call` に `->environments(['production'])` を付与し、ローカル/dev では起動しないように変更。本番運用は無影響。
+
+### 15.4 細目バグ修正・微調整
+
+| 範囲 | 内容 |
+|---|---|
+| `approve` / `reject` API | 電子印廃止 (§12) に伴い PDF 再生成を撤廃。フラグ更新のみに簡素化。承認確認ダイアログから「電子印付き PDF を再生成」文言を除去 |
+| 配信管理 キャンペーン表 | テーブル幅 `1100px` 固定 → `100%` (`minWidth: 1100px` 維持) で PC の右側隙間解消。送信日時カラム `w-[130px]`・再送信日時 `w-[110px]` に拡張してソートバッジ「▼ 降順」が次列に被るのを解消 |
+| 一覧 6 本のカードスクロール | `md:hidden` カードコンテナに `flex-1 min-h-0 overflow-y-auto` を追加。親 `h-full` のため最後のカードが見切れる問題を解消 |
+| SES台帳テーブル | 4 列グループ（basic/amount/settlement/work）でヘッダー table とボディ table が分離しており横スクロールでズレていた → 単一テーブル + `<thead sticky top-0>` に統合 |
+| `.github/agents/sales-support.agent.md` | IDE エージェント定義ファイルを `.gitignore` に追加（個人設定はリポに含めない） |
+
+### 15.5 Issue #29 進捗まとめ
+
+- **完了**: Sidebar drawer / 配信履歴 / 請求書系一覧と詳細 / CRM (顧客/担当者/商談/活動/タスク) / メール 3 画面 / 名刺一覧 / ダッシュボード / 帳票詳細 / SES編集 / スマホ実機確認
+- **残**: 名刺 OCR プレビューモーダル / フォームタッチターゲット 44px / 公開ページ (案件マーケット — #26)
+- Issue #29 は **open のまま** だが、外出先で日常的に触れる主要画面はカバー完了
+
+### 15.6 本日(2026-05-16)時点の総括
+
+- **Claude モデル移行が本番完了**。6/15 retire の deadline 前に余裕を持って対応。今後同様の API モデル変更は config 経由なので 1 行差し替えで済む
+- **Issue #29 のロングテール残作業を一気に消化**。1 セッション内で 10 画面 + 細目修正 + 実機確認 + Issue コメント更新まで完了
+- 残るリリース律速は **βユーザー獲得 (#3)** のままで、技術側は十分に水準達成
+- 月別売上集計 / 案件マーケット公開 / フリーランスマッチング / 課金システムは依然 Phase 3 で控える
 
