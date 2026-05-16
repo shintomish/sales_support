@@ -21,9 +21,20 @@ class SupabaseAuth
         }
 
         try {
-            $jwks = Cache::remember("supabase_jwks", 3600, function () {
-                $response = Http::get(config('services.supabase.jwks_url'));
-                return $response->json();
+            $jwksUrl = config('services.supabase.jwks_url');
+            if (!$jwksUrl) {
+                // SUPABASE_JWKS_URL が .env / config:cache に無い場合は明示的に 500
+                // (Http::get(null) で TypeError を出すより診断しやすい)
+                return response()->json(['message' => 'Auth config missing: supabase.jwks_url'], 500);
+            }
+            $jwks = Cache::remember("supabase_jwks", 3600, function () use ($jwksUrl) {
+                $response = Http::get($jwksUrl);
+                $data = $response->successful() ? $response->json() : null;
+                // 異常応答時は null を返してキャッシュ汚染を防ぐ (Cache::remember は null も保存するため例外で抜ける)
+                if (!is_array($data) || empty($data['keys'])) {
+                    throw new \RuntimeException('Supabase JWKS fetch failed (status=' . $response->status() . ')');
+                }
+                return $data;
             });
 
             $keys = JWK::parseKeySet($jwks);
