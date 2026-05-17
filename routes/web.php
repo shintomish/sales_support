@@ -10,9 +10,13 @@ use App\Http\Controllers\TaskController;
 use App\Http\Controllers\BusinessCardController;
 
 // 配信停止（認証不要）GET=確認画面、POST=実行
+// token は UUID v4 形式に限定。route constraint で不正フォーマットはルーティング段階で 404
+// (PG 22P02 invalid UUID syntax を未然に防ぐ。controller 側にも Str::isUuid チェックあり)
 Route::get('/unsubscribe/{token}', [\App\Http\Controllers\UnsubscribeController::class, 'showConfirm'])
+    ->where('token', '[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}')
     ->name('unsubscribe');
 Route::post('/unsubscribe/{token}', [\App\Http\Controllers\UnsubscribeController::class, 'handle'])
+    ->where('token', '[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}')
     ->name('unsubscribe.confirm');
 
 Route::middleware(['auth'])->group(function () {
