@@ -104,43 +104,20 @@ class EmailClassificationService
         }
 
         $emails = $query->get();
-        if ($emails->isEmpty()) {
-            return 0;
-        }
 
-        // 個別 UPDATE のループだと Sentry の N+1 検出に引っかかるため
-        // 分類結果を配列化して 1 回の upsert にまとめる。
-        // Email モデルに observer / event は無いので Eloquent イベントを
-        // バイパスしても問題なし (2026-05-17 確認)。
-        $now  = Carbon::now();
-        $rows = [];
+        // 2026-05-17 注:
+        // 一時的に bulk upsert に置換したが、PostgreSQL の INSERT...ON CONFLICT は
+        // NOT NULL 制約を ON CONFLICT 前に検証するため tenant_id 等が null で失敗。
+        // 個別 UPDATE に戻し、N+1 検出は受容する。本格的な bulk 化は
+        // 「VALUES サブクエリ付き UPDATE ... FROM」での書き直しが必要 (別タスク)。
         $count = 0;
         foreach ($emails as $email) {
             try {
-                [$category, $reason, $urls] = $this->determineCategory($email);
-                $rows[] = [
-                    'id'             => $email->id,
-                    'category'       => $category,
-                    'classified_at'  => $now,
-                    'extracted_data' => json_encode([
-                        'classification_reason' => $reason,
-                        'urls'                  => $urls,
-                        'has_attachments'       => $email->attachments->isNotEmpty(),
-                    ], JSON_UNESCAPED_UNICODE),
-                    'updated_at'     => $now,
-                ];
+                $this->classify($email);
                 $count++;
             } catch (\Throwable $e) {
                 Log::error("[EmailClassification] email_id={$email->id} 失敗: " . $e->getMessage());
             }
-        }
-
-        if (!empty($rows)) {
-            \Illuminate\Support\Facades\DB::table('emails')->upsert(
-                $rows,
-                ['id'],
-                ['category', 'classified_at', 'extracted_data', 'updated_at']
-            );
         }
 
         return $count;
