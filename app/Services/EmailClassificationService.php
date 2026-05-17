@@ -104,20 +104,53 @@ class EmailClassificationService
         }
 
         $emails = $query->get();
+        if ($emails->isEmpty()) {
+            return 0;
+        }
 
-        // 2026-05-17 注:
-        // 一時的に bulk upsert に置換したが、PostgreSQL の INSERT...ON CONFLICT は
-        // NOT NULL 制約を ON CONFLICT 前に検証するため tenant_id 等が null で失敗。
-        // 個別 UPDATE に戻し、N+1 検出は受容する。本格的な bulk 化は
-        // 「VALUES サブクエリ付き UPDATE ... FROM」での書き直しが必要 (別タスク)。
+        // 個別 UPDATE のループは Sentry の N+1 検出に引っかかるため、
+        // PostgreSQL の `UPDATE ... FROM (VALUES ...)` で 1 文に集約する。
+        //
+        // - INSERT を使わないので NOT NULL 制約 (tenant_id 等) を踏まない
+        // - 各行の category / extracted_data が異なっても OK
+        // - Eloquent イベントはバイパスするが Email モデルに observer 無し
+        $now  = Carbon::now()->toDateTimeString();
+        $placeholders = [];
+        $bindings = [];
         $count = 0;
         foreach ($emails as $email) {
             try {
-                $this->classify($email);
+                [$category, $reason, $urls] = $this->determineCategory($email);
+                $extractedJson = json_encode([
+                    'classification_reason' => $reason,
+                    'urls'                  => $urls,
+                    'has_attachments'       => $email->attachments->isNotEmpty(),
+                ], JSON_UNESCAPED_UNICODE);
+                $placeholders[] = '(?, ?, ?, ?, ?)';
+                $bindings[]     = $email->id;
+                $bindings[]     = $category;
+                $bindings[]     = $now;
+                $bindings[]     = $extractedJson;
+                $bindings[]     = $now;
                 $count++;
             } catch (\Throwable $e) {
                 Log::error("[EmailClassification] email_id={$email->id} 失敗: " . $e->getMessage());
             }
+        }
+
+        if (!empty($placeholders)) {
+            $values = implode(',', $placeholders);
+            \Illuminate\Support\Facades\DB::update(
+                "UPDATE emails AS e SET
+                    category       = v.category::varchar,
+                    classified_at  = v.classified_at::timestamp,
+                    extracted_data = v.extracted_data::jsonb,
+                    updated_at     = v.updated_at::timestamp
+                 FROM (VALUES {$values})
+                 AS v(id, category, classified_at, extracted_data, updated_at)
+                 WHERE e.id = v.id::bigint",
+                $bindings
+            );
         }
 
         return $count;
