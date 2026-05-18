@@ -24,16 +24,18 @@ Artisan::command('inspire', function () {
 //     });
 
 // ── メール自動同期（15分毎）— KAGOYA POP3 直接受信
-// production 環境限定: ローカル/dev は KAGOYA_POP3_* env を持たないため
-// 起動するたびに DNS 失敗のエラーログが残るのを防ぐ。
+// KAGOYA_POP3_HOST 未設定の環境では silent skip。
+// EXAMINE INBOX (read-only) で本番に影響しないため、env がある環境は全て取込可能。
 Schedule::call(function () {
+    if (!config('services.kagoya_pop3.host')) {
+        return;
+    }
     $count = app(\App\Services\KagoyaMailService::class)->syncEmails();
     if ($count > 0) {
         Log::info("[Schedule] KagoyaPOP3 同期完了: {$count}件");
     }
 })
     ->everyFifteenMinutes()
-    ->environments(['production'])
     ->name('sync-kagoya-pop3')
     ->withoutOverlapping()
     ->onFailure(function () {
