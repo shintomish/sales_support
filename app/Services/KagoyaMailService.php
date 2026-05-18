@@ -72,8 +72,9 @@ class KagoyaMailService
                     $result = $this->fetchMessageByUid($uid);
                     if (empty($result['body'])) continue;
 
-                    $this->storeRawMessage($result['body'], $tenantId, "imap-{$uid}", $result['internaldate']);
-                    $stored++;
+                    if ($this->storeRawMessage($result['body'], $tenantId, "imap-{$uid}", $result['internaldate'])) {
+                        $stored++;
+                    }
                 } catch (\Throwable $e) {
                     Log::warning("[KagoyaIMAP] UID {$uid} 処理失敗: " . $e->getMessage());
                     continue;
@@ -87,7 +88,10 @@ class KagoyaMailService
         }
     }
 
-    private function storeRawMessage(string $raw, int $tenantId, string $uid, ?string $internalDate = null): void
+    /**
+     * @return bool true=正常取込／false=バウンスstub保存(再処理スキップ用)
+     */
+    private function storeRawMessage(string $raw, int $tenantId, string $uid, ?string $internalDate = null): bool
     {
         $parts = preg_split('/\r?\n\r?\n/', $raw, 2);
         $headerBlock = $parts[0] ?? '';
@@ -101,7 +105,17 @@ class KagoyaMailService
 
         [$fromName, $fromAddress] = $this->parseFrom($from);
 
-        // バウンスメール（不達通知）/ 上流スパム判定済みメールを除外
+        // INTERNALDATE（サーバー受信時刻）を優先、なければDateヘッダー
+        $receivedAt = $internalDate
+            ? Carbon::parse($internalDate)->utc()
+            : ($headers['date'] ?? null
+                ? Carbon::parse($headers['date'])->utc()
+                : Carbon::now()->utc());
+
+        // バウンスメール（不達通知）/ 上流スパム判定済みメールは category='bounce' の
+        // 最小 stub だけ保存し、本文/添付処理はスキップ。
+        // 旧実装は何も保存しなかったため、毎回 IMAP から同じ UID が「新着」として返り
+        // CPU と Kagoya API を浪費していた (dedup 用 anchor の役割を兼ねる)。
         $lcFrom = strtolower($fromAddress);
         $lcSubject = strtolower($subject);
         if (str_starts_with(trim($lcSubject), '[spam]') ||
@@ -113,15 +127,23 @@ class KagoyaMailService
             str_contains($lcSubject, 'undeliverable') ||
             str_contains($lcSubject, 'failure notice') ||
             str_contains($lcSubject, 'mail delivery failed')) {
-            return;
+            Email::create([
+                'tenant_id'        => $tenantId,
+                'gmail_message_id' => $uid,
+                'thread_id'        => null,
+                'subject'          => mb_substr($subject, 0, 255),
+                'from_address'     => $fromAddress,
+                'from_name'        => $fromName,
+                'to_address'       => mb_substr($to, 0, 500),
+                'body_text'        => null,
+                'body_html'        => null,
+                'received_at'      => $receivedAt,
+                'is_read'          => true,    // 未読カウントを汚さない
+                'category'         => 'bounce', // classifyPending(whereNull) に拾わせない
+                'classified_at'    => $receivedAt,
+            ]);
+            return false;
         }
-
-        // INTERNALDATE（サーバー受信時刻）を優先、なければDateヘッダー
-        $receivedAt = $internalDate
-            ? Carbon::parse($internalDate)->utc()
-            : ($headers['date'] ?? null
-                ? Carbon::parse($headers['date'])->utc()
-                : Carbon::now()->utc());
 
         $contentType = $headers['content-type'] ?? 'text/plain';
         $cte = strtolower($headers['content-transfer-encoding'] ?? '7bit');
@@ -212,6 +234,8 @@ class KagoyaMailService
             }
             Log::info("[KagoyaIMAP] 返信紐づけ完了 history_id={$history->id} email_id={$email->id}");
         }
+
+        return true;
     }
 
     // ── パース系 ────────────────────────────────────────
