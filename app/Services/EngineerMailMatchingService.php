@@ -68,16 +68,16 @@ class EngineerMailMatchingService
         ]);
         $virtualEngineer->setRelation('profile', $profile);
 
+        // スコアリングは Skill->name のみ参照するため、DB 保存せず unsaved instance を渡す。
+        // firstOrCreate は鮮度マッチで何百回も呼ばれて N+1 になるため避ける。
+        // 提案送信時 (createEngineerFromEms) は別途 firstOrCreate を行う。
         $engineerSkills = collect((array) ($ems->skills ?? []))
             ->map(fn($name) => trim((string) $name))
             ->filter()
             ->unique()
             ->map(function (string $name) use ($ems) {
-                $skill = Skill::firstOrCreate(['name' => $name], ['category' => 'other']);
-                $es = new EngineerSkill([
-                    'tenant_id' => $ems->tenant_id,
-                    'skill_id'  => $skill->id,
-                ]);
+                $skill = new Skill(['name' => $name, 'category' => 'other']);
+                $es = new EngineerSkill(['tenant_id' => $ems->tenant_id]);
                 $es->setRelation('skill', $skill);
                 return $es;
             })
