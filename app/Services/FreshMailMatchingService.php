@@ -50,10 +50,12 @@ class FreshMailMatchingService
         $this->applySkillOverlap($query, 'engineer_mail_sources.skills', $projectMail->required_skills ?? []);
 
         // 単価フィルタ: 案件 unit_price_max >= 技術者 unit_price_max (確定済設計判断)
+        // PMS.unit_price_max は decimal、EMS.unit_price_max は smallint なので int 化必須
         if ($projectMail->unit_price_max) {
-            $query->where(function ($q) use ($projectMail) {
+            $pmsMax = (int) $projectMail->unit_price_max;
+            $query->where(function ($q) use ($pmsMax) {
                 $q->whereNull('unit_price_max')
-                  ->orWhere('unit_price_max', '<=', $projectMail->unit_price_max);
+                  ->orWhere('unit_price_max', '<=', $pmsMax);
             });
         }
 
@@ -94,10 +96,12 @@ class FreshMailMatchingService
         $this->applySkillOverlap($query, 'project_mail_sources.required_skills', $engineerMail->skills ?? []);
 
         // 単価フィルタ: 技術者 unit_price_max <= 案件 unit_price_max
+        // EMS.unit_price_max は smallint、PMS.unit_price_max は decimal なので int 化必須
         if ($engineerMail->unit_price_max) {
-            $query->where(function ($q) use ($engineerMail) {
+            $emsMax = (int) $engineerMail->unit_price_max;
+            $query->where(function ($q) use ($emsMax) {
                 $q->whereNull('unit_price_max')
-                  ->orWhere('unit_price_max', '>=', $engineerMail->unit_price_max);
+                  ->orWhere('unit_price_max', '>=', $emsMax);
             });
         }
 
