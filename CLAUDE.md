@@ -121,6 +121,7 @@ docker compose up -d
     - `bulk` — 案件メールから「まとめて提案」(matching/[id]・1宛先で複数技術者を packing)
     - `engineer_proposal_bulk` — 技術者メールから「まとめて提案」(engineer-mails/[id]・1 BP に複数案件 packing)
   - 提案スレッド系の whereIn を増減する時は以下 4 箇所を必ず同期する: `DeliveryCampaignController::index`(exclude_proposals) / `DeliveryCampaignController::proposalThreads`(本体+campaignsByThread) / `ProjectMailController::thread` / `EngineerMailController::thread`
+  - `'delivery'` (一斉配信) は提案スレッド系の whereIn には **含めない** (1対多なのでスレッド概念に合わない・一斉配信履歴タブのみで表示)
 - メール送信: AWS SES（東京リージョン・本番承認済み）50,000件/日・14件/秒（2026-04-17承認）
 - 全件再スコア: 添付解析スキップ・上限なし・600秒タイムアウト
 - `storage/api-docs/` はgitignore済み（自動生成ファイル）
