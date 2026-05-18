@@ -153,6 +153,30 @@ class KagoyaMailService
             return false;
         }
 
+        // 自社ドメイン loop-back (自分が配信したメールが Kagoya に戻ってくる) を category='self' stub で除外。
+        // BP が CC/Bcc/転送等で outsource@ 宛に返してくるケースが該当。
+        // バウンスと同じ pattern (anchor 行を作って再処理ループを防ぐ + 案件/技術者リストに混在しない)。
+        $selfDomain = $this->extractDomainLower(config('mail.from.address'));
+        $fromDomain = $this->extractDomainLower($fromAddress);
+        if ($selfDomain && $fromDomain === $selfDomain) {
+            Email::create([
+                'tenant_id'        => $tenantId,
+                'gmail_message_id' => $uid,
+                'thread_id'        => null,
+                'subject'          => mb_substr($subject, 0, 255),
+                'from_address'     => $fromAddress,
+                'from_name'        => $fromName,
+                'to_address'       => mb_substr($to, 0, 500),
+                'body_text'        => null,
+                'body_html'        => null,
+                'received_at'      => $receivedAt,
+                'is_read'          => true,
+                'category'         => 'self',
+                'classified_at'    => $receivedAt,
+            ]);
+            return false;
+        }
+
         $contentType = $headers['content-type'] ?? 'text/plain';
         $cte = strtolower($headers['content-transfer-encoding'] ?? '7bit');
         [$bodyText, $bodyHtml, $attachments] = $this->parseBody($bodyRaw, $contentType, $cte);
@@ -247,6 +271,16 @@ class KagoyaMailService
     }
 
     // ── パース系 ────────────────────────────────────────
+
+    /** メールアドレスから @ 以降を小文字で取り出す。null/不正は null。 */
+    private function extractDomainLower(?string $email): ?string
+    {
+        if (!$email) return null;
+        $at = strrpos($email, '@');
+        if ($at === false) return null;
+        $d = strtolower(trim(substr($email, $at + 1)));
+        return $d !== '' ? $d : null;
+    }
 
     private function parseHeaders(string $headerBlock): array
     {
