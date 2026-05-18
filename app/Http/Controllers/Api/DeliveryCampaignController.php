@@ -41,7 +41,7 @@ class DeliveryCampaignController extends Controller
         }
 
         if ($request->boolean('exclude_proposals')) {
-            $query->whereNotIn('send_type', ['proposal', 'engineer_proposal', 'matching_proposal']);
+            $query->whereNotIn('send_type', ['proposal', 'matching_proposal', 'engineer_proposal', 'engineer_proposal_bulk', 'bulk']);
         }
 
         if ($userId) {
@@ -283,7 +283,7 @@ class DeliveryCampaignController extends Controller
         // project_mail_id / engineer_mail_source_id でグループ化し、
         // 各グループの最新 sent_at、合計件数、返信有無を取得
         $threadsQuery = DeliveryCampaign::query()
-            ->whereIn('send_type', ['proposal', 'engineer_proposal', 'delivery'])
+            ->whereIn('send_type', ['proposal', 'matching_proposal', 'engineer_proposal', 'engineer_proposal_bulk', 'bulk', 'delivery'])
             ->where(function ($q) {
                 $q->whereNotNull('project_mail_id')
                   ->orWhereNotNull('engineer_mail_source_id');
@@ -362,7 +362,7 @@ class DeliveryCampaignController extends Controller
 
         // 各スレッドに紐づくキャンペーンIDを一括取得
         $campaignsByThread = DeliveryCampaign::query()
-            ->whereIn('send_type', ['proposal', 'engineer_proposal', 'delivery'])
+            ->whereIn('send_type', ['proposal', 'matching_proposal', 'engineer_proposal', 'engineer_proposal_bulk', 'bulk', 'delivery'])
             ->where(function ($q) use ($projectMailIds, $engineerMailIds) {
                 if ($projectMailIds) {
                     $q->orWhereIn('project_mail_id', $projectMailIds);
