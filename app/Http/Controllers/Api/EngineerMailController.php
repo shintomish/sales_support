@@ -667,6 +667,7 @@ PROMPT;
                     'received_at'        => $pms->received_at?->toIso8601String(),
                     'email_from_address' => $pms->email?->from_address,
                     'email_subject'      => $pms->email?->subject,
+                    'email_body'         => $pms->email?->body_text,
                     'score'              => $r['score'],
                     'breakdown'          => $r['breakdown'],
                     'reasons'            => $r['reasons'],
