@@ -894,8 +894,10 @@ PROMPT;
         if (trim($html) === '') return null;
         $stripped = preg_replace('#<style[\s\S]*?</style>#i', '', $html);
         $stripped = preg_replace('#<script[\s\S]*?</script>#i', '', $stripped);
-        $stripped = preg_replace('#<br\s*/?>#i', "\n", $stripped);
-        $stripped = preg_replace('#</(p|div|tr|li|h[1-6])>#i', "\n", $stripped);
+        // <br>, <br/>, <br style="..."> など属性付きも改行に
+        $stripped = preg_replace('#<br\b[^>]*>#i', "\n", $stripped);
+        $stripped = preg_replace('#</(td|th)>#i', "\t", $stripped);
+        $stripped = preg_replace('#</(tr|thead|tbody|table|p|div|li|h[1-6])>#i', "\n", $stripped);
         $stripped = strip_tags($stripped);
         $stripped = html_entity_decode($stripped, ENT_QUOTES | ENT_HTML5, 'UTF-8');
         $stripped = preg_replace("/[ \t]+\n/", "\n", $stripped);
