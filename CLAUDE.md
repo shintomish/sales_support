@@ -113,7 +113,14 @@ docker compose up -d
 - 希望単価なし・35万/月未満の技術者 → 除外（`no_unit_price` / `unit_price_too_low`）
 - マッチ案件表示条件: `案件.unit_price_max >= 技術者.unit_price_max`
 - 送信履歴は `delivery_campaigns` + `delivery_send_histories` で一元管理
-  - send_type: `delivery` / `proposal` / `matching_proposal` / `engineer_proposal`
+  - send_type 一覧 (2026-05-18 時点):
+    - `delivery` — /deliveries 単発送信
+    - `proposal` — 案件メールから個別提案 (ProjectMailController::sendProposal)
+    - `matching_proposal` — engineer-mail 詳細から案件への提案 (sendProposalFromEms)
+    - `engineer_proposal` — 技術者メールから個別提案 (EngineerMailController::sendProposal / sendProposalFromPms)
+    - `bulk` — 案件メールから「まとめて提案」(matching/[id]・1宛先で複数技術者を packing)
+    - `engineer_proposal_bulk` — 技術者メールから「まとめて提案」(engineer-mails/[id]・1 BP に複数案件 packing)
+  - 提案スレッド系の whereIn を増減する時は以下 4 箇所を必ず同期する: `DeliveryCampaignController::index`(exclude_proposals) / `DeliveryCampaignController::proposalThreads`(本体+campaignsByThread) / `ProjectMailController::thread` / `EngineerMailController::thread`
 - メール送信: AWS SES（東京リージョン・本番承認済み）50,000件/日・14件/秒（2026-04-17承認）
 - 全件再スコア: 添付解析スキップ・上限なし・600秒タイムアウト
 - `storage/api-docs/` はgitignore済み（自動生成ファイル）
