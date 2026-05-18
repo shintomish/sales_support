@@ -204,6 +204,9 @@ class DeliveryCampaignController extends Controller
             'body'                    => 'required|string',
             'attachments'             => 'nullable|array',
             'attachments.*'           => 'file|max:10240',
+            // 元請けドメイン警告モーダルで「今回除外する」と選択された delivery_address_id 一覧
+            'exclude_address_ids'     => 'nullable|array',
+            'exclude_address_ids.*'   => 'integer|exists:delivery_addresses,id',
         ]);
 
         // 紐づき案件/技術者を選んでいる場合は source_email を無視（フロント側でも非表示）
@@ -242,14 +245,16 @@ class DeliveryCampaignController extends Controller
         // キャンペーン作成（即座に返す）
         $campaign = $service->createCampaign($validated);
 
+        $excludeIds = $validated['exclude_address_ids'] ?? [];
+
         // レスポンス返却後にバックグラウンドで送信
-        register_shutdown_function(function () use ($service, $campaign, $attachmentPaths) {
+        register_shutdown_function(function () use ($service, $campaign, $attachmentPaths, $excludeIds) {
             if (function_exists('fastcgi_finish_request')) {
                 fastcgi_finish_request();
             }
             set_time_limit(0);
             ignore_user_abort(true);
-            $service->sendCampaign($campaign, $attachmentPaths);
+            $service->sendCampaign($campaign, $attachmentPaths, $excludeIds);
         });
 
         return response()->json([

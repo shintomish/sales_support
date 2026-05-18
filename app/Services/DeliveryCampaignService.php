@@ -22,12 +22,14 @@ class DeliveryCampaignService
     /**
      * キャンペーンレコードを作成して返す（送信はしない）
      *
-     * @param array{project_mail_id: ?int, subject: string, body: string} $data
+     * @param array{project_mail_id: ?int, subject: string, body: string, exclude_address_ids?: array<int>} $data
      */
     public function createCampaign(array $data): DeliveryCampaign
     {
+        $excludeIds = $data['exclude_address_ids'] ?? [];
         $totalCount = DeliveryAddress::where('tenant_id', $this->tenantId)
             ->where('is_active', true)
+            ->when(!empty($excludeIds), fn($q) => $q->whereNotIn('id', $excludeIds))
             ->count();
 
         $hasEngineer = !empty($data['engineer_mail_source_id']);
@@ -56,15 +58,17 @@ class DeliveryCampaignService
      *
      * MAIL_DELIVERY_TEST_TO が設定されている場合は全件そのアドレスへリダイレクト。
      *
-     * @param string[] $attachmentPaths 一時保存済みファイルの絶対パス一覧
+     * @param string[]    $attachmentPaths 一時保存済みファイルの絶対パス一覧
+     * @param array<int>  $excludeIds      今回送信から除外する delivery_address_id (元請けドメイン警告での選択除外用)
      */
-    public function sendCampaign(DeliveryCampaign $campaign, array $attachmentPaths = []): void
+    public function sendCampaign(DeliveryCampaign $campaign, array $attachmentPaths = [], array $excludeIds = []): void
     {
         $testTo      = config('mail.delivery_test_to');
         $senderEmail = config('mail.from.address') ?? '';
 
         $addresses = DeliveryAddress::where('tenant_id', $this->tenantId)
             ->where('is_active', true)
+            ->when(!empty($excludeIds), fn($q) => $q->whereNotIn('id', $excludeIds))
             ->orderBy('id')
             ->get();
 
