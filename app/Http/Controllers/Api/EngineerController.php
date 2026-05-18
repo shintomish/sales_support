@@ -110,7 +110,6 @@ class EngineerController extends Controller
             match ($source) {
                 'self' => $query->where('affiliation_type', 'self'),
                 'bp'   => $query->where('affiliation_type', '!=', 'self')->whereNull('engineer_mail_source_id'),
-                'mail' => $query->whereNotNull('engineer_mail_source_id'),
                 default => null,
             };
         }

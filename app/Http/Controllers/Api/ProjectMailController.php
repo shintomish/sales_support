@@ -6,12 +6,20 @@ use App\Http\Controllers\Controller;
 use App\Mail\ProposalMail;
 use App\Models\DeliveryCampaign;
 use App\Models\DeliverySendHistory;
+use App\Models\Engineer;
+use App\Models\EngineerMailSource;
+use App\Models\EngineerProfile;
+use App\Models\EngineerSkill;
 use App\Models\ProjectMailSource;
+use App\Models\Skill;
 use App\Services\ClaudeService;
+use App\Services\FreshMailMatchingService;
 use App\Services\ProjectMailMatchingService;
 use App\Services\ProjectMailScoringService;
+use App\Services\ProposalStatusService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
@@ -22,6 +30,8 @@ class ProjectMailController extends Controller
         private ProjectMailScoringService  $scoringService,
         private ProjectMailMatchingService $matchingService,
         private ClaudeService              $claudeService,
+        private FreshMailMatchingService   $freshMatching,
+        private ProposalStatusService      $proposalStatus,
     ) {}
 
     // 一覧
@@ -519,6 +529,209 @@ class ProjectMailController extends Controller
                 ])->values(),
             ]),
         ]);
+    }
+
+    /**
+     * 鮮度マッチング: 過去N日の EngineerMailSource を案件メールに対してスコアリング
+     * GET /v1/project-mails/{id}/fresh-engineer-mails?days=7
+     * docs/470_fresh_mail_matching.md §8.4
+     */
+    public function freshEngineerMails(Request $request, int $id): JsonResponse
+    {
+        $tenantId = auth()->user()->tenant_id;
+        $mail = ProjectMailSource::where('tenant_id', $tenantId)->findOrFail($id);
+
+        $v = $request->validate([
+            'days'  => 'nullable|integer|min:1|max:30',
+            'limit' => 'nullable|integer|min:1|max:200',
+        ]);
+        $days  = $v['days']  ?? 7;
+        $limit = $v['limit'] ?? 50;
+
+        $results = $this->freshMatching->freshEngineerMails($mail, $days, $limit);
+        $statusMap = $this->proposalStatus->buildEmsStatusMap(
+            $results->pluck('ems'),
+            $mail,
+        );
+
+        return response()->json([
+            'days'  => $days,
+            'count' => $results->count(),
+            'data'  => $results->map(function ($r) use ($statusMap) {
+                $ems    = $r['ems'];
+                $status = $statusMap[$ems->id] ?? ['badge' => 'new', 'engineer_id' => null];
+                return [
+                    'engineer_mail_source_id' => $ems->id,
+                    'name'                    => $ems->name,
+                    'age'                     => $ems->age,
+                    'affiliation'             => $ems->affiliation,
+                    'affiliation_type'        => $ems->affiliation_type,
+                    'nearest_station'         => $ems->nearest_station,
+                    'skills'                  => $ems->skills,
+                    'unit_price_min'          => $ems->unit_price_min,
+                    'unit_price_max'          => $ems->unit_price_max,
+                    'available_from'          => $ems->available_from,
+                    'received_at'             => $ems->received_at?->toIso8601String(),
+                    'email_from_address'      => $ems->email?->from_address,
+                    'email_subject'           => $ems->email?->subject,
+                    'score'                   => $r['score'],
+                    'breakdown'               => $r['breakdown'],
+                    'reasons'                 => $r['reasons'],
+                    'badge'                   => $status['badge'],
+                    'registered_engineer_id'  => $status['engineer_id'],
+                ];
+            }),
+        ]);
+    }
+
+    /**
+     * 鮮度マッチング: EMS を起点に Engineer 化（重複検出）→ 提案メール送信
+     * POST /v1/project-mails/{id}/send-proposal-from-ems
+     * docs/470_fresh_mail_matching.md §8.5
+     */
+    public function sendProposalFromEms(Request $request, int $id): JsonResponse
+    {
+        $tenantId = auth()->user()->tenant_id;
+        $mail = ProjectMailSource::where('tenant_id', $tenantId)->findOrFail($id);
+
+        $v = $request->validate([
+            'engineer_mail_source_id' => 'required|integer',
+            'to'      => 'required|email',
+            'to_name' => 'nullable|string|max:255',
+            'subject' => 'required|string|max:500',
+            'body'    => 'required|string',
+        ]);
+
+        $ems = EngineerMailSource::with('email')
+            ->where('tenant_id', $tenantId)
+            ->findOrFail($v['engineer_mail_source_id']);
+
+        // ── 1. Engineer 化（重複検出 → 既存再利用 or 新規作成）────
+        $engineer = DB::transaction(function () use ($ems, $tenantId) {
+            $existing = $this->findExistingEngineer($ems, $tenantId);
+            if ($existing) return $existing;
+            return $this->createEngineerFromEms($ems);
+        });
+
+        // ── 2. 提案メール送信（トランザクション外）────
+        $userId      = auth()->id();
+        $senderName  = auth()->user()->name  ?? '';
+        $senderEmail = $this->replyToAddress();
+
+        $campaign = DeliveryCampaign::create([
+            'tenant_id'               => $tenantId,
+            'send_type'               => 'matching_proposal',
+            'project_mail_id'         => $id,
+            'engineer_mail_source_id' => $ems->id,
+            'user_id'                 => $userId,
+            'subject'                 => $v['subject'],
+            'body'                    => $v['body'],
+            'total_count'             => 1,
+            'success_count'           => 0,
+            'failed_count'            => 0,
+            'sent_at'                 => now(),
+        ]);
+
+        $messageId = '<' . Str::uuid() . '@aizen-sol.co.jp>';
+        try {
+            Mail::to($v['to'])->send(new ProposalMail($v['subject'], $v['body'], $senderName, $senderEmail, [], $messageId));
+            DeliverySendHistory::create([
+                'tenant_id'      => $tenantId,
+                'campaign_id'    => $campaign->id,
+                'engineer_id'    => $engineer->id,
+                'email'          => $v['to'],
+                'name'           => $v['to_name'] ?? null,
+                'status'         => 'sent',
+                'ses_message_id' => $messageId,
+            ]);
+            $campaign->update(['success_count' => 1]);
+            Log::info("鮮度マッチング提案送信 project_mail_id={$id} ems_id={$ems->id} engineer_id={$engineer->id} to={$v['to']}");
+            return response()->json([
+                'message'     => '送信しました',
+                'engineer_id' => $engineer->id,
+                'created_new' => $engineer->wasRecentlyCreated,
+            ]);
+        } catch (\Exception $e) {
+            DeliverySendHistory::create([
+                'tenant_id'      => $tenantId,
+                'campaign_id'    => $campaign->id,
+                'engineer_id'    => $engineer->id,
+                'email'          => $v['to'],
+                'name'           => $v['to_name'] ?? null,
+                'status'         => 'failed',
+                'ses_message_id' => $messageId,
+                'error_message'  => $e->getMessage(),
+            ]);
+            $campaign->update(['failed_count' => 1]);
+            Log::error("鮮度マッチング提案失敗 project_mail_id={$id} ems_id={$ems->id}: " . $e->getMessage());
+            return response()->json(['message' => 'メール送信に失敗しました'], 500);
+        }
+    }
+
+    /**
+     * EMS と既存 Engineer の照合（dedup キー: email + name + affiliation）
+     */
+    private function findExistingEngineer(EngineerMailSource $ems, int $tenantId): ?Engineer
+    {
+        // (1) engineer_mail_source_id でリンク済を優先
+        $linked = Engineer::where('tenant_id', $tenantId)
+            ->where('engineer_mail_source_id', $ems->id)
+            ->first();
+        if ($linked) return $linked;
+
+        // (2) email + name + affiliation の3項目完全一致
+        $email = $ems->email?->from_address;
+        $name  = $ems->name;
+        if (!$email || !$name) return null;
+
+        $key = $this->proposalStatus->dedupKey($email, $name, $ems->affiliation);
+        $candidates = Engineer::where('tenant_id', $tenantId)
+            ->where('email', $email)
+            ->get();
+        foreach ($candidates as $eng) {
+            if ($this->proposalStatus->dedupKey($eng->email, $eng->name, $eng->affiliation) === $key) {
+                return $eng;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * EMS から Engineer マスタへ転記（既存 EngineerMailController::registerEngineer 相当）
+     */
+    private function createEngineerFromEms(EngineerMailSource $ems): Engineer
+    {
+        $engineer = Engineer::create([
+            'name'                    => $ems->name ?? '（名前未取得）',
+            'email'                   => $ems->email?->from_address,
+            'affiliation'             => $ems->affiliation,
+            'affiliation_type'        => $ems->affiliation_type,
+            'affiliation_email'       => $ems->email?->from_address,
+            'nearest_station'         => $ems->nearest_station,
+            'age'                     => $ems->age,
+            'engineer_mail_source_id' => $ems->id,
+        ]);
+
+        EngineerProfile::create([
+            'tenant_id'              => $engineer->tenant_id,
+            'engineer_id'            => $engineer->id,
+            'desired_unit_price_min' => $ems->unit_price_min,
+            'desired_unit_price_max' => $ems->unit_price_max,
+        ]);
+
+        foreach ((array) ($ems->skills ?? []) as $skillName) {
+            $skillName = trim((string) $skillName);
+            if ($skillName === '') continue;
+            $skill = Skill::firstOrCreate(['name' => $skillName], ['category' => 'other']);
+            EngineerSkill::firstOrCreate([
+                'tenant_id'   => $engineer->tenant_id,
+                'engineer_id' => $engineer->id,
+                'skill_id'    => $skill->id,
+            ]);
+        }
+
+        $ems->update(['status' => 'registered']);
+        return $engineer;
     }
 
     private function replyToAddress(): string

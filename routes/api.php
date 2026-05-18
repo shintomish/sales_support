@@ -219,6 +219,9 @@ Route::prefix('v1')->middleware(['supabase.auth'])->group(function () {
         Route::post('/{id}/generate-proposal',    [ProjectMailController::class, 'generateProposal']);
         Route::post('/{id}/send-proposal',        [ProjectMailController::class, 'sendProposal']);
         Route::post('/{id}/send-bulk',            [ProjectMailController::class, 'sendBulk']);
+        // 鮮度マッチング（過去N日メール候補）
+        Route::get('/{id}/fresh-engineer-mails',  [ProjectMailController::class, 'freshEngineerMails']);
+        Route::post('/{id}/send-proposal-from-ems', [ProjectMailController::class, 'sendProposalFromEms']);
     });
 
     // ── 技術者メール（スコアリング済み）──────────────────
@@ -235,6 +238,9 @@ Route::prefix('v1')->middleware(['supabase.auth'])->group(function () {
         Route::post('/{id}/generate-proposal',        [EngineerMailController::class, 'generateProposal']);
         Route::post('/{id}/send-proposal',            [EngineerMailController::class, 'sendProposal']);
         Route::post('/{id}/generate-comment',         [EngineerMailController::class, 'generateComment']);
+        // 鮮度マッチング（過去N日メール候補）
+        Route::get('/{id}/fresh-project-mails',   [EngineerMailController::class, 'freshProjectMails']);
+        Route::post('/{id}/send-proposal-from-pms', [EngineerMailController::class, 'sendProposalFromPms']);
     });
 
     // ── マッチング機能 ───────────────────────────────────

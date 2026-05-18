@@ -351,6 +351,7 @@ class EngineerMailScoringService
             'unit_price_min'   => $priceMin,
             'unit_price_max'   => $priceMax,
             'affiliation_type' => $this->extractAffiliationType($text),
+            'affiliation'      => $this->extractAffiliation($text),
             'available_from'   => $this->extractAvailableFrom($text),
             'nearest_station'  => $this->extractNearestStation($text),
             'skills'           => $this->extractSkills($text),
@@ -578,6 +579,7 @@ class EngineerMailScoringService
             'unit_price_min'   => $priceMin,
             'unit_price_max'   => $priceMax,
             'affiliation_type' => $affiliationType,
+            'affiliation'      => $data['affiliation']      ?? null,
             'available_from'   => $data['available_from']   ?? null,
             'nearest_station'  => $data['nearest_station']  ?? null,
             'skills'           => $skills ?: null,
@@ -757,6 +759,41 @@ class EngineerMailScoringService
             }
         }
         return null;
+    }
+
+    /**
+     * 所属会社名（テキスト）を抽出する
+     * 重複検出キー (email + name + affiliation) の affiliation 用。
+     * affiliation_type が enum なのに対し、こちらは「株式会社XYZ」のような社名テキスト。
+     */
+    private function extractAffiliation(string $text): ?string
+    {
+        // 優先1: ■所属■ 形式（次行に値）
+        if (preg_match('/■所属■\s*\n\s*([^\n]{1,60})/u', $text, $m)) {
+            $val = $this->cleanAffiliation($m[1]);
+            if ($val !== '') return $val;
+        }
+
+        // 優先2: 「所属：株式会社XX」 形式（同行）
+        if (preg_match('/(?:所属|会社名|社名)[：:　\s]*([^■\n]{1,60})/u', $text, $m)) {
+            $val = $this->cleanAffiliation($m[1]);
+            if ($val !== '') return $val;
+        }
+
+        return null;
+    }
+
+    private function cleanAffiliation(string $raw): string
+    {
+        $val = trim($raw);
+        // 末尾の説明文・括弧書きを切り捨て（「株式会社XX (BP)」→「株式会社XX」）
+        $val = preg_replace('/[（(\[【].*$/u', '', $val) ?? $val;
+        $val = trim($val);
+        // フリーランス / 個人事業主 等は所属無しとして null 扱い
+        if (preg_match('/^(フリーランス|個人事業主|個人|なし|無し|不明|―|-|−)$/u', $val)) {
+            return '';
+        }
+        return $val;
     }
 
     private function extractAvailableFrom(string $text): ?string

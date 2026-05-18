@@ -23,6 +23,7 @@ class EngineerMailSource extends Model
         'unit_price_min',
         'unit_price_max',
         'affiliation_type',
+        'affiliation',
         'available_from',
         'nearest_station',
         'skills',

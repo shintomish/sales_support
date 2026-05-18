@@ -15,8 +15,11 @@ use App\Models\PublicProject;
 use App\Models\Skill;
 use App\Services\ClaudeService;
 use App\Services\EngineerMailScoringService;
+use App\Services\FreshMailMatchingService;
 use App\Services\GmailService;
+use App\Services\ProposalStatusService;
 use App\Services\SupabaseStorageService;
+use App\Models\ProjectMailSource;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
@@ -30,6 +33,8 @@ class EngineerMailController extends Controller
 {
     public function __construct(
         private EngineerMailScoringService $scoringService,
+        private FreshMailMatchingService   $freshMatching,
+        private ProposalStatusService      $proposalStatus,
     ) {}
 
     // 一覧
@@ -604,6 +609,127 @@ PROMPT;
         } catch (\Exception $e) {
             Log::error("generateComment failed engineer_mail_id={$id}: " . $e->getMessage());
             return response()->json(['comment' => ''], 500);
+        }
+    }
+
+    /**
+     * 鮮度マッチング: 過去N日の ProjectMailSource を技術者メールに対してスコアリング
+     * GET /v1/engineer-mails/{id}/fresh-project-mails?days=7
+     * docs/470_fresh_mail_matching.md §8.4
+     */
+    public function freshProjectMails(Request $request, int $id): JsonResponse
+    {
+        $tenantId = auth()->user()->tenant_id;
+        $ems = EngineerMailSource::with('email')->where('tenant_id', $tenantId)->findOrFail($id);
+
+        $v = $request->validate([
+            'days'  => 'nullable|integer|min:1|max:30',
+            'limit' => 'nullable|integer|min:1|max:200',
+        ]);
+        $days  = $v['days']  ?? 7;
+        $limit = $v['limit'] ?? 50;
+
+        $results = $this->freshMatching->freshProjectMails($ems, $days, $limit);
+        $statusMap = $this->proposalStatus->buildPmsStatusMap(
+            $results->pluck('pms'),
+            $ems,
+        );
+
+        return response()->json([
+            'days'  => $days,
+            'count' => $results->count(),
+            'data'  => $results->map(function ($r) use ($statusMap) {
+                $pms    = $r['pms'];
+                $status = $statusMap[$pms->id] ?? ['badge' => 'new'];
+                return [
+                    'project_mail_id'    => $pms->id,
+                    'customer_name'      => $pms->customer_name,
+                    'sales_contact'      => $pms->sales_contact,
+                    'title'              => $pms->title,
+                    'required_skills'    => $pms->required_skills,
+                    'work_location'      => $pms->work_location,
+                    'remote_ok'          => $pms->remote_ok,
+                    'unit_price_min'     => $pms->unit_price_min,
+                    'unit_price_max'     => $pms->unit_price_max,
+                    'start_date'         => $pms->start_date,
+                    'contract_type'      => $pms->contract_type,
+                    'received_at'        => $pms->received_at?->toIso8601String(),
+                    'email_from_address' => $pms->email?->from_address,
+                    'email_subject'      => $pms->email?->subject,
+                    'score'              => $r['score'],
+                    'breakdown'          => $r['breakdown'],
+                    'reasons'            => $r['reasons'],
+                    'badge'              => $status['badge'],
+                ];
+            }),
+        ]);
+    }
+
+    /**
+     * 鮮度マッチング: PMS を起点に提案メール送信
+     * POST /v1/engineer-mails/{id}/send-proposal-from-pms
+     * docs/470_fresh_mail_matching.md §8.5
+     */
+    public function sendProposalFromPms(Request $request, int $id): JsonResponse
+    {
+        $tenantId = auth()->user()->tenant_id;
+        $ems = EngineerMailSource::where('tenant_id', $tenantId)->findOrFail($id);
+
+        $v = $request->validate([
+            'project_mail_id' => 'required|integer',
+            'to'      => 'required|email',
+            'to_name' => 'nullable|string|max:255',
+            'subject' => 'required|string|max:500',
+            'body'    => 'required|string',
+        ]);
+
+        $pms = ProjectMailSource::where('tenant_id', $tenantId)->findOrFail($v['project_mail_id']);
+
+        $userId      = auth()->id();
+        $senderName  = auth()->user()->name  ?? '';
+        $senderEmail = $this->replyToAddress();
+
+        $campaign = DeliveryCampaign::create([
+            'tenant_id'               => $tenantId,
+            'send_type'               => 'engineer_proposal',
+            'project_mail_id'         => $pms->id,
+            'engineer_mail_source_id' => $ems->id,
+            'user_id'                 => $userId,
+            'subject'                 => $v['subject'],
+            'body'                    => $v['body'],
+            'total_count'             => 1,
+            'success_count'           => 0,
+            'failed_count'            => 0,
+            'sent_at'                 => now(),
+        ]);
+
+        $messageId = '<' . Str::uuid() . '@aizen-sol.co.jp>';
+        try {
+            Mail::to($v['to'])->send(new ProposalMail($v['subject'], $v['body'], $senderName, $senderEmail, [], $messageId));
+            DeliverySendHistory::create([
+                'tenant_id'      => $tenantId,
+                'campaign_id'    => $campaign->id,
+                'email'          => $v['to'],
+                'name'           => $v['to_name'] ?? null,
+                'status'         => 'sent',
+                'ses_message_id' => $messageId,
+            ]);
+            $campaign->update(['success_count' => 1]);
+            Log::info("鮮度マッチング(EM側) 提案送信 ems_id={$id} project_mail_id={$pms->id} to={$v['to']}");
+            return response()->json(['message' => '送信しました']);
+        } catch (\Exception $e) {
+            DeliverySendHistory::create([
+                'tenant_id'      => $tenantId,
+                'campaign_id'    => $campaign->id,
+                'email'          => $v['to'],
+                'name'           => $v['to_name'] ?? null,
+                'status'         => 'failed',
+                'ses_message_id' => $messageId,
+                'error_message'  => $e->getMessage(),
+            ]);
+            $campaign->update(['failed_count' => 1]);
+            Log::error("鮮度マッチング(EM側) 提案失敗 ems_id={$id} project_mail_id={$pms->id}: " . $e->getMessage());
+            return response()->json(['message' => 'メール送信に失敗しました'], 500);
         }
     }
 
