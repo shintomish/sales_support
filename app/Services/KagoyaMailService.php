@@ -153,29 +153,22 @@ class KagoyaMailService
             return false;
         }
 
-        // 自社ドメイン loop-back (自分が配信したメールが Kagoya に戻ってくる) を category='self' stub で除外。
-        // BP が CC/Bcc/転送等で outsource@ 宛に返してくるケースが該当。
-        // バウンスと同じ pattern (anchor 行を作って再処理ループを防ぐ + 案件/技術者リストに混在しない)。
-        $selfDomain = $this->extractDomainLower(config('mail.from.address'));
-        $fromDomain = $this->extractDomainLower($fromAddress);
-        if ($selfDomain && $fromDomain === $selfDomain) {
-            Email::create([
-                'tenant_id'        => $tenantId,
-                'gmail_message_id' => $uid,
-                'thread_id'        => null,
-                'subject'          => mb_substr($subject, 0, 255),
-                'from_address'     => $fromAddress,
-                'from_name'        => $fromName,
-                'to_address'       => mb_substr($to, 0, 500),
-                'body_text'        => null,
-                'body_html'        => null,
-                'received_at'      => $receivedAt,
-                'is_read'          => true,
-                'category'         => 'self',
-                'classified_at'    => $receivedAt,
-            ]);
-            return false;
-        }
+        // 自社ドメイン loop-back / 社員宛て返信は category='self' で保存して案件/技術者リストから除外する。
+        //  - from が自社ドメイン (= 自分が配信したメールが Kagoya に戻ってくる)
+        //  - to が 自社社員 (outsource@ 以外の @aizen-sol.co.jp 宛て・BP からの返信)
+        // バウンスと違って本文/添付には価値がある (proposal thread の reply 紐づけや
+        // BP からの追加情報) ので、stub ではなく通常処理を続行し、Email::create 時点で
+        // category='self', is_read=true を強制適用する。
+        $selfDomain      = $this->extractDomainLower(config('mail.from.address'));
+        $selfFromAddress = strtolower(trim((string) config('mail.from.address')));
+        $fromDomain      = $this->extractDomainLower($fromAddress);
+        $lcTo            = strtolower($to);
+
+        $isSelfFrom = $selfDomain && $fromDomain === $selfDomain;
+        $isInternalTo = $selfDomain
+            && str_contains($lcTo, '@' . $selfDomain)
+            && ($selfFromAddress === '' || !str_contains($lcTo, $selfFromAddress));
+        $forceSelf = $isSelfFrom || $isInternalTo;
 
         $contentType = $headers['content-type'] ?? 'text/plain';
         $cte = strtolower($headers['content-transfer-encoding'] ?? '7bit');
@@ -192,7 +185,10 @@ class KagoyaMailService
             'body_text'        => $bodyText,
             'body_html'        => $bodyHtml,
             'received_at'      => $receivedAt,
-            'is_read'          => false,
+            // self の場合は未読カウントを汚さず classifyPending(whereNull) にも拾わせない
+            'is_read'          => $forceSelf,
+            'category'         => $forceSelf ? 'self' : null,
+            'classified_at'    => $forceSelf ? $receivedAt : null,
         ]);
 
         foreach ($attachments as $att) {
