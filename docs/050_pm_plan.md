@@ -582,3 +582,62 @@ Anthropic 公式で 2026-06-15 9AM PT に `claude-sonnet-4-20250514` 系が reti
 - 残るリリース律速は **βユーザー獲得 (#3)** のままで、技術側は十分に水準達成
 - 月別売上集計 / 案件マーケット公開 / フリーランスマッチング / 課金システムは依然 Phase 3 で控える
 
+---
+
+## 16. 2026-05-18 セッション (Sentry 残課題 + 配信管理 UX 強化 + 取込安定化)
+
+朝に Sentry 週次レポートを基点に DB パフォーマンス改善を実施し、夕方〜深夜に matching/engineer-mails の提案フロー残課題と配信管理の重複警告を仕上げた。
+
+### 16.1 DB パフォーマンス改善 (Sentry 残課題)
+
+| 項目 | 結果 | commit |
+|---|---|---|
+| `/api/v1/emails/unread-count` partial index | 149ms → 6ms (約25倍) | `bf9dfbd` |
+| `score-engineer-mails` slow query (1日窓 + VACUUM) | 4441ms → 67ms (約66倍) | (5/12 既存 + 本日 VACUUM ANALYZE) |
+| autovacuum 閾値引下げ (emails / engineer_mail_sources / project_mail_sources) | 0.2/0.1 → 0.05 で発火頻度4倍 | `5819c65` |
+
+### 16.2 配信管理 UX 強化 (元請けドメイン重複警告)
+
+**目的**: SES 案件メールを 元請け企業に送り返すと「抜き額（マージン）」が露呈する事故を防ぐ。`/deliveries/campaigns/[id]/page.tsx` の再送信フローには 5/12 時点で実装済だったが、新規配信・matching/engineer-mails のまとめて提案では未実装だった。
+
+| 範囲 | 内容 | commit |
+|---|---|---|
+| matching/[id] / engineer-mails/[id] まとめて提案 | 「to を編集 && 元メールと同一ドメイン残存」で赤警告モーダル | `736c2b2` |
+| /deliveries 新規配信 | source ドメインが active な配信先と一致したら警告 | backend `89b47b2` / frontend `d8c21a8` |
+| 重複警告から除外送信 (exclude_address_ids) | チェックボックス「今回これら N 件を除外して配信」既定 ON。is_active を**変更せず** WHERE 句で除外 | backend `82ad98d` / frontend `716c4a1` |
+| 配信先編集の反映遅延修正 | `fetchAddresses()` を await | `c408ddd` |
+
+`src/lib/mailDomain.ts` を新設し `extractDomain` / `isSameDomain` を 3 画面で共通化。
+
+### 16.3 提案フロー 連携バグ修正 (送信系 4 メソッド ↔ 提案スレッド)
+
+`DeliveryCampaignController::proposalThreads` / `ProjectMailController::thread` / `EngineerMailController::thread` の `whereIn('send_type', [...])` から **3 種が抜けていた**:
+- `matching_proposal` (sendProposalFromEms)
+- `engineer_proposal_bulk` (sendBulkToBp 新規)
+- `bulk` (sendBulk 既存)
+
+→ `7b48634` で 4 箇所同期。さらに 5/18 夜のテストで「一斉配信 (`'delivery'`) が提案スレッドに混在する」既存挙動を発見、`a9fbb06` で `'delivery'` も同 4 箇所から除外し「1対多 配信は一斉配信履歴のみ」に整理。`CLAUDE.md` の送信タイプ一覧と同期 4 箇所のメモも更新。
+
+### 16.4 Kagoya 取込 安定化 + ローカル復活
+
+| 課題 | 内容 | commit |
+|---|---|---|
+| バウンス UID の無限再処理ループ | `storeRawMessage` がバウンス判定で何も保存せず return しており、毎回 IMAP から同じ約 303 件が新着扱いで返り CPU と Kagoya API を浪費。stub Email 行 (`category='bounce'`, `is_read=true`, 本文/添付スキップ) を保存して dedup 用 anchor とする設計に修正 | `b938915` |
+| Kagoya POP3 同期の本番限定撤去 | `environments(['production'])` を撤去し `config('services.kagoya_pop3.host')` が null の環境で silent skip するガードに置換。.env を持つ環境 (本番・職場・自宅) で並列取込が可能になる (IMAP EXAMINE が read-only なため衝突なし) | `20d3d90` |
+| 配信先メール検索の拡張 | `/project-mails`・`/engineer-mails` 検索ボックスに email (例: sales@tektek.co.jp) や差出人名を入れてもヒットしなかったのを修正。`email.from_address` / `from_name` / `subject` を OR 条件に追加 | `f277309` |
+
+### 16.5 メモリ・ドキュメント整備
+
+- `feedback_bounce_stub_dedup_anchor.md` (新規) — silent-drop でも dedup anchor 行は必ず insert する設計指針
+- `reference_kagoya_imap_local_parallel.md` (新規) — 本番並列取込の安全性と復活手順
+- `project_sentry_followup.md` — 対応済の整理 + 観察待ち項目
+- `project_handoff_2026_05_18_evening.md` — ① ② 完了状態に書き換え
+- `CLAUDE.md` — send_type 4種→6種、whereIn 同期 4 箇所、'delivery' を提案スレッドに含めない方針を追記 (`704905d` + `a9fbb06`)
+
+### 16.6 本日(2026-05-18)時点の総括
+
+- **Sentry の Perf 残課題は 1 セッションで全消化**。score-engineer-mails / unread-count が既存 index でも Heap Fetches 蓄積で遅くなる事象を理解し、partial index + autovacuum 閾値で恒常的に低位維持できる構成にした
+- **配信管理の事故防止 UX を 3 画面で揃えた**。再送信のみだったドメイン警告を、まとめて提案 (案件側・技術者側) と新規一斉配信にも展開。除外送信は `is_active` を触らない設計で「送信失敗→復元漏れ」リスクを排除
+- **Kagoya 取込の長年の無駄処理を解消**。POP3 経由 303 件/15分の再処理ループが消え、ローカル取込も復活して開発時の動作確認が容易に
+- 残るリリース律速は依然 **βユーザー獲得 (#3)**。技術面で目立つ残課題は無し
+

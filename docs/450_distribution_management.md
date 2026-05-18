@@ -274,3 +274,82 @@ postmaster(`mailer-daemon`)等からのバウンスメールをGmail側で受信
 | 記録内容 | ユーザー ID・テナント ID・HTTP メソッド・パス・IP・User-Agent・タイムスタンプ |
 
 詳細は `config/logging.php` の `audit` チャネル定義および `app/Http/Middleware/LogUserActivity.php` を参照。
+
+---
+
+## 8. 元請けドメイン重複警告 + 除外送信（2026-05-18 追加）
+
+### 概要
+
+案件メールを **元請け企業 (案件発信元) に送り返すと「抜き額」が露呈する**事故を防ぐためのガード。新規一斉配信、matching/[id] のまとめて提案、engineer-mails/[id] のまとめて提案 BP宛て、いずれのフローでも同じ思想で警告する。
+
+### API: `/api/v1/delivery-campaigns/check-duplicates`
+
+新規配信送信ボタン押下時、フロントが POST する。
+
+**Request**:
+```json
+{
+  "project_mail_id": 24413,            // または
+  "engineer_mail_source_id": 12345,    // または
+  "source_email": "sales@example.com"  // 手動入力
+}
+```
+
+**Response**:
+```json
+{
+  "source_email": "sales@tektek.co.jp",
+  "source_domain": "tektek.co.jp",
+  "matches": [
+    {"id": 856, "email": "sales@tektek.co.jp", "name": "株式会社てくてく"}
+  ]
+}
+```
+
+**仕様**:
+- `is_active=true` の `delivery_addresses` のみ対象（送信されない inactive は対象外）
+- 同一ドメイン (`LOWER(email) LIKE '%@<source_domain>'`) で OR マッチ
+- 最大 20 件返却
+
+### 除外送信: `exclude_address_ids`
+
+警告モーダルの「今回これら N 件を除外して配信」(既定 ON) を選択した場合、`POST /api/v1/delivery-campaigns` に `exclude_address_ids[]` を追加で送信:
+
+```http
+POST /api/v1/delivery-campaigns
+Content-Type: multipart/form-data
+
+subject=...
+body=...
+project_mail_id=24413
+exclude_address_ids[]=856
+exclude_address_ids[]=999
+attachments[]=...
+```
+
+**バックエンド挙動** (`DeliveryCampaignService`):
+- `createCampaign`: `total_count` 集計時に `whereNotIn('id', $excludeIds)` を適用
+- `sendCampaign`: 宛先取得時に同じ条件を適用
+- `is_active` は**変更しない** → 次回送信時は通常通り含まれる
+
+**設計上の利点**:
+- 「is_active を一時的に false にして送信後 true に戻す」方式と比較し、**送信失敗・プロセス死亡で false のまま残るリスクが無い**
+- atomic (DB 状態を変更しない)
+- 監査ログ的にも「この campaign の宛先集合」が単一クエリで再現可能
+
+### 適用範囲 (本日時点)
+
+| 画面 | 警告発火条件 | 除外送信 |
+|---|---|---|
+| `/deliveries?tab=send` (新規配信) | 入手元と active 配信先の同一ドメイン一致 | ✓ (`exclude_address_ids[]`) |
+| `/deliveries/campaigns/[id]` 再送信 | 配信先個別と `campaign.source_domain` 一致 | (該当行のみ送信のため不要) |
+| `matching/[id]` まとめて提案 | `to` 編集 && `initialTo` (案件元) と同一ドメイン | (1 宛先 modal のため不要) |
+| `engineer-mails/[id]` まとめて提案 BP宛て | `to` 編集 && `initialTo` (技術者紹介元 BP) と同一ドメイン | (同上) |
+
+### 関連実装
+
+- フロント共通 util: `src/lib/mailDomain.ts` (`extractDomain` / `isSameDomain`)
+- バック controller: `app/Http/Controllers/Api/DeliveryCampaignController.php::checkDuplicates`
+- バックサービス: `app/Services/DeliveryCampaignService.php` (`createCampaign` / `sendCampaign` が `$excludeIds` を受領)
+- 主要 commit: `89b47b2` (API) / `d8c21a8` (新規配信フロント) / `736c2b2` (まとめて提案フロント) / `82ad98d` + `716c4a1` (除外送信)
