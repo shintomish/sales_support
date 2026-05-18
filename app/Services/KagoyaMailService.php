@@ -116,17 +116,25 @@ class KagoyaMailService
         // 最小 stub だけ保存し、本文/添付処理はスキップ。
         // 旧実装は何も保存しなかったため、毎回 IMAP から同じ UID が「新着」として返り
         // CPU と Kagoya API を浪費していた (dedup 用 anchor の役割を兼ねる)。
-        $lcFrom = strtolower($fromAddress);
-        $lcSubject = strtolower($subject);
-        if (str_starts_with(trim($lcSubject), '[spam]') ||
-            str_contains($lcFrom, 'mailer-daemon') ||
-            str_contains($lcFrom, 'postmaster') ||
-            str_contains($lcSubject, 'undelivered') ||
-            str_contains($lcSubject, 'returned mail') ||
-            str_contains($lcSubject, 'delivery status') ||
-            str_contains($lcSubject, 'undeliverable') ||
-            str_contains($lcSubject, 'failure notice') ||
-            str_contains($lcSubject, 'mail delivery failed')) {
+        $lcFrom     = strtolower($fromAddress);
+        $lcFromName = strtolower($fromName ?? '');
+        $lcSubject  = strtolower($subject);
+        $isBounceFrom = str_contains($lcFrom, 'mailer-daemon')
+            || str_contains($lcFrom, 'postmaster')
+            || str_contains($lcFromName, 'postmaster')
+            || str_contains($lcFromName, 'mailer-daemon')
+            || str_contains($lcFromName, 'mail delivery');
+        $trimmedSubject = trim($lcSubject);
+        $isBounceSubject = str_starts_with($trimmedSubject, '[spam]')
+            || str_starts_with($trimmedSubject, 'rejected:')
+            || str_contains($lcSubject, 'undelivered')
+            || str_contains($lcSubject, 'returned mail')
+            || str_contains($lcSubject, 'delivery status')
+            || str_contains($lcSubject, 'undeliverable')
+            || str_contains($lcSubject, 'failure notice')
+            || str_contains($lcSubject, 'mail delivery failed')
+            || str_contains($lcSubject, 'quota exceeded');
+        if ($isBounceFrom || $isBounceSubject) {
             Email::create([
                 'tenant_id'        => $tenantId,
                 'gmail_message_id' => $uid,
