@@ -26,8 +26,10 @@ class FreshMailMatchingService
 {
     /** 1 リクエストで PHP スコアリングする上限件数 */
     private const HARD_LIMIT = 300;
-    /** EMS/PMS.score (抽出品質スコア) の下限 */
+    /** EMS/PMS.score (抽出品質スコア) の下限 (情報量が少ないものを除外) */
     private const QUALITY_FLOOR = 30;
+    /** マッチ結果スコアの表示下限 (◎ 80+ / ○ 60-79 のうち ○ 上位以上を表示) */
+    private const RESULT_SCORE_FLOOR = 70;
 
     public function __construct(
         private EngineerMailMatchingService $engineerMailMatching,
@@ -74,7 +76,7 @@ class FreshMailMatchingService
                     'reasons'   => $scored['reasons'],
                 ];
             })
-            ->filter(fn($r) => $r['score'] > 0)
+            ->filter(fn($r) => $r['score'] >= self::RESULT_SCORE_FLOOR)
             ->sortByDesc('score')
             ->values()
             ->take($limit);
@@ -120,7 +122,7 @@ class FreshMailMatchingService
                     'reasons'   => $scored['reasons'],
                 ];
             })
-            ->filter(fn($r) => $r['score'] > 0)
+            ->filter(fn($r) => $r['score'] >= self::RESULT_SCORE_FLOOR)
             ->sortByDesc('score')
             ->values()
             ->take($limit);
