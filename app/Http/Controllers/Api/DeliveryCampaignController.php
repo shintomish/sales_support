@@ -3,8 +3,11 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\DeliveryAddress;
 use App\Models\DeliveryCampaign;
 use App\Models\DeliverySendHistory;
+use App\Models\EngineerMailSource;
+use App\Models\ProjectMailSource;
 use App\Services\DeliveryCampaignService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -117,6 +120,76 @@ class DeliveryCampaignController extends Controller
         });
 
         return response()->json($campaigns);
+    }
+
+    /**
+     * 配信先リストの中に source mail (案件/技術者メールの from_address、または手動入力 source_email)
+     * と同一ドメインのアクティブ配信先が存在するか確認する。
+     * フロント側 (新規配信) の送信前確認モーダル用。
+     *
+     * POST /api/v1/delivery-campaigns/check-duplicates
+     *
+     * Request: project_mail_id | engineer_mail_source_id | source_email のいずれか
+     * Response: { source_email, source_domain, matches: [{id, email, name}] }
+     */
+    public function checkDuplicates(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'project_mail_id'         => 'nullable|exists:project_mail_sources,id',
+            'engineer_mail_source_id' => 'nullable|exists:engineer_mail_sources,id',
+            'source_email'            => 'nullable|email|max:255',
+        ]);
+
+        $tenantId = auth()->user()->tenant_id;
+
+        // source を導出（紐づき>手動入力 の優先順）
+        $sourceEmail = null;
+        if (!empty($validated['project_mail_id'])) {
+            $pm = ProjectMailSource::where('tenant_id', $tenantId)
+                ->with('email:id,from_address')
+                ->find($validated['project_mail_id']);
+            $sourceEmail = $pm?->email?->from_address;
+        } elseif (!empty($validated['engineer_mail_source_id'])) {
+            $em = EngineerMailSource::where('tenant_id', $tenantId)
+                ->with('email:id,from_address')
+                ->find($validated['engineer_mail_source_id']);
+            $sourceEmail = $em?->email?->from_address;
+        } elseif (!empty($validated['source_email'])) {
+            $sourceEmail = $validated['source_email'];
+        }
+
+        if (!$sourceEmail) {
+            return response()->json([
+                'source_email'  => null,
+                'source_domain' => null,
+                'matches'       => [],
+            ]);
+        }
+
+        $at = strrpos($sourceEmail, '@');
+        $sourceDomain = $at === false ? null : strtolower(trim(substr($sourceEmail, $at + 1)));
+
+        if (!$sourceDomain) {
+            return response()->json([
+                'source_email'  => $sourceEmail,
+                'source_domain' => null,
+                'matches'       => [],
+            ]);
+        }
+
+        $matches = DeliveryAddress::where('tenant_id', $tenantId)
+            ->where('is_active', true)
+            ->whereRaw('LOWER(email) LIKE ?', ['%@' . $sourceDomain])
+            ->select('id', 'email', 'name')
+            ->orderBy('email')
+            ->limit(20)
+            ->get();
+
+        return response()->json([
+            'source_email'  => $sourceEmail,
+            'source_domain' => $sourceDomain,
+            'matches'       => $matches,
+        ]);
     }
 
     public function store(Request $request): JsonResponse
