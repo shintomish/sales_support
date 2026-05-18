@@ -2,7 +2,9 @@
 
 namespace App\Services;
 
+use App\Exceptions\ClaudeOverloadedException;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 
 class ClaudeService
 {
@@ -76,24 +78,20 @@ PROMPT;
 
     /**
      * 提案メール草稿を生成
+     *
+     * @throws ClaudeOverloadedException Anthropic 側 overloaded_error / 429 が
+     *   リトライ後も解消しなかった場合（controller 側で 503 化）。
+     * @throws \Exception その他の API エラー（500 系として扱われる）。
      */
     public function generateProposal(array $mail, array $engineer): array
     {
         $prompt = $this->buildProposalPrompt($mail, $engineer);
 
-        $response = Http::withHeaders([
-            'anthropic-version' => '2023-06-01',
-            'x-api-key'         => $this->apiKey,
-            'content-type'      => 'application/json',
-        ])->timeout(30)->post($this->apiUrl, [
+        $response = $this->postWithRetry([
             'model'      => 'claude-haiku-4-5-20251001',
             'max_tokens' => 1024,
             'messages'   => [['role' => 'user', 'content' => $prompt]],
         ]);
-
-        if ($response->failed()) {
-            throw new \Exception('Claude API error: ' . $response->body());
-        }
 
         $text = $response->json('content.0.text', '');
 
@@ -119,6 +117,55 @@ PROMPT;
             'to_address' => $mail['from_address'] ?? '',
             'to_name'    => $mail['sales_contact'] ?? $mail['from_name'] ?? '',
         ];
+    }
+
+    /**
+     * Claude API への POST を overloaded_error / 429 / 529 リトライ付きで実行。
+     *
+     * - Anthropic 側の一時的な過負荷 (overloaded_error) と Rate Limit (429) を判定
+     * - 指数バックオフ (1s → 2s → 4s) で最大 3 回再試行
+     * - 全試行尽きたら ClaudeOverloadedException を投げる (controller 側で 503 化)
+     * - その他の失敗は従来通り \Exception
+     */
+    private function postWithRetry(array $payload, int $timeout = 30, int $maxAttempts = 3): \Illuminate\Http\Client\Response
+    {
+        $attempt = 0;
+        $delays  = [1, 2, 4]; // 秒 (リトライ前の待機)
+
+        while (true) {
+            $attempt++;
+            $response = Http::withHeaders([
+                'anthropic-version' => '2023-06-01',
+                'x-api-key'         => $this->apiKey,
+                'content-type'      => 'application/json',
+            ])->timeout($timeout)->post($this->apiUrl, $payload);
+
+            if ($response->successful()) {
+                return $response;
+            }
+
+            $body         = (string) $response->body();
+            $status       = $response->status();
+            $isOverloaded = $status === 529
+                || $status === 429
+                || str_contains($body, '"overloaded_error"')
+                || str_contains($body, '"rate_limit_error"');
+
+            if ($isOverloaded && $attempt < $maxAttempts) {
+                $wait = $delays[$attempt - 1] ?? 4;
+                Log::warning("Claude API overloaded (attempt {$attempt}/{$maxAttempts}), retrying in {$wait}s: {$body}");
+                sleep($wait);
+                continue;
+            }
+
+            if ($isOverloaded) {
+                throw new ClaudeOverloadedException(
+                    "Claude API overloaded after {$attempt} attempts: {$body}"
+                );
+            }
+
+            throw new \Exception('Claude API error: ' . $body);
+        }
     }
 
     private function buildProposalPrompt(array $mail, array $engineer): string

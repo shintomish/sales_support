@@ -219,6 +219,12 @@ class ProjectMailController extends Controller
         try {
             $draft = $this->claudeService->generateProposal($mailData, $engineerData);
             return response()->json($draft);
+        } catch (\App\Exceptions\ClaudeOverloadedException $e) {
+            Log::warning("generateProposal overloaded mail_id={$id}: " . $e->getMessage());
+            return response()->json([
+                'message' => 'Claude API が混雑しています。しばらく待ってから再試行してください。',
+                'code'    => 'claude_overloaded',
+            ], 503);
         } catch (\Exception $e) {
             Log::error("generateProposal failed mail_id={$id}: " . $e->getMessage());
             return response()->json(['message' => 'メール生成に失敗しました'], 500);

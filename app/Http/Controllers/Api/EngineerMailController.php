@@ -497,7 +497,18 @@ class EngineerMailController extends Controller
             'affiliation'            => $ems->email?->from_name ?? '',
         ];
 
-        $result = app(ClaudeService::class)->generateProposal($mailData, $engineerData);
+        try {
+            $result = app(ClaudeService::class)->generateProposal($mailData, $engineerData);
+        } catch (\App\Exceptions\ClaudeOverloadedException $e) {
+            \Log::warning("EM generateProposal overloaded ems_id={$id}: " . $e->getMessage());
+            return response()->json([
+                'message' => 'Claude API が混雑しています。しばらく待ってから再試行してください。',
+                'code'    => 'claude_overloaded',
+            ], 503);
+        } catch (\Exception $e) {
+            \Log::error("EM generateProposal failed ems_id={$id}: " . $e->getMessage());
+            return response()->json(['message' => 'メール生成に失敗しました'], 500);
+        }
 
         return response()->json([
             'subject' => $result['subject'],
