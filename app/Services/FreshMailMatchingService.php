@@ -66,6 +66,10 @@ class FreshMailMatchingService
             ->limit(self::HARD_LIMIT)
             ->get();
 
+        // 同一人物が短期間に複数回送ってくるケースを dedup (email+name+affiliation 3キー)
+        // received_at DESC で取得済みなので、最初に現れたもの = 最新 を残す
+        $sources = $this->dedupEmsBy3Key($sources);
+
         return $sources
             ->map(function (EngineerMailSource $ems) use ($projectMail) {
                 $scored = $this->engineerMailMatching->score($ems, $projectMail);
@@ -112,6 +116,10 @@ class FreshMailMatchingService
             ->limit(self::HARD_LIMIT)
             ->get();
 
+        // 同一案件が複数 BP から flood で来るケースを dedup
+        // (送信元アドレス + 件名 + 顧客名 が一致 = 同じ案件の二次/三次配信とみなす)
+        $sources = $this->dedupPmsBy3Key($sources);
+
         return $sources
             ->map(function (ProjectMailSource $pms) use ($engineerMail) {
                 $scored = $this->engineerMailMatching->score($engineerMail, $pms);
@@ -126,6 +134,39 @@ class FreshMailMatchingService
             ->sortByDesc('score')
             ->values()
             ->take($limit);
+    }
+
+    /**
+     * EMS を email + name + affiliation の 3 キーで dedup (大文字小文字無視・null/空欄も比較対象)。
+     * Collection は received_at DESC で入ってくる前提なので、最初に現れたもの = 最新を残す。
+     *
+     * @param  Collection<int, EngineerMailSource>  $sources
+     * @return Collection<int, EngineerMailSource>
+     */
+    private function dedupEmsBy3Key(Collection $sources): Collection
+    {
+        return $sources->unique(function (EngineerMailSource $ems) {
+            $email       = mb_strtolower(trim((string) ($ems->email?->from_address ?? '')));
+            $name        = mb_strtolower(trim((string) ($ems->name ?? '')));
+            $affiliation = mb_strtolower(trim((string) ($ems->affiliation ?? '')));
+            return "{$email}|{$name}|{$affiliation}";
+        })->values();
+    }
+
+    /**
+     * PMS を from_address + 件名 + 顧客名 の 3 キーで dedup。
+     *
+     * @param  Collection<int, ProjectMailSource>  $sources
+     * @return Collection<int, ProjectMailSource>
+     */
+    private function dedupPmsBy3Key(Collection $sources): Collection
+    {
+        return $sources->unique(function (ProjectMailSource $pms) {
+            $email    = mb_strtolower(trim((string) ($pms->email?->from_address ?? '')));
+            $subject  = mb_strtolower(trim((string) ($pms->email?->subject ?? '')));
+            $customer = mb_strtolower(trim((string) ($pms->customer_name ?? '')));
+            return "{$email}|{$subject}|{$customer}";
+        })->values();
     }
 
     /**
