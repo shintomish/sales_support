@@ -59,7 +59,11 @@ class ProjectMailController extends Controller
                 $q->where('title', 'ilike', "%{$search}%")
                   ->orWhere('customer_name', 'ilike', "%{$search}%")
                   ->orWhere('work_location', 'ilike', "%{$search}%")
-                  ->orWhere('sales_contact', 'ilike', "%{$search}%");
+                  ->orWhere('sales_contact', 'ilike', "%{$search}%")
+                  ->orWhereHas('email', fn($eq) => $eq
+                      ->where('from_address', 'ilike', "%{$search}%")
+                      ->orWhere('from_name', 'ilike', "%{$search}%")
+                      ->orWhere('subject', 'ilike', "%{$search}%"));
             });
         }
 
