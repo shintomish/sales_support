@@ -63,6 +63,7 @@ docs/*.pdf
 .skills/
 .claude/settings.local.json
 .claude/scheduled_tasks.lock
+.claude/skills/create-skill/
 .agents/
 .github/agents/
 skills-lock.json
