@@ -667,7 +667,7 @@ PROMPT;
                     'received_at'        => $pms->received_at?->toIso8601String(),
                     'email_from_address' => $pms->email?->from_address,
                     'email_subject'      => $pms->email?->subject,
-                    'email_body'         => $pms->email?->body_text,
+                    'email_body'         => self::pickMailBody($pms->email),
                     'score'              => $r['score'],
                     'breakdown'          => $r['breakdown'],
                     'reasons'            => $r['reasons'],
@@ -748,5 +748,28 @@ PROMPT;
     private function replyToAddress(): string
     {
         return config('mail.reply_to.address', config('mail.from.address')) ?? '';
+    }
+
+    /**
+     * 元メール本文取得: body_text 優先、空なら body_html を strip-tags してフォールバック
+     * HTML-only で取り込まれたメール (Kagoya IMAP 経由など、約7%) を表示するための共通処理
+     */
+    public static function pickMailBody(?\App\Models\Email $email): ?string
+    {
+        if (!$email) return null;
+        $text = trim((string) ($email->body_text ?? ''));
+        if ($text !== '') return $text;
+        $html = (string) ($email->body_html ?? '');
+        if (trim($html) === '') return null;
+        $stripped = preg_replace('#<style[\s\S]*?</style>#i', '', $html);
+        $stripped = preg_replace('#<script[\s\S]*?</script>#i', '', $stripped);
+        $stripped = preg_replace('#<br\s*/?>#i', "\n", $stripped);
+        $stripped = preg_replace('#</(p|div|tr|li|h[1-6])>#i', "\n", $stripped);
+        $stripped = strip_tags($stripped);
+        $stripped = html_entity_decode($stripped, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+        $stripped = preg_replace("/[ \t]+\n/", "\n", $stripped);
+        $stripped = preg_replace("/\n{3,}/", "\n\n", $stripped);
+        $stripped = trim($stripped);
+        return $stripped !== '' ? $stripped : null;
     }
 }
