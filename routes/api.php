@@ -241,6 +241,8 @@ Route::prefix('v1')->middleware(['supabase.auth'])->group(function () {
         // 鮮度マッチング（過去N日メール候補）
         Route::get('/{id}/fresh-project-mails',   [EngineerMailController::class, 'freshProjectMails']);
         Route::post('/{id}/send-proposal-from-pms', [EngineerMailController::class, 'sendProposalFromPms']);
+        // まとめて提案: BP(EMS送信者) 宛て
+        Route::post('/{id}/send-bulk-to-bp',        [EngineerMailController::class, 'sendBulkToBp']);
     });
 
     // ── マッチング機能 ───────────────────────────────────

@@ -180,7 +180,35 @@ class EngineerMailController extends Controller
         // 技術者の希望単価（単価上限を基準にフィルタリング）
         $engineerPrice = $ems->unit_price_max ?? $ems->unit_price_min;
 
-        $results = $projects->map(function (PublicProject $project) use ($emsSkills) {
+        // ▼元メール本文用に PMS をまとめて prefetch
+        // 第一候補: public_projects.project_mail_source_id (直接FK)
+        // 第二候補: posted_by_customer_id 経由で同顧客の直近 PMS
+        $directPmsIds = $projects->pluck('project_mail_source_id')->filter()->unique()->values()->all();
+        $directPms = !empty($directPmsIds)
+            ? ProjectMailSource::with('email')->whereIn('id', $directPmsIds)->get()->keyBy('id')
+            : collect();
+
+        $customerIdsForFallback = $projects
+            ->whereNull('project_mail_source_id')
+            ->pluck('posted_by_customer_id')
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+        $fallbackPmsByCustomer = collect();
+        if (!empty($customerIdsForFallback)) {
+            // 顧客名で照合: posted_by_customer の name == PMS.customer_name となるレコードの最新を一括取得
+            $customers = \App\Models\Customer::whereIn('id', $customerIdsForFallback)->get();
+            foreach ($customers as $cust) {
+                $latest = ProjectMailSource::with('email')
+                    ->where('customer_name', $cust->name)
+                    ->orderByDesc('received_at')
+                    ->first();
+                if ($latest) $fallbackPmsByCustomer[$cust->id] = $latest;
+            }
+        }
+
+        $results = $projects->map(function (PublicProject $project) use ($emsSkills, $directPms, $fallbackPmsByCustomer) {
             $required = $project->requiredSkills;
             $total    = $required->count();
 
@@ -193,6 +221,20 @@ class EngineerMailController extends Controller
             $contact       = $project->postedByCustomer?->contacts->first();
             $toEmail       = $contact?->email ?? '';
             $salesContact  = $contact?->name ?? $project->postedByCustomer?->name ?? '';
+
+            // 元 PMS の取得
+            $pms = null;
+            if ($project->project_mail_source_id && $directPms->has($project->project_mail_source_id)) {
+                $pms = $directPms->get($project->project_mail_source_id);
+            } elseif ($project->posted_by_customer_id && $fallbackPmsByCustomer->has($project->posted_by_customer_id)) {
+                $pms = $fallbackPmsByCustomer->get($project->posted_by_customer_id);
+            }
+
+            // 案件提供者宛て (PMS送信者) のフォールバック: contacts が無い場合は PMS.from を使う
+            if ($toEmail === '' && $pms?->email) {
+                $toEmail      = $pms->email->from_address ?? '';
+                $salesContact = $salesContact ?: ($pms->sales_contact ?: ($pms->email->from_name ?? ''));
+            }
 
             return [
                 'project_id'       => $project->id,
@@ -212,6 +254,11 @@ class EngineerMailController extends Controller
                 ])->values(),
                 'to_email'         => $toEmail,
                 'sales_contact'    => $salesContact,
+                // ▼元メール本文 (個別提案モーダルのアコーディオン用)
+                'pms_id'                => $pms?->id,
+                'pms_email_subject'     => $pms?->email?->subject,
+                'pms_email_from_address'=> $pms?->email?->from_address,
+                'pms_email_body'        => self::pickMailBody($pms?->email),
             ];
         })
         // 技術者の希望単価が案件の単価上限を超える場合は除外
@@ -374,7 +421,7 @@ class EngineerMailController extends Controller
             }])
             ->where('tenant_id', $tenantId)
             ->where('engineer_mail_source_id', $id)
-            ->whereIn('send_type', ['engineer_proposal', 'delivery'])
+            ->whereIn('send_type', ['engineer_proposal', 'engineer_proposal_bulk', 'delivery'])
             ->orderBy('sent_at')
             ->get();
 
@@ -748,6 +795,90 @@ PROMPT;
     private function replyToAddress(): string
     {
         return config('mail.reply_to.address', config('mail.from.address')) ?? '';
+    }
+
+    /**
+     * まとめて提案: 技術者所属(BP=EMS送信者) 宛てに複数案件をまとめて送信
+     * POST /v1/engineer-mails/{id}/send-bulk-to-bp
+     * /matching/[id] の sendBulk と対称。EMS起点・PMS群を本文に列挙して 1通送る。
+     */
+    public function sendBulkToBp(Request $request, int $id): JsonResponse
+    {
+        $tenantId = auth()->user()->tenant_id;
+        EngineerMailSource::where('tenant_id', $tenantId)->findOrFail($id);
+
+        $v = $request->validate([
+            'recipients'         => 'required|array|min:1|max:100',
+            'recipients.*.to'    => 'required|email',
+            'recipients.*.name'  => 'nullable|string|max:200',
+            'subject'            => 'required|string|max:500',
+            'body'               => 'required|string',
+            // 履歴用 (任意): まとめた案件 id 群。public_projects と project_mail_sources 双方を受け付ける
+            'project_ids'        => 'nullable|array|max:50',
+            'project_ids.*'      => 'integer',
+            'project_mail_ids'   => 'nullable|array|max:50',
+            'project_mail_ids.*' => 'integer',
+        ]);
+
+        $sent        = 0;
+        $failed      = [];
+        $userId      = auth()->id();
+        $senderName  = auth()->user()->name  ?? '';
+        $senderEmail = $this->replyToAddress();
+
+        $campaign = DeliveryCampaign::create([
+            'tenant_id'               => $tenantId,
+            'send_type'               => 'engineer_proposal_bulk',
+            'engineer_mail_source_id' => $id,
+            'user_id'                 => $userId,
+            'subject'                 => $v['subject'],
+            'body'                    => $v['body'],
+            'total_count'             => count($v['recipients']),
+            'success_count'           => 0,
+            'failed_count'            => 0,
+            'sent_at'                 => now(),
+        ]);
+
+        foreach ($v['recipients'] as $recipient) {
+            $messageId = '<' . Str::uuid() . '@aizen-sol.co.jp>';
+            try {
+                Mail::to($recipient['to'])->send(new ProposalMail($v['subject'], $v['body'], $senderName, $senderEmail, [], $messageId));
+                DeliverySendHistory::create([
+                    'tenant_id'      => $tenantId,
+                    'campaign_id'    => $campaign->id,
+                    'email'          => $recipient['to'],
+                    'name'           => $recipient['name'] ?? null,
+                    'status'         => 'sent',
+                    'ses_message_id' => $messageId,
+                ]);
+                $sent++;
+            } catch (\Exception $e) {
+                DeliverySendHistory::create([
+                    'tenant_id'      => $tenantId,
+                    'campaign_id'    => $campaign->id,
+                    'email'          => $recipient['to'],
+                    'name'           => $recipient['name'] ?? null,
+                    'status'         => 'failed',
+                    'ses_message_id' => $messageId,
+                    'error_message'  => $e->getMessage(),
+                ]);
+                Log::error("BP一括提案送信失敗 engineer_mail_id={$id} to={$recipient['to']}: " . $e->getMessage());
+                $failed[] = $recipient['to'];
+            }
+        }
+
+        $campaign->update([
+            'success_count' => $sent,
+            'failed_count'  => count($failed),
+        ]);
+
+        Log::info("BP一括提案送信完了 engineer_mail_id={$id} sent={$sent} failed=" . count($failed));
+
+        return response()->json([
+            'message' => "{$sent}件送信しました",
+            'sent'    => $sent,
+            'failed'  => $failed,
+        ]);
     }
 
     /**
