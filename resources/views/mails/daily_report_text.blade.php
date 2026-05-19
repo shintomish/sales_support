@@ -24,6 +24,9 @@
 
 ------------------------------------------------------------
 [📨 有効と思われるメールリスト（案件） {{ $sections['effective_project_mails']['count'] }} 件　条件：過去3日 スコア70+]
+@if($sections['effective_project_mails']['count'] === 0)
+該当なし
+@endif
 @foreach($sections['effective_project_mails']['list'] as $p)
 - ⭐{{ $p['score'] }} {{ $p['title'] }}{{ $p['customer_name'] ? ' / '.$p['customer_name'] : '' }}{{ $p['unit_price_max'] ? ' ('.$p['unit_price_max'].'万)' : '' }}
   受信: {{ $p['received_at'] }} | {{ $appUrl }}/matching/{{ $p['id'] }}
@@ -36,6 +39,9 @@
 
 ------------------------------------------------------------
 [👤 有効と思われるメールリスト（技術者） {{ $sections['effective_engineer_mails']['count'] }} 件　条件：過去3日 スコア70+]
+@if($sections['effective_engineer_mails']['count'] === 0)
+該当なし
+@endif
 @foreach($sections['effective_engineer_mails']['list'] as $e)
 - ⭐{{ $e['score'] }} {{ $e['name'] }}{{ $e['affiliation'] ? ' / '.$e['affiliation'] : '' }}{{ $e['unit_price_max'] ? ' ('.$e['unit_price_max'].'万)' : '' }} {{ $e['skills_summary'] }}
   受信: {{ $e['received_at'] }} | {{ $appUrl }}/engineer-mails/{{ $e['id'] }}

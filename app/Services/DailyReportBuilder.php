@@ -65,8 +65,13 @@ class DailyReportBuilder
         $sections['delivery']                 = $this->collectDeliveryStats($tenantId, $yesterday, $today);
         $sections['expiring']                 = $this->collectExpiringContracts($tenantId, 30);
 
-        // 品質ゲート: 0 件セクションは除外
-        $sections = array_filter($sections, fn ($s) => ($s['count'] ?? 0) > 0);
+        // 品質ゲート: 0 件セクションは除外（ただし「有効と思われるメールリスト」は0件でも常に表示）
+        $alwaysShow = ['effective_project_mails', 'effective_engineer_mails'];
+        $sections = array_filter(
+            $sections,
+            fn ($s, $k) => in_array($k, $alwaysShow, true) || ($s['count'] ?? 0) > 0,
+            ARRAY_FILTER_USE_BOTH,
+        );
 
         $actionTotal = ($sections['effective_project_mails']['count']  ?? 0)
                      + ($sections['effective_engineer_mails']['count'] ?? 0)
