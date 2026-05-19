@@ -84,6 +84,26 @@ Schedule::call(function () {
         Log::error('[Schedule] score-project-mails 失敗');
     });
 
+// ── hot テーブル 手動 VACUUM（毎日 2:50 JST、cleanup-emails の直前）
+// 2026-05-19: autovacuum 0.05 scale でも emails / engineer_mail_sources の
+// Heap Fetches が日中 1000+ 蓄積し score-engineer-mails の cold-start レイテンシが
+// 数百ms に達するケースがあるため、深夜帯に必ず VM を更新しておく。
+// PostgreSQL の VACUUM は ACCESS SHARE のみ取得し、SELECT/INSERT と並列実行可。
+Schedule::call(function () {
+    foreach (['emails', 'engineer_mail_sources', 'project_mail_sources'] as $table) {
+        // テーブル名はホワイトリスト固定なので SQL インジェクション無し
+        \Illuminate\Support\Facades\DB::statement("VACUUM ANALYZE {$table}");
+    }
+    Log::info('[Schedule] hot tables VACUUM ANALYZE 完了');
+})
+    ->dailyAt('02:50')
+    ->timezone('Asia/Tokyo')
+    ->name('vacuum-hot-tables')
+    ->withoutOverlapping()
+    ->onFailure(function () {
+        Log::error('[Schedule] hot tables VACUUM ANALYZE 失敗');
+    });
+
 // ── メールクリーンアップ（毎日 3:00 JST）
 Schedule::command('emails:cleanup')
     ->dailyAt('03:00')
