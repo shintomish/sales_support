@@ -70,7 +70,7 @@ a { color: #2563eb; }
 {{-- 有効と思われるメールリスト（案件） --}}
 @if(isset($sections['effective_project_mails']))
     @php $s = $sections['effective_project_mails']; @endphp
-    <h2 class="h2-purple">📨 有効と思われるメールリスト（案件）{{ $s['count'] }} 件</h2>
+    <h2 class="h2-purple">📨 有効と思われるメールリスト（案件）{{ $s['count'] }} 件　<span class="kv" style="font-weight:normal;">条件：過去3日 スコア70+</span></h2>
     @foreach($s['list'] as $p)
         <div class="parent-card">
             <div class="parent-head">
@@ -101,7 +101,7 @@ a { color: #2563eb; }
 {{-- 有効と思われるメールリスト（技術者） --}}
 @if(isset($sections['effective_engineer_mails']))
     @php $s = $sections['effective_engineer_mails']; @endphp
-    <h2 class="h2-blue">👤 有効と思われるメールリスト（技術者）{{ $s['count'] }} 件</h2>
+    <h2 class="h2-blue">👤 有効と思われるメールリスト（技術者）{{ $s['count'] }} 件　<span class="kv" style="font-weight:normal;">条件：過去3日 スコア70+</span></h2>
     @foreach($s['list'] as $e)
         <div class="parent-card">
             <div class="parent-head">

@@ -23,7 +23,7 @@ use Throwable;
  *
  * 「有効と思われるメールリスト」:
  *   - 前日受信した PMS / EMS のうち quality score >= 70 を親として上位5件抽出
- *   - 各親に対し過去7日の鮮度マッチング (FreshMailMatchingService) で上位3件のマッチを付ける
+ *   - 各親に対し過去3日の鮮度マッチング (FreshMailMatchingService) で上位3件のマッチを付ける
  *   - マッチ0件の親はスキップして次候補に繰上げ
  *
  * テナントスコープ: tenant_id を指定して呼ぶ（Auth context が無いコマンド実行で動かすため）。
@@ -36,7 +36,7 @@ class DailyReportBuilder
     /** 「有効と思われるメールリスト」親メール 1 件あたりのマッチ表示件数 */
     private const EFFECTIVE_MATCHES = 3;
     /** マッチ検索の探索期間 (日) */
-    private const EFFECTIVE_FRESH_DAYS = 7;
+    private const EFFECTIVE_FRESH_DAYS = 3;
 
     public function __construct(
         private readonly ClaudeService $claude,
