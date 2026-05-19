@@ -28,8 +28,8 @@ class FreshMailMatchingService
     private const HARD_LIMIT = 300;
     /** EMS/PMS.score (抽出品質スコア) の下限 (情報量が少ないものを除外) */
     private const QUALITY_FLOOR = 30;
-    /** マッチ結果スコアの表示下限 (◎ 80+ / ○ 60-79 のうち ○ 上位以上を表示) */
-    private const RESULT_SCORE_FLOOR = 70;
+    /** マッチ結果スコアの表示下限デフォルト (高=70 / 中=60 / 低=50 をフロントから指定可能) */
+    public const RESULT_SCORE_FLOOR = 70;
 
     public function __construct(
         private EngineerMailMatchingService $engineerMailMatching,
@@ -38,7 +38,7 @@ class FreshMailMatchingService
     /**
      * 案件メール × 過去N日の EMS マッチング。
      */
-    public function freshEngineerMails(ProjectMailSource $projectMail, int $days = 7, int $limit = 50): Collection
+    public function freshEngineerMails(ProjectMailSource $projectMail, int $days = 7, int $limit = 50, int $minScore = self::RESULT_SCORE_FLOOR): Collection
     {
         $since = now()->subDays($days);
 
@@ -80,7 +80,7 @@ class FreshMailMatchingService
                     'reasons'   => $scored['reasons'],
                 ];
             })
-            ->filter(fn($r) => $r['score'] >= self::RESULT_SCORE_FLOOR)
+            ->filter(fn($r) => $r['score'] >= $minScore)
             ->sortByDesc('score')
             ->values()
             ->take($limit);
@@ -89,7 +89,7 @@ class FreshMailMatchingService
     /**
      * 技術者メール × 過去N日の PMS マッチング。
      */
-    public function freshProjectMails(EngineerMailSource $engineerMail, int $days = 7, int $limit = 50): Collection
+    public function freshProjectMails(EngineerMailSource $engineerMail, int $days = 7, int $limit = 50, int $minScore = self::RESULT_SCORE_FLOOR): Collection
     {
         $since = now()->subDays($days);
 
@@ -130,7 +130,7 @@ class FreshMailMatchingService
                     'reasons'   => $scored['reasons'],
                 ];
             })
-            ->filter(fn($r) => $r['score'] >= self::RESULT_SCORE_FLOOR)
+            ->filter(fn($r) => $r['score'] >= $minScore)
             ->sortByDesc('score')
             ->values()
             ->take($limit);

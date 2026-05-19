@@ -552,22 +552,25 @@ class ProjectMailController extends Controller
         $mail = ProjectMailSource::where('tenant_id', $tenantId)->findOrFail($id);
 
         $v = $request->validate([
-            'days'  => 'nullable|integer|min:1|max:30',
-            'limit' => 'nullable|integer|min:1|max:200',
+            'days'      => 'nullable|integer|min:1|max:30',
+            'limit'     => 'nullable|integer|min:1|max:200',
+            'min_score' => 'nullable|integer|in:50,60,70',
         ]);
-        $days  = $v['days']  ?? 7;
-        $limit = $v['limit'] ?? 50;
+        $days     = $v['days']      ?? 7;
+        $limit    = $v['limit']     ?? 50;
+        $minScore = $v['min_score'] ?? \App\Services\FreshMailMatchingService::RESULT_SCORE_FLOOR;
 
-        $results = $this->freshMatching->freshEngineerMails($mail, $days, $limit);
+        $results = $this->freshMatching->freshEngineerMails($mail, $days, $limit, $minScore);
         $statusMap = $this->proposalStatus->buildEmsStatusMap(
             $results->pluck('ems'),
             $mail,
         );
 
         return response()->json([
-            'days'  => $days,
-            'count' => $results->count(),
-            'data'  => $results->map(function ($r) use ($statusMap) {
+            'days'      => $days,
+            'min_score' => $minScore,
+            'count'     => $results->count(),
+            'data'      => $results->map(function ($r) use ($statusMap) {
                 $ems    = $r['ems'];
                 $status = $statusMap[$ems->id] ?? ['badge' => 'new', 'engineer_id' => null];
                 return [
