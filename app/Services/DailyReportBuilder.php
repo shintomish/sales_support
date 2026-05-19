@@ -17,19 +17,30 @@ use Throwable;
  * 朝の日次レポート 組立サービス
  *
  * パイプライン:
- *   [1] データ収集（emails / engineer・project mail sources / delivery / SES契約）
+ *   [1] データ収集（受信件数 / 有効と思われる案件・技術者メール / delivery / SES契約）
  *   [2] 品質ゲート: 0件セクションは除外
  *   [3] Haiku で「優先順位付き今日のアクション」サマリー（要対応 >= 1 件のとき）
  *
- * 「新着SES」は score >= 80（既定）で絞り込み、技術者/案件 を別々に集計する。
+ * 「有効と思われるメールリスト」:
+ *   - 前日受信した PMS / EMS のうち quality score >= 70 を親として上位5件抽出
+ *   - 各親に対し過去7日の鮮度マッチング (FreshMailMatchingService) で上位3件のマッチを付ける
+ *   - マッチ0件の親はスキップして次候補に繰上げ
+ *
  * テナントスコープ: tenant_id を指定して呼ぶ（Auth context が無いコマンド実行で動かすため）。
  */
 class DailyReportBuilder
 {
     private const SCORE_THRESHOLD = 70;
+    /** 「有効と思われるメールリスト」親メール件数 */
+    private const EFFECTIVE_PARENTS = 5;
+    /** 「有効と思われるメールリスト」親メール 1 件あたりのマッチ表示件数 */
+    private const EFFECTIVE_MATCHES = 3;
+    /** マッチ検索の探索期間 (日) */
+    private const EFFECTIVE_FRESH_DAYS = 7;
 
     public function __construct(
         private readonly ClaudeService $claude,
+        private readonly FreshMailMatchingService $freshMailMatching,
     ) {}
 
     /**
@@ -48,18 +59,18 @@ class DailyReportBuilder
 
         $sections = [];
 
-        $sections['inbox']            = $this->collectInbox($tenantId, $yesterday, $today);
-        $sections['engineer_matches'] = $this->collectNewMatches($tenantId, EngineerMailSource::class, $yesterday);
-        $sections['project_matches']  = $this->collectNewMatches($tenantId, ProjectMailSource::class, $yesterday);
-        $sections['delivery']         = $this->collectDeliveryStats($tenantId, $yesterday, $today);
-        $sections['expiring']         = $this->collectExpiringContracts($tenantId, 30);
+        $sections['inbox']                    = $this->collectInbox($tenantId, $yesterday, $today);
+        $sections['effective_project_mails']  = $this->collectEffectiveProjectMails($tenantId, $yesterday, $today);
+        $sections['effective_engineer_mails'] = $this->collectEffectiveEngineerMails($tenantId, $yesterday, $today);
+        $sections['delivery']                 = $this->collectDeliveryStats($tenantId, $yesterday, $today);
+        $sections['expiring']                 = $this->collectExpiringContracts($tenantId, 30);
 
         // 品質ゲート: 0 件セクションは除外
         $sections = array_filter($sections, fn ($s) => ($s['count'] ?? 0) > 0);
 
-        $actionTotal = ($sections['engineer_matches']['count'] ?? 0)
-                     + ($sections['project_matches']['count']  ?? 0)
-                     + ($sections['expiring']['count']         ?? 0);
+        $actionTotal = ($sections['effective_project_mails']['count']  ?? 0)
+                     + ($sections['effective_engineer_mails']['count'] ?? 0)
+                     + ($sections['expiring']['count']                 ?? 0);
 
         $aiSummary = null;
         if ($actionTotal >= 1) {
@@ -96,65 +107,127 @@ class DailyReportBuilder
     }
 
     /**
-     * [2/3] 新着スコア上位 (engineer または project mail source)
-     *  - 直近24h かつ score >= SCORE_THRESHOLD
-     *  - 同一案件・同一技術者の重複は (title|customer) / (name|skills) でユニーク化
-     *  - ユニーク後の件数と上位5件を返す
-     *
-     * @param class-string $modelClass EngineerMailSource::class | ProjectMailSource::class
+     * [2] 有効と思われるメールリスト（案件側）
+     *  - 親: 前日受信した PMS で score >= 70（重複排除後 上位 EFFECTIVE_PARENTS 件）
+     *  - 各親に対し過去 EFFECTIVE_FRESH_DAYS 日の EMS から上位 EFFECTIVE_MATCHES 件マッチを付ける
+     *  - マッチ 0 件の親はスキップして次候補に繰上げ
      */
-    private function collectNewMatches(int $tenantId, string $modelClass, Carbon $from): array
+    private function collectEffectiveProjectMails(int $tenantId, Carbon $from, Carbon $to): array
     {
-        $isEngineer = $modelClass === EngineerMailSource::class;
-
-        // ユニーク化のためにある程度多めに取得してから重複排除
-        $rows = $modelClass::withoutGlobalScope(TenantScope::class)
+        $candidates = ProjectMailSource::withoutGlobalScope(TenantScope::class)
             ->where('tenant_id', $tenantId)
+            ->whereBetween('created_at', [$from, $to])
             ->where('score', '>=', self::SCORE_THRESHOLD)
-            ->where('created_at', '>=', $from)
+            ->whereNotIn('status', ['excluded'])
             ->orderByDesc('score')
             ->orderByDesc('created_at')
-            ->take(200)
+            ->take(40)
             ->get();
 
-        // 重複排除キー
-        $unique = $rows->unique(function ($m) use ($isEngineer) {
-            if ($isEngineer) {
-                $skillsKey = is_array($m->skills) ? implode(',', $m->skills) : '';
-                return ($m->name ?: '?') . '|' . $skillsKey;
-            }
+        // 同一案件の重複排除
+        $candidates = $candidates->unique(function (ProjectMailSource $m) {
             return ($m->title ?: '?') . '|' . ($m->customer_name ?: '?');
         })->values();
 
-        $count = $unique->count();
-        $top   = $unique->take(5);
+        $items = [];
+        foreach ($candidates as $pms) {
+            if (count($items) >= self::EFFECTIVE_PARENTS) break;
+            $matches = $this->freshMailMatching->freshEngineerMails(
+                $pms,
+                self::EFFECTIVE_FRESH_DAYS,
+                self::EFFECTIVE_MATCHES,
+                self::SCORE_THRESHOLD,
+            );
+            if ($matches->isEmpty()) continue;
+
+            $items[] = [
+                'id'             => $pms->id,
+                'title'          => $pms->title ?: '（件名未取得）',
+                'customer_name'  => $pms->customer_name,
+                'unit_price_max' => $pms->unit_price_max,
+                'skills_summary' => $this->summarizeSkills($pms->required_skills ?? []),
+                'score'          => (int) $pms->score,
+                'received_at'    => optional($pms->created_at)->format('n/j H:i'),
+                'matches'        => $matches->map(function (array $r) {
+                    /** @var EngineerMailSource $ems */
+                    $ems = $r['ems'];
+                    return [
+                        'id'             => $ems->id,
+                        'name'           => $ems->name ?: '（名前未取得）',
+                        'affiliation'    => $ems->affiliation,
+                        'unit_price_max' => $ems->unit_price_max,
+                        'skills_summary' => $this->summarizeSkills($ems->skills ?? []),
+                        'score'          => (int) $r['score'],
+                    ];
+                })->values()->toArray(),
+            ];
+        }
 
         return [
-            'count' => $count,
-            'top'   => $top->map(function ($m) use ($isEngineer) {
-                if ($isEngineer) {
+            'count' => count($items),
+            'list'  => $items,
+        ];
+    }
+
+    /**
+     * [3] 有効と思われるメールリスト（技術者側）
+     *  - 親: 前日受信した EMS で score >= 70（重複排除後 上位 EFFECTIVE_PARENTS 件）
+     *  - 各親に対し過去 EFFECTIVE_FRESH_DAYS 日の PMS から上位 EFFECTIVE_MATCHES 件マッチを付ける
+     */
+    private function collectEffectiveEngineerMails(int $tenantId, Carbon $from, Carbon $to): array
+    {
+        $candidates = EngineerMailSource::withoutGlobalScope(TenantScope::class)
+            ->where('tenant_id', $tenantId)
+            ->whereBetween('created_at', [$from, $to])
+            ->where('score', '>=', self::SCORE_THRESHOLD)
+            ->whereNotIn('status', ['excluded'])
+            ->orderByDesc('score')
+            ->orderByDesc('created_at')
+            ->take(40)
+            ->get();
+
+        $candidates = $candidates->unique(function (EngineerMailSource $m) {
+            $skillsKey = is_array($m->skills) ? implode(',', $m->skills) : '';
+            return ($m->name ?: '?') . '|' . $skillsKey;
+        })->values();
+
+        $items = [];
+        foreach ($candidates as $ems) {
+            if (count($items) >= self::EFFECTIVE_PARENTS) break;
+            $matches = $this->freshMailMatching->freshProjectMails(
+                $ems,
+                self::EFFECTIVE_FRESH_DAYS,
+                self::EFFECTIVE_MATCHES,
+                self::SCORE_THRESHOLD,
+            );
+            if ($matches->isEmpty()) continue;
+
+            $items[] = [
+                'id'             => $ems->id,
+                'name'           => $ems->name ?: '（名前未取得）',
+                'affiliation'    => $ems->affiliation,
+                'unit_price_max' => $ems->unit_price_max,
+                'skills_summary' => $this->summarizeSkills($ems->skills ?? []),
+                'score'          => (int) $ems->score,
+                'received_at'    => optional($ems->created_at)->format('n/j H:i'),
+                'matches'        => $matches->map(function (array $r) {
+                    /** @var ProjectMailSource $pms */
+                    $pms = $r['pms'];
                     return [
-                        'id'             => $m->id,
-                        'kind'           => 'engineer',
-                        'title'          => $m->name ?: '（名前未取得）',
-                        'sub'            => null,
-                        'score'          => (int) $m->score,
-                        'unit_price_max' => $m->unit_price_max,
-                        'skills_summary' => $this->summarizeSkills($m->skills),
-                        'received_at'    => optional($m->created_at)->format('n/j H:i'),
+                        'id'             => $pms->id,
+                        'title'          => $pms->title ?: '（件名未取得）',
+                        'customer_name'  => $pms->customer_name,
+                        'unit_price_max' => $pms->unit_price_max,
+                        'skills_summary' => $this->summarizeSkills($pms->required_skills ?? []),
+                        'score'          => (int) $r['score'],
                     ];
-                }
-                return [
-                    'id'             => $m->id,
-                    'kind'           => 'project',
-                    'title'          => $m->title ?: '（件名未取得）',
-                    'sub'            => $m->customer_name,
-                    'score'          => (int) $m->score,
-                    'unit_price_max' => $m->unit_price_max,
-                    'skills_summary' => $this->summarizeSkills($m->required_skills ?? []),
-                    'received_at'    => optional($m->created_at)->format('n/j H:i'),
-                ];
-            })->toArray(),
+                })->values()->toArray(),
+            ];
+        }
+
+        return [
+            'count' => count($items),
+            'list'  => $items,
         ];
     }
 
@@ -240,9 +313,9 @@ class DailyReportBuilder
 
     private function buildSummaryPrompt(array $sections): string
     {
-        $eng  = $sections['engineer_matches'] ?? null;
-        $prj  = $sections['project_matches']  ?? null;
-        $exp  = $sections['expiring']         ?? null;
+        $prj = $sections['effective_project_mails']  ?? null;
+        $eng = $sections['effective_engineer_mails'] ?? null;
+        $exp = $sections['expiring']                 ?? null;
 
         $lines = [];
         $lines[] = "あなたはSES企業の営業マネージャー向けのレポーターです。";
@@ -255,21 +328,32 @@ class DailyReportBuilder
         $lines[] = "- 期限切れ間近のSES契約があれば最優先で取り上げる。";
         $lines[] = "- 出力は「1. ◯◯◯」「2. ◯◯◯」のように番号付き行のみ。行間に空行は入れない。前置き・後書き不要。";
         $lines[] = "";
-        $lines[] = "## 状況サマリ（直近24h、重複排除済み）";
+        $lines[] = "## 状況サマリ（前日受信メール × 過去7日マッチ）";
 
-        if ($eng && $eng['count'] > 0) {
-            $lines[] = "- 新着 技術者(スコア70+ ユニーク): {$eng['count']}件";
-            foreach ($eng['top'] as $m) {
-                $price = $m['unit_price_max'] ? " ({$m['unit_price_max']}万)" : '';
-                $lines[] = "  - スコア{$m['score']} {$m['title']}{$price} {$m['skills_summary']}";
+        if ($prj && $prj['count'] > 0) {
+            $lines[] = "- 有効と思われる案件メール: {$prj['count']}件";
+            foreach ($prj['list'] as $p) {
+                $price = $p['unit_price_max'] ? " ({$p['unit_price_max']}万)" : '';
+                $sub   = $p['customer_name'] ? " / {$p['customer_name']}" : '';
+                $lines[] = "  - {$p['title']}{$sub}{$price}";
+                foreach ($p['matches'] as $m) {
+                    $mPrice = $m['unit_price_max'] ? " ({$m['unit_price_max']}万)" : '';
+                    $aff    = $m['affiliation'] ? " / {$m['affiliation']}" : '';
+                    $lines[] = "      └ マッチ{$m['score']} {$m['name']}{$aff}{$mPrice}";
+                }
             }
         }
-        if ($prj && $prj['count'] > 0) {
-            $lines[] = "- 新着 案件(スコア70+ ユニーク): {$prj['count']}件";
-            foreach ($prj['top'] as $m) {
-                $price = $m['unit_price_max'] ? " ({$m['unit_price_max']}万)" : '';
-                $sub   = $m['sub'] ? " / {$m['sub']}" : '';
-                $lines[] = "  - スコア{$m['score']} {$m['title']}{$sub}{$price} {$m['skills_summary']}";
+        if ($eng && $eng['count'] > 0) {
+            $lines[] = "- 有効と思われる技術者メール: {$eng['count']}件";
+            foreach ($eng['list'] as $e) {
+                $price = $e['unit_price_max'] ? " ({$e['unit_price_max']}万)" : '';
+                $aff   = $e['affiliation'] ? " / {$e['affiliation']}" : '';
+                $lines[] = "  - {$e['name']}{$aff}{$price} {$e['skills_summary']}";
+                foreach ($e['matches'] as $m) {
+                    $mPrice = $m['unit_price_max'] ? " ({$m['unit_price_max']}万)" : '';
+                    $sub    = $m['customer_name'] ? " / {$m['customer_name']}" : '';
+                    $lines[] = "      └ マッチ{$m['score']} {$m['title']}{$sub}{$mPrice}";
+                }
             }
         }
         if ($exp && $exp['count'] > 0) {

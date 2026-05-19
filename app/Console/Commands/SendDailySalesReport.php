@@ -13,19 +13,21 @@ use Throwable;
 
 /**
  * 朝の日次レポート配信
- *   php artisan report:daily-sales              全テナント・実送信
- *   php artisan report:daily-sales --dry-run    送信せずにログ出力のみ
- *   php artisan report:daily-sales --tenant=1   特定テナントのみ
+ *   php artisan report:daily-sales                          全テナント・実送信
+ *   php artisan report:daily-sales --dry-run                送信せずにログ出力のみ
+ *   php artisan report:daily-sales --tenant=1               特定テナントのみ
+ *   php artisan report:daily-sales --to=x@example.com       配信先設定を無視して指定アドレスに送信（テスト用）
  */
 class SendDailySalesReport extends Command
 {
-    protected $signature   = 'report:daily-sales {--tenant= : 特定 tenant_id のみ} {--dry-run : 送信しない}';
+    protected $signature   = 'report:daily-sales {--tenant= : 特定 tenant_id のみ} {--dry-run : 送信しない} {--to= : 配信先設定を無視して指定アドレスに送信}';
     protected $description = '朝の日次レポートを配信先にメール送信する';
 
     public function handle(DailyReportBuilder $builder): int
     {
         $tenantOnly = $this->option('tenant');
         $dryRun     = (bool) $this->option('dry-run');
+        $overrideTo = $this->option('to');
 
         $tenants = Tenant::query()
             ->when($tenantOnly, fn ($q) => $q->where('id', $tenantOnly))
@@ -38,24 +40,29 @@ class SendDailySalesReport extends Command
         }
 
         foreach ($tenants as $tenant) {
-            $this->processTenant($builder, $tenant->id, $dryRun);
+            $this->processTenant($builder, $tenant->id, $dryRun, $overrideTo);
         }
 
         return self::SUCCESS;
     }
 
-    private function processTenant(DailyReportBuilder $builder, int $tenantId, bool $dryRun): void
+    private function processTenant(DailyReportBuilder $builder, int $tenantId, bool $dryRun, ?string $overrideTo): void
     {
-        $recipients = ReportRecipient::withoutGlobalScopes()
-            ->where('tenant_id', $tenantId)
-            ->where('report_type', 'daily_sales')
-            ->where('is_active', true)
-            ->pluck('email')
-            ->all();
+        if ($overrideTo) {
+            $recipients = [$overrideTo];
+            $this->line("tenant_id={$tenantId}: --to オプション指定 → {$overrideTo} に送信");
+        } else {
+            $recipients = ReportRecipient::withoutGlobalScopes()
+                ->where('tenant_id', $tenantId)
+                ->where('report_type', 'daily_sales')
+                ->where('is_active', true)
+                ->pluck('email')
+                ->all();
 
-        if (empty($recipients)) {
-            $this->line("tenant_id={$tenantId}: 配信先なし（スキップ）");
-            return;
+            if (empty($recipients)) {
+                $this->line("tenant_id={$tenantId}: 配信先なし（スキップ）");
+                return;
+            }
         }
 
         try {

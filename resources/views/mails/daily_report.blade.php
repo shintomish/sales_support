@@ -2,18 +2,6 @@
     /** @var array $data */
     $sections = $data['sections'] ?? [];
     $appUrl   = rtrim(config('app.frontend_url') ?? config('app.url'), '/');
-    $renderMatch = function (array $m, string $appUrl) {
-        $listPath = $m['kind'] === 'engineer' ? '/engineer-mails' : '/project-mails';
-        return [
-            'href'           => $appUrl . $listPath . '?select=' . $m['id'],
-            'title'          => $m['title'],
-            'sub'            => $m['sub'] ?? null,
-            'score'          => $m['score'],
-            'unit_price_max' => $m['unit_price_max'],
-            'skills_summary' => $m['skills_summary'],
-            'received_at'    => $m['received_at'],
-        ];
-    };
 @endphp
 <!DOCTYPE html>
 <html lang="ja">
@@ -35,6 +23,11 @@ h2 { font-size: 15px; margin-top: 24px; padding: 4px 8px; border-radius: 4px; }
 .kv { color: #6b7280; font-size: 13px; }
 .match-item { padding: 8px 10px; border: 1px solid #e5e7eb; border-radius: 4px; margin-bottom: 6px; background: #fff; }
 .score { display: inline-block; background: #2563eb; color: #fff; font-weight: bold; padding: 1px 6px; border-radius: 3px; margin-right: 6px; font-size: 12px; }
+.score-match { background: #16a34a; }
+.parent-card { padding: 10px 12px; border: 1px solid #d1d5db; border-radius: 6px; margin-bottom: 12px; background: #fff; }
+.parent-card .parent-head { font-weight: bold; margin-bottom: 6px; }
+.match-list { margin-top: 6px; padding-left: 14px; border-left: 3px solid #e5e7eb; }
+.match-row { padding: 4px 0; font-size: 13px; }
 .expire-row { padding: 4px 0; border-bottom: 1px dashed #e5e7eb; }
 .expire-row:last-child { border-bottom: 0; }
 .expire-soon { color: #b91c1c; font-weight: bold; }
@@ -49,7 +42,7 @@ a { color: #2563eb; }
 <h1>📊 日次レポート ｜ {{ $data['target_date'] ?? '' }}</h1>
 <div class="kvbox">
     要対応合計: <strong>{{ $data['action_total'] ?? 0 }} 件</strong>
-    <span class="kv">（新着スコア70+ の技術者・案件 + 期限切れ間近のSES契約）</span>
+    <span class="kv">（有効と思われる案件・技術者メール + 期限切れ間近のSES契約）</span>
 </div>
 
 @if(!empty($data['ai_summary']))
@@ -74,47 +67,66 @@ a { color: #2563eb; }
     </ul>
 @endif
 
-{{-- 新着SES（技術者） --}}
-@if(isset($sections['engineer_matches']))
-    @php $s = $sections['engineer_matches']; @endphp
-    <h2 class="h2-blue">👤 新着技術者（スコア70+ 直近24h）{{ $s['count'] }} 件</h2>
-    @foreach($s['top'] as $m)
-        @php $r = $renderMatch($m, $appUrl); @endphp
-        <div class="match-item">
-            <span class="score">⭐{{ $r['score'] }}</span>
-            <strong>{{ $r['title'] }}</strong>
-            @if($r['unit_price_max'])　<span class="kv">({{ $r['unit_price_max'] }}万)</span>@endif
-            @if($r['skills_summary'])<br><span class="kv">{{ $r['skills_summary'] }}</span>@endif
-            <br><span class="kv">受信: {{ $r['received_at'] }}
-                <a href="{{ $r['href'] }}">詳細を開く →</a>
-            </span>
+{{-- 有効と思われるメールリスト（案件） --}}
+@if(isset($sections['effective_project_mails']))
+    @php $s = $sections['effective_project_mails']; @endphp
+    <h2 class="h2-purple">📨 有効と思われるメールリスト（案件）{{ $s['count'] }} 件</h2>
+    @foreach($s['list'] as $p)
+        <div class="parent-card">
+            <div class="parent-head">
+                <span class="score">⭐{{ $p['score'] }}</span>
+                {{ $p['title'] }}
+                @if($p['customer_name'])<span class="kv">　/　{{ $p['customer_name'] }}</span>@endif
+                @if($p['unit_price_max'])　<span class="kv">({{ $p['unit_price_max'] }}万)</span>@endif
+            </div>
+            @if($p['skills_summary'])<div class="kv">{{ $p['skills_summary'] }}</div>@endif
+            <div class="kv">受信: {{ $p['received_at'] }}
+                <a href="{{ $appUrl }}/matching/{{ $p['id'] }}">マッチング画面を開く →</a>
+            </div>
+            <div class="match-list">
+                @foreach($p['matches'] as $m)
+                    <div class="match-row">
+                        <span class="score score-match">{{ $m['score'] }}</span>
+                        <strong>{{ $m['name'] }}</strong>
+                        @if($m['affiliation'])<span class="kv">　/　{{ $m['affiliation'] }}</span>@endif
+                        @if($m['unit_price_max'])　<span class="kv">({{ $m['unit_price_max'] }}万)</span>@endif
+                        @if($m['skills_summary'])<br><span class="kv" style="margin-left: 28px;">{{ $m['skills_summary'] }}</span>@endif
+                    </div>
+                @endforeach
+            </div>
         </div>
     @endforeach
-    @if($s['count'] > count($s['top']))
-        <div class="kv">…他 {{ $s['count'] - count($s['top']) }} 件</div>
-    @endif
 @endif
 
-{{-- 新着SES（案件） --}}
-@if(isset($sections['project_matches']))
-    @php $s = $sections['project_matches']; @endphp
-    <h2 class="h2-purple">📨 新着案件（スコア70+ 直近24h）{{ $s['count'] }} 件</h2>
-    @foreach($s['top'] as $m)
-        @php $r = $renderMatch($m, $appUrl); @endphp
-        <div class="match-item">
-            <span class="score">⭐{{ $r['score'] }}</span>
-            <strong>{{ $r['title'] }}</strong>
-            @if($r['sub'])<span class="kv">　/　{{ $r['sub'] }}</span>@endif
-            @if($r['unit_price_max'])　<span class="kv">({{ $r['unit_price_max'] }}万)</span>@endif
-            @if($r['skills_summary'])<br><span class="kv">{{ $r['skills_summary'] }}</span>@endif
-            <br><span class="kv">受信: {{ $r['received_at'] }}
-                <a href="{{ $r['href'] }}">詳細を開く →</a>
-            </span>
+{{-- 有効と思われるメールリスト（技術者） --}}
+@if(isset($sections['effective_engineer_mails']))
+    @php $s = $sections['effective_engineer_mails']; @endphp
+    <h2 class="h2-blue">👤 有効と思われるメールリスト（技術者）{{ $s['count'] }} 件</h2>
+    @foreach($s['list'] as $e)
+        <div class="parent-card">
+            <div class="parent-head">
+                <span class="score">⭐{{ $e['score'] }}</span>
+                {{ $e['name'] }}
+                @if($e['affiliation'])<span class="kv">　/　{{ $e['affiliation'] }}</span>@endif
+                @if($e['unit_price_max'])　<span class="kv">({{ $e['unit_price_max'] }}万)</span>@endif
+            </div>
+            @if($e['skills_summary'])<div class="kv">{{ $e['skills_summary'] }}</div>@endif
+            <div class="kv">受信: {{ $e['received_at'] }}
+                <a href="{{ $appUrl }}/engineer-mails/{{ $e['id'] }}">マッチング画面を開く →</a>
+            </div>
+            <div class="match-list">
+                @foreach($e['matches'] as $m)
+                    <div class="match-row">
+                        <span class="score score-match">{{ $m['score'] }}</span>
+                        <strong>{{ $m['title'] }}</strong>
+                        @if($m['customer_name'])<span class="kv">　/　{{ $m['customer_name'] }}</span>@endif
+                        @if($m['unit_price_max'])　<span class="kv">({{ $m['unit_price_max'] }}万)</span>@endif
+                        @if($m['skills_summary'])<br><span class="kv" style="margin-left: 28px;">{{ $m['skills_summary'] }}</span>@endif
+                    </div>
+                @endforeach
+            </div>
         </div>
     @endforeach
-    @if($s['count'] > count($s['top']))
-        <div class="kv">…他 {{ $s['count'] - count($s['top']) }} 件</div>
-    @endif
 @endif
 
 {{-- 提案メール送信実績 --}}

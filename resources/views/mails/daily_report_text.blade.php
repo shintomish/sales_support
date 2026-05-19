@@ -5,7 +5,7 @@
 ============================================================
 日次レポート ｜ {{ $data['target_date'] ?? '' }}
 ============================================================
-要対応合計: {{ $data['action_total'] ?? 0 }} 件（新着スコア70+ + 期限切れ間近のSES契約）
+要対応合計: {{ $data['action_total'] ?? 0 }} 件（有効と思われるメール + 期限切れ間近のSES契約）
 @if(!empty($data['ai_summary']))
 
 ------------------------------------------------------------
@@ -20,29 +20,29 @@
 - 案件紹介:   {{ $sections['inbox']['project'] }} 件
 - その他:     {{ $sections['inbox']['other'] }} 件
 @endif
-@if(isset($sections['engineer_matches']))
+@if(isset($sections['effective_project_mails']))
 
 ------------------------------------------------------------
-[👤 新着技術者（スコア70+ 直近24h） {{ $sections['engineer_matches']['count'] }} 件]
-@foreach($sections['engineer_matches']['top'] as $m)
-- スコア{{ $m['score'] }} {{ $m['title'] }}{{ $m['unit_price_max'] ? ' ('.$m['unit_price_max'].'万)' : '' }} {{ $m['skills_summary'] }}
-  受信: {{ $m['received_at'] }} | {{ $appUrl }}/engineer-mails?select={{ $m['id'] }}
+[📨 有効と思われるメールリスト（案件） {{ $sections['effective_project_mails']['count'] }} 件]
+@foreach($sections['effective_project_mails']['list'] as $p)
+- ⭐{{ $p['score'] }} {{ $p['title'] }}{{ $p['customer_name'] ? ' / '.$p['customer_name'] : '' }}{{ $p['unit_price_max'] ? ' ('.$p['unit_price_max'].'万)' : '' }}
+  受信: {{ $p['received_at'] }} | {{ $appUrl }}/matching/{{ $p['id'] }}
+@foreach($p['matches'] as $m)
+    └ マッチ{{ $m['score'] }} {{ $m['name'] }}{{ $m['affiliation'] ? ' / '.$m['affiliation'] : '' }}{{ $m['unit_price_max'] ? ' ('.$m['unit_price_max'].'万)' : '' }} {{ $m['skills_summary'] }}
 @endforeach
-@if($sections['engineer_matches']['count'] > count($sections['engineer_matches']['top']))
-…他 {{ $sections['engineer_matches']['count'] - count($sections['engineer_matches']['top']) }} 件
+@endforeach
 @endif
-@endif
-@if(isset($sections['project_matches']))
+@if(isset($sections['effective_engineer_mails']))
 
 ------------------------------------------------------------
-[📨 新着案件（スコア70+ 直近24h） {{ $sections['project_matches']['count'] }} 件]
-@foreach($sections['project_matches']['top'] as $m)
-- スコア{{ $m['score'] }} {{ $m['title'] }}{{ $m['sub'] ? ' / '.$m['sub'] : '' }}{{ $m['unit_price_max'] ? ' ('.$m['unit_price_max'].'万)' : '' }} {{ $m['skills_summary'] }}
-  受信: {{ $m['received_at'] }} | {{ $appUrl }}/project-mails?select={{ $m['id'] }}
+[👤 有効と思われるメールリスト（技術者） {{ $sections['effective_engineer_mails']['count'] }} 件]
+@foreach($sections['effective_engineer_mails']['list'] as $e)
+- ⭐{{ $e['score'] }} {{ $e['name'] }}{{ $e['affiliation'] ? ' / '.$e['affiliation'] : '' }}{{ $e['unit_price_max'] ? ' ('.$e['unit_price_max'].'万)' : '' }} {{ $e['skills_summary'] }}
+  受信: {{ $e['received_at'] }} | {{ $appUrl }}/engineer-mails/{{ $e['id'] }}
+@foreach($e['matches'] as $m)
+    └ マッチ{{ $m['score'] }} {{ $m['title'] }}{{ $m['customer_name'] ? ' / '.$m['customer_name'] : '' }}{{ $m['unit_price_max'] ? ' ('.$m['unit_price_max'].'万)' : '' }} {{ $m['skills_summary'] }}
 @endforeach
-@if($sections['project_matches']['count'] > count($sections['project_matches']['top']))
-…他 {{ $sections['project_matches']['count'] - count($sections['project_matches']['top']) }} 件
-@endif
+@endforeach
 @endif
 @if(isset($sections['delivery']))
 
