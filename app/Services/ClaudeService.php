@@ -391,4 +391,144 @@ PROMPT;
 
         return $data;
     }
+
+    // ── 要件マッチング (docs/480 / docs/481 で検証済プロンプト) ─────────────────────────
+
+    /**
+     * Stage 1: 案件メールから「技術者に求める要件」を構造化抽出。
+     *
+     * @return array{requirements: array<int, array{type:string,label:string,condition:string,category:string}>, _usage: array}
+     */
+    public function extractRequirements(string $subject, string $body): array
+    {
+        $systemPrompt = <<<'PROMPT'
+あなたは SES 営業のアシスタントです。案件メールから「技術者に求める要件」を構造化して抽出します。
+
+出力は **必ず JSON のみ** (Markdown コードブロックや解説文は禁止)。スキーマ:
+{
+  "requirements": [
+    {
+      "type": "must" | "want",
+      "label": "短い見出し (例: Java 4年以上)",
+      "condition": "原文から該当箇所を抜粋 (改変せず)",
+      "category": "skill" | "experience" | "attitude" | "location" | "language" | "contract" | "other"
+    }
+  ]
+}
+
+ルール:
+- 「必須」「MUST」明示の要件は type="must"
+- 「尚可」「歓迎」「あれば」「望ましい」は type="want"
+- 明示が無くスキル箇条書きのみの場合は type="must"
+- 1 要件は 1 オブジェクト。「Java と PHP の経験」は分割せず 1 件で OK (label に列挙)
+- 単価・契約形態・場所・国籍・年齢などの条件も category="contract"/"location" 等として含める
+- 営業文 (お見送りの判断・連絡先・署名) は除外
+PROMPT;
+
+        $userPrompt = '案件名:' . $subject . "\n\n本文:\n" . $body;
+
+        $response = $this->postWithRetry([
+            'model'      => config('services.anthropic.model'),
+            'max_tokens' => 2500,
+            'system'     => $systemPrompt,
+            'messages'   => [['role' => 'user', 'content' => $userPrompt]],
+        ]);
+
+        if ($response->failed()) {
+            throw new \Exception('Claude requirement extraction failed: ' . $response->body());
+        }
+
+        $content = $response->json('content.0.text', '');
+        $data = $this->parseResponse($content);
+        $data['_usage'] = $response->json('usage', []);
+
+        return $data;
+    }
+
+    /**
+     * Stage 2: 要件配列 × 技術者情報 で ◯/△/× 判定。
+     * cache_control: ephemeral を system prompt + 要件 block に付与し、同一 PMS の N 候補判定をキャッシュヒットさせる。
+     *
+     * @param array $requirements Stage 1 出力の requirements 配列
+     * @param array $engineerData name/age/skills/affiliation/unit_price_min/max/nearest_station/available_from 等
+     * @param string|null $bodyText 技術者メール本文 (元 EMS の email.body_text)
+     * @param string|null $skillSheetText 添付スキルシート抽出テキスト (Phase 4 以降)
+     * @return array{matches: array<int, array{label:string,judgment:string,evidence:string,confidence:string}>, _usage: array}
+     */
+    public function judgeRequirementMatches(
+        array $requirements,
+        array $engineerData,
+        ?string $bodyText = null,
+        ?string $skillSheetText = null
+    ): array {
+        $systemPrompt = <<<'PROMPT'
+あなたは SES 営業のアシスタントです。案件の要件 each に対し、紹介候補の技術者が満たすかを ◯/△/× で判定し、根拠を引用形式で示します。
+
+【出力スキーマ (JSON のみ)】
+{
+  "matches": [
+    {
+      "label": "要件のラベル (入力と一致)",
+      "judgment": "circle" | "triangle" | "cross" | "unknown",
+      "evidence": "技術者情報からの引用 (改変禁止)",
+      "confidence": "high" | "medium" | "low"
+    }
+  ]
+}
+
+【判定基準】
+- circle (◯): 要件を明確に満たす。evidence に技術者情報からの引用根拠あり
+- triangle (△): 部分的に満たす / 関連経験あるが要件と少しズレる / 経験年数の明示がないがスキル保有
+- cross (×): 満たさない。該当スキル/経験が無い、または要件条件 (単価上限・年齢上限等) を超過
+- unknown (?): 技術者情報に判定材料が無い (年齢・国籍・面談回数の記載なし等)
+
+【判定例】
+例1: 要件「TypeScript (フロント/バックエンド) 3年以上」、技術者「直近5年TypeScript/Next.jsで開発」→ circle high
+例2: 要件「Angular.js 開発経験 (尚可)」、技術者スキル「Angular」→ triangle medium (Angular.js は 1.x 系、Angular は 2+ で別物。バージョン違いを示唆)
+例3: 要件「単価上限80万円」、技術者「単金93万円」→ cross high (要件超過は明確に NG)
+例4: 要件「テックリード経験 (尚可)」、技術者「小規模チームのリーダーとして開発プロセスの可視化、コードレビュー、新人教育を主導」→ triangle medium (リーダー経験はあるがテックリード明示なし)
+例5: 要件「外国籍不可」、技術者情報に国籍記載なし → unknown low
+例6: 要件「勤務地：五反田 (基本出社)」、技術者「最寄：沖縄県、働き方:フルリモート」→ cross high (出社不可と明確)
+例7: 要件「商流：元請→上位→弊社 (支援費1社先可)」、技術者「弊社1社先正社員」→ circle high (1社先は要件範囲内)
+
+【ルール】
+- 推測で circle を付けない。根拠が薄ければ triangle / unknown
+- evidence は技術者情報の文字列を引用 (改変禁止)。判定材料が無い時は "技術者情報に記載なし"
+- 技術スキル系の要件は「同義語/略称/バージョン違い」を慎重に。例: "React.js" と "React" は同義、"Angular.js" と "Angular" は別物
+PROMPT;
+
+        $requirementsBlock = "【要件一覧】\n" . json_encode($requirements, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
+
+        $engineerBlock = "\n\n【技術者情報】\n" . json_encode($engineerData, JSON_UNESCAPED_UNICODE);
+        if ($bodyText) {
+            $engineerBlock .= "\n【技術者メール本文】\n" . $bodyText;
+        }
+        if ($skillSheetText) {
+            $engineerBlock .= "\n【添付スキルシート】\n" . $skillSheetText;
+        }
+
+        $response = $this->postWithRetry([
+            'model'      => config('services.anthropic.model'),
+            'max_tokens' => 2500,
+            'system'     => [
+                ['type' => 'text', 'text' => $systemPrompt, 'cache_control' => ['type' => 'ephemeral']],
+            ],
+            'messages'   => [
+                ['role' => 'user', 'content' => [
+                    ['type' => 'text', 'text' => $requirementsBlock, 'cache_control' => ['type' => 'ephemeral']],
+                    ['type' => 'text', 'text' => $engineerBlock],
+                ]],
+            ],
+        ]);
+
+        if ($response->failed()) {
+            throw new \Exception('Claude requirement match judgment failed: ' . $response->body());
+        }
+
+        $content = $response->json('content.0.text', '');
+        $data = $this->parseResponse($content);
+        $data['_usage'] = $response->json('usage', []);
+
+        return $data;
+    }
 }

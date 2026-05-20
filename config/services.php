@@ -40,6 +40,10 @@ return [
         // 2026-06-15 9AM PT に claude-sonnet-4-20250514 retire のため Sonnet 4.6 に移行。
         // .env CLAUDE_MODEL で上書き可能。
         'model'   => env('CLAUDE_MODEL', 'claude-sonnet-4-6'),
+
+        // 要件マッチング (docs/480) で 1 リクエストあたり生成する match result の上限。
+        // 鮮度マッチで上位 N 件を一括判定する場合のコストガード。
+        'requirement_match_max_per_request' => env('CLAUDE_REQUIREMENT_MATCH_MAX_PER_REQUEST', 5),
     ],
 
     'google_vision' => [

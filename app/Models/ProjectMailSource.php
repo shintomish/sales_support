@@ -37,18 +37,22 @@ class ProjectMailSource extends Model
         'status',
         'lost_reason',
         'received_at',
+        'ai_requirements',
+        'ai_requirements_generated_at',
     ];
 
     protected $casts = [
-        'score_reasons'    => 'array',
-        'required_skills'  => 'array',
-        'preferred_skills' => 'array',
-        'process'          => 'array',
-        'remote_ok'        => 'boolean',
-        'nationality_ok'   => 'boolean',
-        'unit_price_min'   => 'decimal:2',
-        'unit_price_max'   => 'decimal:2',
-        'received_at'      => 'datetime',
+        'score_reasons'                => 'array',
+        'required_skills'              => 'array',
+        'preferred_skills'             => 'array',
+        'process'                      => 'array',
+        'remote_ok'                    => 'boolean',
+        'nationality_ok'               => 'boolean',
+        'unit_price_min'               => 'decimal:2',
+        'unit_price_max'               => 'decimal:2',
+        'received_at'                  => 'datetime',
+        'ai_requirements'              => 'array',
+        'ai_requirements_generated_at' => 'datetime',
     ];
 
     public function email(): BelongsTo

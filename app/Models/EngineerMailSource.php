@@ -27,6 +27,7 @@ class EngineerMailSource extends Model
         'available_from',
         'nearest_station',
         'skills',
+        'parsed_skill_sheet_text',
         'has_attachment',
         'status',
         'received_at',

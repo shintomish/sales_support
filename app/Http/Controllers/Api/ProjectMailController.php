@@ -17,6 +17,7 @@ use App\Services\FreshMailMatchingService;
 use App\Services\ProjectMailMatchingService;
 use App\Services\ProjectMailScoringService;
 use App\Services\ProposalStatusService;
+use App\Services\RequirementMatchingService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -27,11 +28,12 @@ use Illuminate\Support\Str;
 class ProjectMailController extends Controller
 {
     public function __construct(
-        private ProjectMailScoringService  $scoringService,
-        private ProjectMailMatchingService $matchingService,
-        private ClaudeService              $claudeService,
-        private FreshMailMatchingService   $freshMatching,
-        private ProposalStatusService      $proposalStatus,
+        private ProjectMailScoringService    $scoringService,
+        private ProjectMailMatchingService   $matchingService,
+        private ClaudeService                $claudeService,
+        private FreshMailMatchingService     $freshMatching,
+        private ProposalStatusService        $proposalStatus,
+        private RequirementMatchingService   $requirementMatching,
     ) {}
 
     // 一覧
@@ -751,5 +753,102 @@ class ProjectMailController extends Controller
     private function replyToAddress(): string
     {
         return config('mail.reply_to.address', config('mail.from.address')) ?? '';
+    }
+
+    // ── 案件要件 × 技術者スキル 対照表 (docs/480 §5) ─────────────────────────
+
+    /**
+     * PMS の構造化要件取得。無ければ Claude Stage 1 で自動生成・キャッシュ。
+     * GET /v1/project-mails/{id}/requirements
+     */
+    public function requirements(int $id): JsonResponse
+    {
+        $this->ensureFeatureEnabled();
+
+        $pms = ProjectMailSource::with('email')->findOrFail($id);
+        $requirements = $this->requirementMatching->extractRequirements($pms);
+
+        return response()->json([
+            'project_mail_source_id'       => $pms->id,
+            'requirements'                 => $requirements,
+            'ai_requirements_generated_at' => $pms->ai_requirements_generated_at,
+        ]);
+    }
+
+    /**
+     * PMS 要件の強制再生成。
+     * POST /v1/project-mails/{id}/requirements/regenerate
+     */
+    public function regenerateRequirements(int $id): JsonResponse
+    {
+        $this->ensureFeatureEnabled();
+
+        $pms = ProjectMailSource::with('email')->findOrFail($id);
+        $requirements = $this->requirementMatching->extractRequirements($pms, forceRefresh: true);
+
+        return response()->json([
+            'project_mail_source_id'       => $pms->id,
+            'requirements'                 => $requirements,
+            'ai_requirements_generated_at' => $pms->ai_requirements_generated_at,
+        ]);
+    }
+
+    /**
+     * PMS × EMS|Engineer の対照表取得。無ければ Stage 2 で生成。
+     * GET /v1/project-mails/{id}/requirement-match?ems_id=N (or engineer_id=N)
+     */
+    public function requirementMatch(Request $request, int $id): JsonResponse
+    {
+        $this->ensureFeatureEnabled();
+
+        $v = $request->validate([
+            'ems_id'      => 'nullable|integer|exists:engineer_mail_sources,id',
+            'engineer_id' => 'nullable|integer|exists:engineers,id',
+        ]);
+        if (empty($v['ems_id']) && empty($v['engineer_id'])) {
+            return response()->json(['message' => 'ems_id または engineer_id のいずれかが必要です'], 422);
+        }
+
+        $pms = ProjectMailSource::with('email')->findOrFail($id);
+        $candidate = !empty($v['ems_id'])
+            ? EngineerMailSource::findOrFail($v['ems_id'])
+            : Engineer::findOrFail($v['engineer_id']);
+
+        $result = $this->requirementMatching->getOrGenerate($pms, $candidate);
+        return response()->json($result);
+    }
+
+    /**
+     * PMS × EMS|Engineer の対照表強制再生成。
+     * POST /v1/project-mails/{id}/requirement-match/regenerate
+     */
+    public function regenerateRequirementMatch(Request $request, int $id): JsonResponse
+    {
+        $this->ensureFeatureEnabled();
+
+        $v = $request->validate([
+            'ems_id'      => 'nullable|integer|exists:engineer_mail_sources,id',
+            'engineer_id' => 'nullable|integer|exists:engineers,id',
+        ]);
+        if (empty($v['ems_id']) && empty($v['engineer_id'])) {
+            return response()->json(['message' => 'ems_id または engineer_id のいずれかが必要です'], 422);
+        }
+
+        $pms = ProjectMailSource::with('email')->findOrFail($id);
+        $candidate = !empty($v['ems_id'])
+            ? EngineerMailSource::findOrFail($v['ems_id'])
+            : Engineer::findOrFail($v['engineer_id']);
+
+        $result = $this->requirementMatching->regenerate($pms, $candidate);
+        return response()->json($result);
+    }
+
+    /** Feature flag チェック。テナント単位で無効なら 403。 */
+    private function ensureFeatureEnabled(): void
+    {
+        $tenant = auth()->user()->tenant;
+        if (!$tenant || !$tenant->feature_requirement_matching) {
+            abort(403, '要件マッチング機能はこのテナントで無効です (feature_requirement_matching=false)');
+        }
     }
 }

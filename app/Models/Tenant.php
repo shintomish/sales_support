@@ -10,7 +10,7 @@ class Tenant extends Model
     use HasFactory;
 
     protected $fillable = [
-        'name', 'slug', 'plan', 'is_active', 'ses_enabled',
+        'name', 'slug', 'plan', 'is_active', 'ses_enabled', 'feature_requirement_matching',
         'invoice_issuer_name',
         'invoice_issuer_postal_code',
         'invoice_issuer_address',
@@ -40,7 +40,8 @@ class Tenant extends Model
     ];
 
     protected $casts = [
-        'ses_enabled' => 'boolean',
+        'ses_enabled'                  => 'boolean',
+        'feature_requirement_matching' => 'boolean',
     ];
 
     public function users(): HasMany

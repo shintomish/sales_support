@@ -18,6 +18,7 @@ use App\Http\Controllers\Api\ApplicationController;
 use App\Http\Controllers\Api\MatchingController;
 use App\Http\Controllers\Api\ProjectMailController;
 use App\Http\Controllers\Api\EngineerMailController;
+use App\Http\Controllers\Api\RequirementMatchResultController;
 use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\TenantController;
 use App\Http\Controllers\Api\AdminStatsController;
@@ -222,6 +223,11 @@ Route::prefix('v1')->middleware(['supabase.auth'])->group(function () {
         // 鮮度マッチング（過去N日メール候補）
         Route::get('/{id}/fresh-engineer-mails',  [ProjectMailController::class, 'freshEngineerMails']);
         Route::post('/{id}/send-proposal-from-ems', [ProjectMailController::class, 'sendProposalFromEms']);
+        // 要件マッチング (docs/480)
+        Route::get('/{id}/requirements',                       [ProjectMailController::class, 'requirements']);
+        Route::post('/{id}/requirements/regenerate',           [ProjectMailController::class, 'regenerateRequirements']);
+        Route::get('/{id}/requirement-match',                  [ProjectMailController::class, 'requirementMatch']);
+        Route::post('/{id}/requirement-match/regenerate',      [ProjectMailController::class, 'regenerateRequirementMatch']);
     });
 
     // ── 技術者メール（スコアリング済み）──────────────────
@@ -306,6 +312,9 @@ Route::prefix('v1')->middleware(['supabase.auth'])->group(function () {
 
     // ── 提案スレッド一覧 ──────────────────────────────────
     Route::get('proposal-threads', [DeliveryCampaignController::class, 'proposalThreads']);
+
+    // ── 要件マッチング (docs/480 §5) 営業手動上書き ───────────
+    Route::patch('requirement-match-results/{id}', [RequirementMatchResultController::class, 'update']);
 
     // ── 配信キャンペーン（送信履歴を統合）───────────────────
     Route::prefix('delivery-campaigns')->group(function () {
