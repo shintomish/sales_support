@@ -404,3 +404,53 @@ UI:
 - 既存 `ClaudeService::generateProposal()` がモデル `claude-haiku-4-5-20251001` をハードコードしている既知の technical debt が見つかった → 本機能では同じ轍を踏まない
 - `engineer_mail_sources.affiliation`（2026-05 追加済）はスキルシート補足として Stage 2 プロンプト入力に含める
 - 既存 `required_skills` / `preferred_skills` jsonb と `ai_requirements` jsonb は **併存**。既存 UI 表示はそのまま、対照表は新ビューでのみ使用。将来統合は別 issue
+
+---
+
+## 15. プロトタイプ検証結果反映 (2026-05-21)
+
+`docs/481_requirement_matching_prototype_report.md` で実 PMS/EMS 検証を実施。松村レビュー結果を踏まえ以下を確定:
+
+### 15.1 モデル選定
+- **Sonnet 4.6 で固定**。Haiku 4.5 は Angular.js / Angular のバージョン違いを見逃し、テックリード判定が緩いなど精度低下が顕著で営業ミスを誘発するため不採用
+- 実装は `config('services.anthropic.model')` 経由 (haiku ハードコードしない)
+
+### 15.2 カテゴリ表記
+- 内部 enum: `skill` / `experience` / `attitude` / `location` / `language` / `contract` / `other` (英語維持・DB 互換性)
+- UI 表示: 「スキル / 経験 / 姿勢 / 勤務地 / 言語 / 契約 / その他」(和文)
+- フロント側で enum → ラベルマッピング (`src/lib/requirementCategoryLabel.ts` 想定)
+
+### 15.3 UI 分離: スキル対照表 vs 契約条件チェック
+要件は category で 2 グループに分けて表示:
+
+| グループ | category 値 | 用途 |
+|---|---|---|
+| **スキル対照表** | `skill` / `experience` / `attitude` / `language` / `other` | 技術者本人の能力・経験を judge する表 (◯/△/× 中心) |
+| **契約条件チェック** | `contract` / `location` | 年齢上限・国籍・単価・商流・勤務地などのフィルタ条件 (?/◯/× 中心) |
+
+提案メール本文には両セクションを `## スキル対照表` / `## 契約条件チェック` の見出しで挿入 (§481 報告書 §8 サンプル参照)。
+
+### 15.4 コスト最終試算 (Prompt Caching 適用後)
+
+| 項目 | 試算 |
+|---|---|
+| Stage 1 (PMS 単位 1 回) | $0.017 |
+| Stage 2 1回目 (cache write) | $0.026 |
+| Stage 2 2-5回目 (cache read) | 4 × $0.020 = $0.080 |
+| **5 候補/案件 合計** | **$0.123** |
+| **月 360 件** | **約 $44** |
+
+ephemeral cache 5min で完結する想定 (1 提案フロー内で全候補を判定)。出力 token を絞る (evidence を短く / confidence 省略) で $30/月台まで圧縮可能。
+
+### 15.5 ClaudeService 実装方針
+- `cache_control: ephemeral` を system prompt + 要件 block に付与
+- max_tokens 2500 設定 (Sonnet 4.6 デフォルトは小さい)
+- リトライ・タイムアウトは既存 `postWithRetry` を流用
+
+### 15.6 計画書 §5 API への補足
+- `GET /v1/project-mails/{id}/requirement-match-batch?engineer_ids=...&ems_ids=...` の **bulk endpoint** も検討。フロントで複数候補を 1 度に表示する場合、1 リクエストで cache を確実に同一接続にできる
+- Stage 1 結果は `project_mail_sources.ai_requirements` で永続化 (キャッシュとは別レイヤ)
+
+### 15.7 残課題 (Phase 1 実装前に追加検討)
+- [ ] スキルシート添付の PDF/Excel から `parsed_skill_sheet_text` を抽出する処理 (Phase 1 で migration 追加だが、抽出パイプラインは Phase 4 でも可)
+- [ ] 提案メール送信履歴 (`delivery_send_histories`) に `requirement_match_result_id` を FK で紐づけるか検討
