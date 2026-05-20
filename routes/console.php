@@ -98,6 +98,9 @@ Schedule::call(function () {
 })
     ->dailyAt('02:50')
     ->timezone('Asia/Tokyo')
+    // 本番限定: ローカル Supabase は Disk IO Budget が小さいため、VACUUM の書込で
+    // 24h 予算を消費しすぎる (2026-05-21 警告メール)。autovacuum 0.05 で十分なので skip。
+    ->environments(['production'])
     ->name('vacuum-hot-tables')
     ->withoutOverlapping()
     ->onFailure(function () {
