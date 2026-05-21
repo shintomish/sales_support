@@ -429,12 +429,17 @@ PROMPT;
   ]
 }
 
-ルール:
+★最重要ルール: **要件は重要度の高い上位 5 件程度に絞る (最大 8 件)**
+- 案件のコア要件のみ。瑣末な条件は除外
+- 複数案件をまとめたメール (案件1/案件2/...) の場合は、判定対象となる案件 1 件分を選び、その上位 5 件程度を抽出
+- 必須 (must) 要件を優先。尚可は特に重要な場合のみ
+
+その他のルール:
 - 「必須」「MUST」明示の要件は type="must"
 - 「尚可」「歓迎」「あれば」「望ましい」は type="want"
 - 明示が無くスキル箇条書きのみの場合は type="must"
 - 1 要件は 1 オブジェクト。「Java と PHP の経験」は分割せず 1 件で OK (label に列挙)
-- 単価・契約形態・場所・国籍・年齢などの条件も category="contract"/"location" 等として含める
+- 単価・契約形態・場所・国籍・年齢などの条件も、案件の核心に関わるものは含める (category="contract"/"location" 等)
 - 営業文 (お見送りの判断・連絡先・署名) は除外
 PROMPT;
 
@@ -442,13 +447,21 @@ PROMPT;
 
         $response = $this->postWithRetry([
             'model'      => config('services.anthropic.model'),
-            'max_tokens' => 2500,
+            'max_tokens' => 3000, // 上位5件程度に絞るプロンプト指示済 (Stage1)
             'system'     => $systemPrompt,
             'messages'   => [['role' => 'user', 'content' => $userPrompt]],
-        ]);
+        ], timeout: 120);
 
         if ($response->failed()) {
             throw new \Exception('Claude requirement extraction failed: ' . $response->body());
+        }
+
+        $stopReason = $response->json('stop_reason', '');
+        if ($stopReason === 'max_tokens') {
+            \Illuminate\Support\Facades\Log::warning('[ClaudeService] extractRequirements truncated by max_tokens', [
+                'usage' => $response->json('usage', []),
+            ]);
+            throw new \Exception('Claude API response truncated (max_tokens). 案件メールが長すぎるため要件抽出が完了しませんでした。');
         }
 
         $content = $response->json('content.0.text', '');
@@ -529,7 +542,7 @@ PROMPT;
 
         $response = $this->postWithRetry([
             'model'      => config('services.anthropic.model'),
-            'max_tokens' => 4000, // 要件 15 件×evidence 80字 でも余裕を持たせる
+            'max_tokens' => 4000, // 要件 8 件 × evidence 80字 で十分
             'system'     => [
                 ['type' => 'text', 'text' => $systemPrompt, 'cache_control' => ['type' => 'ephemeral']],
             ],
@@ -539,7 +552,7 @@ PROMPT;
                     ['type' => 'text', 'text' => $engineerBlock],
                 ]],
             ],
-        ]);
+        ], timeout: 120);
 
         if ($response->failed()) {
             throw new \Exception('Claude requirement match judgment failed: ' . $response->body());
