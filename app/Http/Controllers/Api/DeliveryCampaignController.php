@@ -102,6 +102,7 @@ class DeliveryCampaignController extends Controller
             return [
                 'id'                       => $campaign->id,
                 'send_type'                => $campaign->send_type,
+                'delivery_type'            => $campaign->delivery_type,
                 'project_mail_id'          => $campaign->project_mail_id,
                 'project_title'            => $campaign->projectMailSource?->title,
                 'engineer_mail_source_id'  => $campaign->engineer_mail_source_id,
