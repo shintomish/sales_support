@@ -22,8 +22,10 @@ use PhpOffice\PhpWord\IOFactory as PhpWordIOFactory;
  */
 class SkillSheetTextExtractor
 {
-    private const MAX_FILE_SIZE = 3 * 1024 * 1024; // 3MB
-    private const MAX_TEXT_LEN  = 30000;
+    private const MAX_FILE_SIZE   = 1 * 1024 * 1024; // 1MB (Excel は埋込画像/数式で展開時に肥大化するため厳しめ)
+    private const MAX_TEXT_LEN    = 30000;
+    private const MAX_ROWS_PER_SHEET = 300; // 1 シートあたりの最大行数 (Sentry OOM 対策)
+    private const MAX_SHEETS         = 5;   // 最大処理シート数
 
     /** ファイル拡張子 → 抽出メソッド */
     private const SUPPORTED = [
@@ -133,21 +135,51 @@ class SkillSheetTextExtractor
     {
         $tmp = tempnam(sys_get_temp_dir(), 'skillsheet_') . '.' . pathinfo($filename, PATHINFO_EXTENSION);
         file_put_contents($tmp, $binary);
+        // PhpSpreadsheet OOM 防御: 抽出スコープのみ memory_limit を引上げ
+        $prevMem = ini_get('memory_limit');
+        ini_set('memory_limit', '1G');
+        $ss = null;
         try {
             $reader = SpreadsheetIOFactory::createReaderForFile($tmp);
             $reader->setReadDataOnly(true);
+            $reader->setReadEmptyCells(false);
             $ss = $reader->load($tmp);
             $out = [];
+            $sheetCount = 0;
             foreach ($ss->getAllSheets() as $sheet) {
+                if ($sheetCount++ >= self::MAX_SHEETS) {
+                    $out[] = '【...シート数上限のため省略】';
+                    break;
+                }
                 $out[] = '【シート: ' . $sheet->getTitle() . '】';
-                foreach ($sheet->toArray(null, true, true, false) as $row) {
-                    $line = trim(implode("\t", array_map(fn($c) => (string) ($c ?? ''), $row)));
-                    if ($line !== '') $out[] = $line;
+                $rowCount = 0;
+                foreach ($sheet->getRowIterator() as $row) {
+                    if ($rowCount++ >= self::MAX_ROWS_PER_SHEET) {
+                        $out[] = '【...行数上限のため省略】';
+                        break;
+                    }
+                    $cellIterator = $row->getCellIterator();
+                    $cellIterator->setIterateOnlyExistingCells(true);
+                    $cells = [];
+                    foreach ($cellIterator as $cell) {
+                        $v = $cell->getValue();
+                        if ($v !== null && $v !== '') $cells[] = (string) $v;
+                    }
+                    if (!empty($cells)) {
+                        $out[] = implode("\t", $cells);
+                    }
                 }
             }
             return implode("\n", $out);
         } finally {
+            // メモリ解放: spreadsheet をディスコネクト
+            if ($ss !== null) {
+                $ss->disconnectWorksheets();
+                unset($ss);
+            }
             @unlink($tmp);
+            ini_set('memory_limit', $prevMem);
+            gc_collect_cycles();
         }
     }
 
