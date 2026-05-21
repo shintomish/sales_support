@@ -378,18 +378,31 @@ PROMPT;
 
     private function parseResponse(string $content): array
     {
-        // JSONを抽出（```json ... ``` のような形式に対応）
-        $content = preg_replace('/```json\s*/', '', $content);
-        $content = preg_replace('/```\s*$/', '', $content);
+        $orig = $content;
+        // 1. コードフェンス除去 (```json ... ``` / ``` ... ```)
+        $content = preg_replace('/^\s*```(?:json)?\s*\n?/i', '', $content) ?? $content;
+        $content = preg_replace('/\n?\s*```\s*$/', '', $content) ?? $content;
         $content = trim($content);
 
         $data = json_decode($content, true);
-
-        if (json_last_error() !== JSON_ERROR_NONE) {
-            throw new \Exception('Failed to parse Claude API response as JSON');
+        if (json_last_error() === JSON_ERROR_NONE && is_array($data)) {
+            return $data;
         }
 
-        return $data;
+        // 2. プロローグ/エピローグの非 JSON 文字列を含む場合、最初の { から最後の } を抽出
+        $first = strpos($content, '{');
+        $last  = strrpos($content, '}');
+        if ($first !== false && $last !== false && $last > $first) {
+            $extracted = substr($content, $first, $last - $first + 1);
+            $data = json_decode($extracted, true);
+            if (json_last_error() === JSON_ERROR_NONE && is_array($data)) {
+                return $data;
+            }
+        }
+
+        // 3. 完全に parse 不能なら content の先頭を含めて例外
+        $preview = mb_substr($orig, 0, 200);
+        throw new \Exception('Failed to parse Claude API response as JSON (preview: ' . $preview . '...)');
     }
 
     // ── 要件マッチング (docs/480 / docs/481 で検証済プロンプト) ─────────────────────────
@@ -462,19 +475,26 @@ PROMPT;
         ?string $skillSheetText = null
     ): array {
         $systemPrompt = <<<'PROMPT'
-あなたは SES 営業のアシスタントです。案件の要件 each に対し、紹介候補の技術者が満たすかを ◯/△/× で判定し、根拠を引用形式で示します。
+あなたは SES 営業のアシスタントです。案件の要件 each に対し、紹介候補の技術者 **1 名** が満たすかを ◯/△/× で判定し、根拠を引用形式で示します。
 
-【出力スキーマ (JSON のみ)】
+【判定対象の特定】 ★最重要
+- 入力 JSON 【技術者情報】の `name` フィールドに記載された **1 名のみ**を判定対象とする
+- 入力 【技術者メール本文】に複数の技術者情報 (キャリアビート社のまとめメール等) が含まれていても、対象 1 名以外の情報は **完全に無視する**
+- 出力は対象 1 名分の matches 配列のみ。複数 engineer をネストする構造は禁止
+
+【出力スキーマ (JSON のみ・厳守)】
 {
   "matches": [
     {
       "label": "要件のラベル (入力と一致)",
       "judgment": "circle" | "triangle" | "cross" | "unknown",
-      "evidence": "技術者情報からの引用 (改変禁止)",
+      "evidence": "技術者情報からの引用 (改変禁止・80字以内)",
       "confidence": "high" | "medium" | "low"
     }
   ]
 }
+- "overall" や "summary" などスキーマに無いフィールドは出力しない
+- evidence は 80字以内に要約 (出力 token 節約)
 
 【判定基準】
 - circle (◯): 要件を明確に満たす。evidence に技術者情報からの引用根拠あり
@@ -484,16 +504,16 @@ PROMPT;
 
 【判定例】
 例1: 要件「TypeScript (フロント/バックエンド) 3年以上」、技術者「直近5年TypeScript/Next.jsで開発」→ circle high
-例2: 要件「Angular.js 開発経験 (尚可)」、技術者スキル「Angular」→ triangle medium (Angular.js は 1.x 系、Angular は 2+ で別物。バージョン違いを示唆)
+例2: 要件「Angular.js 開発経験 (尚可)」、技術者スキル「Angular」→ triangle medium (Angular.js は 1.x 系、Angular は 2+ で別物)
 例3: 要件「単価上限80万円」、技術者「単金93万円」→ cross high (要件超過は明確に NG)
-例4: 要件「テックリード経験 (尚可)」、技術者「小規模チームのリーダーとして開発プロセスの可視化、コードレビュー、新人教育を主導」→ triangle medium (リーダー経験はあるがテックリード明示なし)
+例4: 要件「テックリード経験 (尚可)」、技術者「小規模チームのリーダー」→ triangle medium (リーダー経験はあるがテックリード明示なし)
 例5: 要件「外国籍不可」、技術者情報に国籍記載なし → unknown low
-例6: 要件「勤務地：五反田 (基本出社)」、技術者「最寄：沖縄県、働き方:フルリモート」→ cross high (出社不可と明確)
-例7: 要件「商流：元請→上位→弊社 (支援費1社先可)」、技術者「弊社1社先正社員」→ circle high (1社先は要件範囲内)
+例6: 要件「勤務地：五反田 (基本出社)」、技術者「最寄：沖縄県、フルリモート」→ cross high
+例7: 要件「商流：元請→上位→弊社 (支援費1社先可)」、技術者「弊社1社先正社員」→ circle high
 
 【ルール】
 - 推測で circle を付けない。根拠が薄ければ triangle / unknown
-- evidence は技術者情報の文字列を引用 (改変禁止)。判定材料が無い時は "技術者情報に記載なし"
+- evidence は技術者情報の文字列を引用 (改変禁止) し 80字以内に要約。判定材料が無い時は "技術者情報に記載なし"
 - 技術スキル系の要件は「同義語/略称/バージョン違い」を慎重に。例: "React.js" と "React" は同義、"Angular.js" と "Angular" は別物
 PROMPT;
 
@@ -509,7 +529,7 @@ PROMPT;
 
         $response = $this->postWithRetry([
             'model'      => config('services.anthropic.model'),
-            'max_tokens' => 2500,
+            'max_tokens' => 4000, // 要件 15 件×evidence 80字 でも余裕を持たせる
             'system'     => [
                 ['type' => 'text', 'text' => $systemPrompt, 'cache_control' => ['type' => 'ephemeral']],
             ],
@@ -523,6 +543,14 @@ PROMPT;
 
         if ($response->failed()) {
             throw new \Exception('Claude requirement match judgment failed: ' . $response->body());
+        }
+
+        $stopReason = $response->json('stop_reason', '');
+        if ($stopReason === 'max_tokens') {
+            \Illuminate\Support\Facades\Log::warning('[ClaudeService] judgeRequirementMatches truncated', [
+                'stop_reason' => $stopReason,
+                'usage'       => $response->json('usage', []),
+            ]);
         }
 
         $content = $response->json('content.0.text', '');
