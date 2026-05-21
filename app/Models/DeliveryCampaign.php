@@ -16,6 +16,7 @@ class DeliveryCampaign extends Model
     protected $fillable = [
         'tenant_id',
         'send_type',
+        'delivery_type',
         'project_mail_id',
         'engineer_mail_source_id',
         'source_email',

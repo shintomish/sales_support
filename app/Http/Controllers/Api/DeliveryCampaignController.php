@@ -207,6 +207,8 @@ class DeliveryCampaignController extends Controller
             // 元請けドメイン警告モーダルで「今回除外する」と選択された delivery_address_id 一覧
             'exclude_address_ids'     => 'nullable|array',
             'exclude_address_ids.*'   => 'integer|exists:delivery_addresses,id',
+            // フォームで選択された配信種別 (project / engineer)。一斉配信履歴の分類表示に使う
+            'delivery_type'           => 'nullable|in:project,engineer',
         ]);
 
         // 紐づき案件/技術者を選んでいる場合は source_email を無視（フロント側でも非表示）
