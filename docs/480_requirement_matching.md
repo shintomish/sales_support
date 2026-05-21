@@ -454,3 +454,135 @@ ephemeral cache 5min で完結する想定 (1 提案フロー内で全候補を�
 ### 15.7 残課題 (Phase 1 実装前に追加検討)
 - [ ] スキルシート添付の PDF/Excel から `parsed_skill_sheet_text` を抽出する処理 (Phase 1 で migration 追加だが、抽出パイプラインは Phase 4 でも可)
 - [ ] 提案メール送信履歴 (`delivery_send_histories`) に `requirement_match_result_id` を FK で紐づけるか検討
+
+---
+
+## 16. Phase 4 後の安定化 + UI 改修 (2026-05-21)
+
+Phase 1〜4 完了後、本番運用で発覚した課題への対応 + 提案フローの UX 改善を実施。コミット: backend `47225ed` / frontend `c876403` → `4583068` → `61faf7a` (本番反映済)。
+
+### 16.1 Claude API 安定化 (`ClaudeService.php`)
+
+| 課題 | 対応 |
+|---|---|
+| cURL error 28 (30s timeout) | `extractRequirements` / `judgeRequirementMatches` の timeout を 30s → **120s** に拡張。PMS 27196 等の長文メールで Anthropic 応答に 30+ 秒かかる事象に対応 |
+| 要件 100+ 件で max_tokens 切れ | Stage1 system prompt に **「★最重要ルール: 重要な要件 上位 5 件程度に絞る (最大 8 件)」** を追加。複数案件まとめメール (案件1/案件2/...) で 100+ 件が抽出され 6000 トークンでも切れる事象に根本対策 |
+| silent な truncate | `stop_reason='max_tokens'` 時に明示 Exception 化 (silent な JSON 不整合を防ぐ) |
+| max_tokens | Stage1: 2500→**3000** / Stage2: **4000** (絞り込みプロンプトで十分) |
+
+新プロンプトのコア追加部分:
+```
+★最重要ルール: 要件は重要度の高い上位 5 件程度に絞る (最大 8 件)
+- 案件のコア要件のみ。瑣末な条件は除外
+- 複数案件をまとめたメール (案件1/案件2/...) の場合は、判定対象となる案件 1 件分を選び、その上位 5 件程度を抽出
+- 必須 (must) 要件を優先。尚可は特に重要な場合のみ
+```
+
+### 16.2 Next.js dev rewrites proxyTimeout
+
+`next.config.ts` に `experimental.proxyTimeout: 180_000` 追加。デフォルト 30s で 499 切断されていた問題を解消。
+
+### 16.3 必須要件×案件の自動除外フィルタ (新設)
+
+`/engineer-mails/[id]` と `/matching/[id]` のヘッダーセレクト列に **「☐ 📊 対照表」** チェックボックスを追加。
+
+| 仕様 | 内容 |
+|---|---|
+| デフォルト | **OFF** (件数が多い時の Claude API 負荷を考慮、ユーザーが必要な時のみ ON) |
+| ON 時の挙動 | 鮮度マッチング結果の全 PMS で `/v1/project-mails/{id}/requirement-match?ems_id=N` を**並列取得** → 必須要件 × 案件は `freshItems` から除外して setState |
+| ローディング表示 | `FreshLoadingIndicator` コンポーネント: 48px スピナー + フェーズ表示 + 進捗バー + 件数 (例 `3/10件 30%`) + 補足説明 |
+| 対照表生成失敗時 | 安全側に倒して **除外せず表示** (営業判断に委ねる) |
+| 対象 | feature_requirement_matching ON のテナントのみ |
+
+### 16.4 対照表 toggle ロジックの全面再設計
+
+#### 旧実装の問題
+- `baseBodyRef.current` (初回 `draft.body`) を保持し、OFF 時に丸ごと書き戻していた
+- 結果: 宛先名変更 (handleToNameChange) や本文編集が toggle で失われる、ON/OFF 繰り返しでバグ
+- Claude API 応答待ち中の OFF (race condition) で「OFF なのに対照表入り」状態が発生
+
+#### 新実装 (`removeMatchTableFromBody` 導入)
+`lib/requirementCategoryLabel.ts`:
+```ts
+export function removeMatchTableFromBody(body: string): string {
+  const sep = '─'.repeat(48)
+  const re = new RegExp(`\\n*${sep}\\n[\\s\\S]*?\\n${sep}\\n[^\\n]*\\n*`)
+  return body.replace(re, '\n\n').replace(/\n{3,}/g, '\n\n')
+}
+```
+
+toggle 関数:
+```ts
+const includeMatchRef = useRef(includeMatchTable)
+includeMatchRef.current = includeMatchTable
+const handleToggleMatchTable = async (checked: boolean) => {
+  setIncludeMatchTable(checked)
+  if (!checked) {
+    setBody(prev => removeMatchTableFromBody(prev))
+    return
+  }
+  const md = matchTableMd ?? (await fetchMatchTable())
+  if (!includeMatchRef.current) return  // fetch 完了時に OFF ならスキップ
+  if (!md) { setIncludeMatchTable(false); return }
+  setBody(prev => insertMatchTableIntoBody(removeMatchTableFromBody(prev), md))
+}
+```
+
+ポイント:
+- 「現在の本文をベースに挿入/除去」 = 編集や宛先名変更が保持される
+- ON 時は **一旦除去してから挿入し直し** = 重複防止
+- `includeMatchRef` で race condition guard
+- 置換結果が `\n\n` = 段落区切りの空行を保持
+
+### 16.5 insertMatchTableIntoBody のマーカー優先度修正
+
+旧 marker リスト:
+```
+'ご面談', 'お気軽にご返信', 'お忙しいところ', 'ご検討...', '何卒...', '_/_/_/', '━━━', '─────'
+```
+
+新 marker リスト:
+```
+'_/_/_/', '━━━', '─────', 'お忙しいところ', 'ご検討いただけます', 'ご検討のほど', '何卒よろしくお願い'
+```
+
+「お気軽にご返信」「ご面談」を除外。理由: 「面談やスキルシートのご要望がございましたら、お気軽にご返信ください。」のような **本文中の一文** に現れやすく、その直前に対照表を入れると **文を分断していた** ため。
+
+### 16.6 スキルシート / 技術者添付 DL & 添付対応
+
+`/v1/engineer-mails/{id}` API が `email.attachments` を既に eager load 済 (バックエンド変更不要)。
+
+| 場所 | 機能 |
+|---|---|
+| `/engineer-mails/[id]` 緑ヘッダー直下 | `📎 履歴書.xlsx (245KB)` チップを表示。クリックで Blob ダウンロード (`downloadEngineerAttachment`) |
+| 個別提案モーダル (両画面 ProposalModal) | 「📎 技術者スキルシート (N件) を送信添付に追加」ボタン。一度押すと `✓ 追加済` (二重追加防止)。各添付の **確認用 DL チップ** を別途並置 (送信添付には影響しない純粋確認用) |
+| ✕ 削除同期 | 送信添付欄から ✕ で削除すると `addedEngineerAttIds` セットからも除外 → 「追加済」が「📎 …を添付」に戻り再追加可能 |
+| `BulkSendModal` (まとめて提案) | 技術者単体スキルシート対応外 (複数技術者まとめのため非対象)。`engineerAttachments=[]` で固定 |
+
+ファイル変換: `axios.get(... { responseType: 'blob' })` → `new File([blob], filename, { type: mime })` で送信添付に流用。
+
+### 16.7 宛先名の自動抽出 (`extractSenderNameFromBody`)
+
+`/matching/[id]` の鮮度マッチング個別提案で、宛先名を **技術者本人** (`FreshEms.name` = `Y.H` 等のイニシャル) ではなく、**メール本文の挨拶文** から BP 担当者名を抽出するよう変更。
+
+```
+「いつもお世話になっております。
+ 株式会社キャリアビートの雨宮 昂平と申します。」
+                  ↓
+                "雨宮 昂平"
+```
+
+抽出パターン優先度:
+1. `(株式会社|有限会社|合同会社|（株）|㈱)XX **の YY と申します/でございます**`
+2. `YY と申します`
+3. `YY でございます`
+4. 「営業」「弊社」「担当」「担当者」など一般語は除外
+
+抽出不可なら挨拶は「営業ご担当者様」。
+
+### 16.8 残課題 / Phase 5 候補
+- **スコア・点数の出し方の見直し** (2026-05-21 ユーザー言及あり) — 鮮度マッチング `score` 計算ロジックの再設計
+- **複数案件まとめメール** に対する対照表生成 (1 メール 1 案件前提の現設計を拡張)
+- **`BulkSendModal` (まとめ提案) のスキルシート添付** — 複数技術者対応の UI 設計
+- **登録済技術者 (Engineer ID 経由) の添付対応** — 現状は EMS 経由でのみ動作
+- **本番 EMS のバックフィル実行** (60k 件あり夜間バッチで分割) — Phase 4 残課題
