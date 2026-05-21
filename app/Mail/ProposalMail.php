@@ -23,6 +23,7 @@ class ProposalMail extends Mailable
         public readonly string $senderEmail = '',
         public readonly array $uploadedFiles = [],
         public readonly string $messageId = '',
+        public readonly ?string $fromDisplayName = null,
     ) {}
 
     public function envelope(): Envelope
@@ -34,7 +35,7 @@ class ProposalMail extends Mailable
         return new Envelope(
             from: new Address(
                 config('mail.from.address'),
-                config('mail.from.name'),
+                $this->fromDisplayName ?: config('mail.from.name'),
             ),
             replyTo: $replyTo,
             subject: $this->mailSubject,

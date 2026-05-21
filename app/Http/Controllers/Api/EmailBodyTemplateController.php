@@ -35,13 +35,14 @@ class EmailBodyTemplateController extends Controller
         $userId   = auth()->id();
 
         $v = $request->validate([
-            'name'       => 'required|string|max:100',
-            'name_en'    => 'nullable|string|max:100',
-            'department' => 'nullable|string|max:100',
-            'position'   => 'nullable|string|max:100',
-            'email'      => 'nullable|email|max:200',
-            'mobile'     => 'nullable|string|max:50',
-            'body_text'  => 'nullable|string',
+            'name'                 => 'required|string|max:100',
+            'name_en'              => 'nullable|string|max:100',
+            'department'           => 'nullable|string|max:100',
+            'position'             => 'nullable|string|max:100',
+            'email'                => 'nullable|email|max:200',
+            'mobile'               => 'nullable|string|max:50',
+            'body_text'            => 'nullable|string',
+            'sender_display_name'  => 'nullable|string|max:200',
         ]);
 
         $template = EmailBodyTemplate::updateOrCreate(

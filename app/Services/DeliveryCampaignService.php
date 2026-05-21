@@ -65,6 +65,8 @@ class DeliveryCampaignService
     {
         $testTo      = config('mail.delivery_test_to');
         $senderEmail = config('mail.from.address') ?? '';
+        // ユーザ別の From 表示名 (メール署名設定)
+        $fromDisplayName = \App\Models\EmailBodyTemplate::where('user_id', $this->userId)->value('sender_display_name') ?: null;
 
         $addresses = DeliveryAddress::where('tenant_id', $this->tenantId)
             ->where('is_active', true)
@@ -99,6 +101,7 @@ class DeliveryCampaignService
                         senderEmail:     $senderEmail,
                         messageId:       $messageId,
                         attachmentPaths: $attachmentPaths,
+                        fromDisplayName: $fromDisplayName,
                     )
                 );
 
@@ -157,6 +160,7 @@ class DeliveryCampaignService
         $campaign    = $history->campaign;
         $testTo      = config('mail.delivery_test_to');
         $senderEmail = config('mail.from.address') ?? '';
+        $fromDisplayName = \App\Models\EmailBodyTemplate::where('user_id', $this->userId)->value('sender_display_name') ?: null;
 
         $toEmail   = $testTo ?: $history->email;
         $messageId = '<' . Str::uuid() . '@aizen-sol.co.jp>';
@@ -175,11 +179,12 @@ class DeliveryCampaignService
         try {
             Mail::to($toEmail)->send(
                 new DeliveryMail(
-                    mailSubject: $campaign->subject,
-                    body:        $personalizedBody,
-                    senderName:  $this->senderName,
-                    senderEmail: $senderEmail,
-                    messageId:   $messageId,
+                    mailSubject:     $campaign->subject,
+                    body:            $personalizedBody,
+                    senderName:      $this->senderName,
+                    senderEmail:     $senderEmail,
+                    messageId:       $messageId,
+                    fromDisplayName: $fromDisplayName,
                 )
             );
 

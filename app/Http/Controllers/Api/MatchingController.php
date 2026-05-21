@@ -20,6 +20,8 @@ use OpenApi\Attributes as OA;
 
 class MatchingController extends Controller
 {
+    use \App\Traits\UsesSenderDisplayName;
+
     public function __construct(
         private MatchingService $matchingService,
         private ClaudeService   $claudeService,
@@ -319,7 +321,7 @@ class MatchingController extends Controller
 
         $messageId = '<' . Str::uuid() . '@aizen-sol.co.jp>';
         try {
-            Mail::to($v['to'])->send(new ProposalMail($v['subject'], $v['body'], $senderName, $senderEmail, [], $messageId));
+            Mail::to($v['to'])->send(new ProposalMail($v['subject'], $v['body'], $senderName, $senderEmail, [], $messageId, fromDisplayName: $this->senderDisplayName()));
             DeliverySendHistory::create([
                 'tenant_id'         => $tenantId,
                 'campaign_id'       => $campaign->id,

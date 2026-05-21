@@ -22,6 +22,7 @@ class DeliveryMail extends Mailable
         public readonly string $senderEmail     = '',
         public readonly string $messageId       = '',
         public readonly array  $attachmentPaths = [],
+        public readonly ?string $fromDisplayName = null,
     ) {}
 
     public function envelope(): Envelope
@@ -33,7 +34,7 @@ class DeliveryMail extends Mailable
         return new Envelope(
             from: new Address(
                 config('mail.from.address'),
-                config('mail.from.name'),
+                $this->fromDisplayName ?: config('mail.from.name'),
             ),
             replyTo: $replyTo,
             subject: $this->mailSubject,

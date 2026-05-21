@@ -19,5 +19,6 @@ class EmailBodyTemplate extends Model
         'email',
         'mobile',
         'body_text',
+        'sender_display_name',
     ];
 }

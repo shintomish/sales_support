@@ -27,6 +27,8 @@ use Illuminate\Support\Str;
 
 class ProjectMailController extends Controller
 {
+    use \App\Traits\UsesSenderDisplayName;
+
     public function __construct(
         private ProjectMailScoringService    $scoringService,
         private ProjectMailMatchingService   $matchingService,
@@ -285,7 +287,7 @@ class ProjectMailController extends Controller
 
         $messageId = '<' . Str::uuid() . '@aizen-sol.co.jp>';
         try {
-            Mail::to($v['to'])->send(new ProposalMail($v['subject'], $v['body'], $senderName, $senderEmail, $attachmentPaths, $messageId));
+            Mail::to($v['to'])->send(new ProposalMail($v['subject'], $v['body'], $senderName, $senderEmail, $attachmentPaths, $messageId, fromDisplayName: $this->senderDisplayName()));
             DeliverySendHistory::create([
                 'tenant_id'      => $tenantId,
                 'campaign_id'    => $campaign->id,
@@ -358,7 +360,7 @@ class ProjectMailController extends Controller
         foreach ($v['recipients'] as $recipient) {
             $messageId = '<' . Str::uuid() . '@aizen-sol.co.jp>';
             try {
-                Mail::to($recipient['to'])->send(new ProposalMail($v['subject'], $v['body'], $senderName, $senderEmail, [], $messageId));
+                Mail::to($recipient['to'])->send(new ProposalMail($v['subject'], $v['body'], $senderName, $senderEmail, [], $messageId, fromDisplayName: $this->senderDisplayName()));
                 DeliverySendHistory::create([
                     'tenant_id'      => $tenantId,
                     'campaign_id'    => $campaign->id,
@@ -650,7 +652,7 @@ class ProjectMailController extends Controller
 
         $messageId = '<' . Str::uuid() . '@aizen-sol.co.jp>';
         try {
-            Mail::to($v['to'])->send(new ProposalMail($v['subject'], $v['body'], $senderName, $senderEmail, [], $messageId));
+            Mail::to($v['to'])->send(new ProposalMail($v['subject'], $v['body'], $senderName, $senderEmail, [], $messageId, fromDisplayName: $this->senderDisplayName()));
             DeliverySendHistory::create([
                 'tenant_id'      => $tenantId,
                 'campaign_id'    => $campaign->id,
