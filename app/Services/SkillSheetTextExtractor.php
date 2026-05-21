@@ -190,6 +190,11 @@ class SkillSheetTextExtractor
     /** 連続空白・タブを 1 個に / 連続改行を 2 個までに圧縮 (token 節約)。 */
     private function normalize(string $text): string
     {
+        // 不正な UTF-8 バイト (PDF/Excel 抽出時に混入) を除去
+        // PostgreSQL TEXT は valid UTF-8 を要求 (0xff 等で 22021 invalid byte sequence)
+        $text = mb_convert_encoding($text, 'UTF-8', 'UTF-8') ?: '';
+        // 制御文字 (タブ・改行以外) を除去
+        $text = preg_replace('/[\x00-\x08\x0B-\x0C\x0E-\x1F\x7F]/', '', $text) ?? $text;
         $text = preg_replace('/[ \t\x{3000}]+/u', ' ', $text) ?? $text;
         $text = preg_replace('/\n{3,}/', "\n\n", $text) ?? $text;
         return trim($text);
