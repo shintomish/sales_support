@@ -8,6 +8,7 @@ use App\Models\GmailToken;
 use PhpOffice\PhpSpreadsheet\IOFactory as SpreadsheetIOFactory;
 use PhpOffice\PhpWord\IOFactory as WordIOFactory;
 use Illuminate\Support\Facades\Log;
+use App\Services\SkillSheetTextExtractor;
 use App\Services\SupabaseStorageService;
 
 /**
@@ -906,7 +907,7 @@ class EngineerMailScoringService
             default                        => 'excluded',
         };
 
-        return EngineerMailSource::updateOrCreate(
+        $ems = EngineerMailSource::updateOrCreate(
             ['email_id' => $email->id, 'tenant_id' => $email->tenant_id],
             array_merge($extracted, [
                 'score'         => $score,
@@ -916,5 +917,27 @@ class EngineerMailScoringService
                 'received_at'   => $email->received_at,
             ])
         );
+
+        // 添付スキルシートの本文抽出 (docs/480 §3.3)。未抽出なら 1 回だけ実行。
+        // 失敗しても EMS 保存自体は成功させる。
+        if ($ems->parsed_skill_sheet_text === null) {
+            try {
+                $email->loadMissing('attachments');
+                if ($email->attachments->isNotEmpty()) {
+                    $extractor = app(SkillSheetTextExtractor::class);
+                    $text = $extractor->extractFromAttachments($email->attachments);
+                    if ($text) {
+                        $ems->update(['parsed_skill_sheet_text' => $text]);
+                    }
+                }
+            } catch (\Throwable $e) {
+                Log::warning('[EngineerMailScoring] skill sheet extract failed', [
+                    'email_id' => $email->id,
+                    'error'    => $e->getMessage(),
+                ]);
+            }
+        }
+
+        return $ems;
     }
 }

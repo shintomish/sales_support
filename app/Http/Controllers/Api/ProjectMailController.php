@@ -843,6 +843,69 @@ class ProjectMailController extends Controller
         return response()->json($result);
     }
 
+    /**
+     * 複数候補をまとめて判定 (上限ガード付き)。
+     * POST /v1/project-mails/{id}/requirement-match-batch
+     * body: { ems_ids: [..], engineer_ids: [..] }
+     *
+     * - 上限は config('services.anthropic.requirement_match_max_per_request') (デフォルト 5)
+     * - 既に DB キャッシュにあるものは Claude を呼ばない
+     * - エラーで失敗した個別候補があってもまとめて返す (results[i].error にメッセージ)
+     */
+    public function requirementMatchBatch(Request $request, int $id): JsonResponse
+    {
+        $this->ensureFeatureEnabled();
+
+        $v = $request->validate([
+            'ems_ids'        => 'nullable|array',
+            'ems_ids.*'      => 'integer|exists:engineer_mail_sources,id',
+            'engineer_ids'   => 'nullable|array',
+            'engineer_ids.*' => 'integer|exists:engineers,id',
+        ]);
+
+        $emsIds      = $v['ems_ids'] ?? [];
+        $engineerIds = $v['engineer_ids'] ?? [];
+        if (empty($emsIds) && empty($engineerIds)) {
+            return response()->json(['message' => 'ems_ids または engineer_ids を指定してください'], 422);
+        }
+
+        $max = (int) config('services.anthropic.requirement_match_max_per_request', 5);
+        $total = count($emsIds) + count($engineerIds);
+        if ($total > $max) {
+            return response()->json([
+                'message' => "1 リクエストあたりの上限 ({$max}件) を超えています (要求={$total}件)",
+                'max'     => $max,
+            ], 422);
+        }
+
+        $pms = ProjectMailSource::with('email')->findOrFail($id);
+
+        $results = [];
+        foreach ($emsIds as $emsId) {
+            try {
+                $ems = EngineerMailSource::findOrFail($emsId);
+                $r   = $this->requirementMatching->getOrGenerate($pms, $ems);
+                $results[] = ['ems_id' => $emsId, 'result' => $r];
+            } catch (\Throwable $e) {
+                $results[] = ['ems_id' => $emsId, 'error' => $e->getMessage()];
+            }
+        }
+        foreach ($engineerIds as $engId) {
+            try {
+                $eng = Engineer::findOrFail($engId);
+                $r   = $this->requirementMatching->getOrGenerate($pms, $eng);
+                $results[] = ['engineer_id' => $engId, 'result' => $r];
+            } catch (\Throwable $e) {
+                $results[] = ['engineer_id' => $engId, 'error' => $e->getMessage()];
+            }
+        }
+
+        return response()->json([
+            'project_mail_source_id' => $pms->id,
+            'results'                => $results,
+        ]);
+    }
+
     /** Feature flag チェック。テナント単位で無効なら 403。 */
     private function ensureFeatureEnabled(): void
     {

@@ -228,6 +228,7 @@ Route::prefix('v1')->middleware(['supabase.auth'])->group(function () {
         Route::post('/{id}/requirements/regenerate',           [ProjectMailController::class, 'regenerateRequirements']);
         Route::get('/{id}/requirement-match',                  [ProjectMailController::class, 'requirementMatch']);
         Route::post('/{id}/requirement-match/regenerate',      [ProjectMailController::class, 'regenerateRequirementMatch']);
+        Route::post('/{id}/requirement-match-batch',           [ProjectMailController::class, 'requirementMatchBatch']);
     });
 
     // ── 技術者メール（スコアリング済み）──────────────────
