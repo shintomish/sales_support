@@ -62,7 +62,7 @@ class ExportScoreSampleCsv extends Command
             $rows[] = [
                 '案件',
                 $pms->id,
-                $pms->status,
+                $this->statusJa($pms->status),
                 $pms->score,
                 $this->formatReasons($pms->score_reasons),
                 $top['score'] ?? '',
@@ -110,7 +110,7 @@ class ExportScoreSampleCsv extends Command
             $rows[] = [
                 '技術者',
                 $ems->id,
-                $ems->status,
+                $this->statusJa($ems->status),
                 $ems->score,
                 $this->formatReasons($ems->score_reasons),
                 $best['score'] ?? '',
@@ -151,15 +151,86 @@ class ExportScoreSampleCsv extends Command
             if (is_array($decoded)) $reasons = $decoded;
         }
         if (!is_array($reasons)) return '';
-        return implode(' | ', array_map('strval', $reasons));
+        return implode(' | ', array_map(fn($r) => $this->reasonJa((string) $r), $reasons));
     }
 
     private function formatBreakdown(array $bd): string
     {
+        $map = [
+            'requirements' => '必須条件',
+            'skills'       => 'スキル',
+            'conditions'   => '条件',
+            'availability' => '稼働',
+            'track_record' => '実績',
+        ];
         $parts = [];
         foreach ($bd as $k => $v) {
-            $parts[] = "{$k}:{$v}";
+            $label = $map[$k] ?? $k;
+            $parts[] = "{$label}:{$v}";
         }
         return implode(' / ', $parts);
+    }
+
+    private function statusJa(?string $status): string
+    {
+        return match ($status) {
+            'new'      => '新規',
+            'review'   => '要確認',
+            'excluded' => '除外',
+            default    => (string) $status,
+        };
+    }
+
+    /**
+     * 品質スコアの reason キーを和名に変換。
+     * 形式は "key:value" または "key" (例: price_concrete) または
+     * "domain:xxx:+20(...)" のようにコロンが複数あるパターンもある。
+     */
+    private function reasonJa(string $reason): string
+    {
+        // 単体キー (コロン無し) は固定マップ
+        $singleMap = [
+            'price_concrete'      => '単価具体性',
+            'has_attachment'      => '添付ファイルあり',
+            'no_unit_price'       => '希望単価なし',
+            'unit_price_too_low'  => '希望単価35万未満',
+            'excluded'            => '除外判定',
+        ];
+        if (isset($singleMap[$reason])) {
+            return $singleMap[$reason];
+        }
+
+        // domain:xxx:+20(...) は domain プレフィックスのまま値を保つ
+        if (strpos($reason, 'domain:') === 0) {
+            return 'ドメイン信頼度:' . substr($reason, strlen('domain:'));
+        }
+
+        // prefix:value 形式
+        $prefixMap = [
+            'project_a'     => '案件確度A',
+            'project_b'     => '案件確度B',
+            'lang'          => '技術1',
+            'lang2'         => '技術2',
+            'infra'         => '技術(インフラ)',
+            'db'            => '技術(DB)',
+            'location'      => '勤務地',
+            'process'       => '工程',
+            'timing'        => '稼働期間',
+            'penalty_vague' => 'ペナルティ(単価曖昧)',
+            'penalty_chain' => 'ペナルティ(高次商流)',
+            'engineer_kw'   => '明示ワード',
+            'availability'  => '稼働条件',
+            'tech'          => '技術',
+            'affiliation'   => '所属区分',
+        ];
+        $pos = strpos($reason, ':');
+        if ($pos !== false) {
+            $prefix = substr($reason, 0, $pos);
+            $value  = substr($reason, $pos + 1);
+            if (isset($prefixMap[$prefix])) {
+                return $prefixMap[$prefix] . ':' . $value;
+            }
+        }
+        return $reason; // 想定外はそのまま
     }
 }
