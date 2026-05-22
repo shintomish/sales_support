@@ -12,16 +12,16 @@ use Illuminate\Support\Facades\Mail;
 use Throwable;
 
 /**
- * 朝の日次レポート配信
- *   php artisan report:daily-sales                          全テナント・実送信
- *   php artisan report:daily-sales --dry-run                送信せずにログ出力のみ
- *   php artisan report:daily-sales --tenant=1               特定テナントのみ
- *   php artisan report:daily-sales --to=x@example.com       配信先設定を無視して指定アドレスに送信（テスト用）
+ * 朝の日次配信レポート (前日の配信・提案実績) を送信
+ *   php artisan report:daily-delivery-report                          全テナント・実送信
+ *   php artisan report:daily-delivery-report --dry-run                送信せずにログ出力のみ
+ *   php artisan report:daily-delivery-report --tenant=1               特定テナントのみ
+ *   php artisan report:daily-delivery-report --to=x@example.com       配信先設定を無視して指定アドレスに送信（テスト用）
  */
-class SendDailySalesReport extends Command
+class SendDailyDeliveryReport extends Command
 {
-    protected $signature   = 'report:daily-sales {--tenant= : 特定 tenant_id のみ} {--dry-run : 送信しない} {--to= : 配信先設定を無視して指定アドレスに送信}';
-    protected $description = '朝の日次レポートを配信先にメール送信する';
+    protected $signature   = 'report:daily-delivery-report {--tenant= : 特定 tenant_id のみ} {--dry-run : 送信しない} {--to= : 配信先設定を無視して指定アドレスに送信}';
+    protected $description = '朝の日次配信レポート (前日の配信・提案実績) を配信先にメール送信する';
 
     public function handle(DailyReportBuilder $builder): int
     {
@@ -54,7 +54,7 @@ class SendDailySalesReport extends Command
         } else {
             $recipients = ReportRecipient::withoutGlobalScopes()
                 ->where('tenant_id', $tenantId)
-                ->where('report_type', 'daily_sales')
+                ->where('report_type', 'daily_delivery_report')
                 ->where('is_active', true)
                 ->pluck('email')
                 ->all();

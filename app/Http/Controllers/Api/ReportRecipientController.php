@@ -15,12 +15,12 @@ use Illuminate\Validation\Rule;
  */
 class ReportRecipientController extends Controller
 {
-    private const REPORT_TYPES = ['daily_sales'];
+    private const REPORT_TYPES = ['daily_delivery_report'];
 
     /** GET /api/v1/settings/report-recipients */
     public function index(Request $request): JsonResponse
     {
-        $type = $request->query('report_type', 'daily_sales');
+        $type = $request->query('report_type', 'daily_delivery_report');
 
         $items = ReportRecipient::query()
             ->where('report_type', $type)

@@ -147,15 +147,15 @@ Schedule::command('vision:rotate-key')
         Log::error('[Schedule] Vision API キーローテーション失敗');
     });
 
-// ── 朝の日次レポート配信（毎日 8:30 JST）
-Schedule::command("report:daily-sales")
+// ── 朝の日次配信レポート（毎日 8:30 JST）前日の配信・提案実績をメール送信
+Schedule::command("report:daily-delivery-report")
     ->dailyAt("08:30")
     ->timezone("Asia/Tokyo")
-    ->name("daily-sales-report")
+    ->name("daily-delivery-report")
     ->withoutOverlapping()
     ->onSuccess(function () {
-        Log::info("[Schedule] 日次レポート配信 完了");
+        Log::info("[Schedule] 日次配信レポート 完了");
     })
     ->onFailure(function () {
-        Log::error("[Schedule] 日次レポート配信 失敗");
+        Log::error("[Schedule] 日次配信レポート 失敗");
     });

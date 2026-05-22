@@ -8,7 +8,7 @@ use Illuminate\Database\Eloquent\Model;
 /**
  * 自動配信レポートの宛先（report_recipients）
  *
- * `report_type` で daily_sales / weekly / alert 等を切り分けて購読管理。
+ * `report_type` で daily_delivery_report / weekly / alert 等を切り分けて購読管理。
  */
 class ReportRecipient extends Model
 {

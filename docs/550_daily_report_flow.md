@@ -145,17 +145,17 @@
 ### 4.1 設定済み配信先全員に即時送信
 ```bash
 ssh root@v133-18-42-139.vir.kagoya.net
-docker exec sales_support_app php artisan report:daily-sales
+docker exec sales_support_app php artisan report:daily-delivery-report
 ```
 
 ### 4.2 特定テナントのみ
 ```bash
-docker exec sales_support_app php artisan report:daily-sales --tenant=1
+docker exec sales_support_app php artisan report:daily-delivery-report --tenant=1
 ```
 
 ### 4.3 ドライラン（送信せずデータ確認）
 ```bash
-docker exec sales_support_app php artisan report:daily-sales --dry-run
+docker exec sales_support_app php artisan report:daily-delivery-report --dry-run
 ```
 
 出力例：
@@ -166,7 +166,7 @@ tenant_id=1: 受信者 1名 / 要対応 5件 / AIサマリ あり
 
 ### 4.4 配信先設定を無視して特定アドレスに送信（テスト用）
 ```bash
-docker exec --user www-data sales_support_app php artisan report:daily-sales --tenant=1 --to=test@example.com
+docker exec --user www-data sales_support_app php artisan report:daily-delivery-report --tenant=1 --to=test@example.com
 ```
 
 `report_recipients` テーブルの内容に関わらず指定アドレスに送信します。新フォーマットの確認・関係者へのプレビュー送信用。
@@ -178,9 +178,9 @@ docker exec --user www-data sales_support_app php artisan report:daily-sales --t
 ```
 Laravel Scheduler (毎朝 08:30 JST、cron)
   ↓
-SendDailySalesReport::handle()
+SendDailyDeliveryReport::handle()
   ↓ 全テナントをループ（is_active=true）
-  ├─ ReportRecipient で配信先を取得（report_type=daily_sales, is_active=true）
+  ├─ ReportRecipient で配信先を取得（report_type=daily_delivery_report, is_active=true）
   ├─ DailyReportBuilder::build($tenantId)
   │   ├─ [1] 受信メール件数集計（emails）
   │   ├─ [2] 有効と思われるメールリスト（案件）
@@ -219,7 +219,7 @@ A. 以下を順に確認してください：
 1. `/settings/report-recipients` で当該アドレスが「**配信中**」になっているか
 2. 迷惑メールフォルダに振り分けられていないか（送信元: `outsource@aizen-sol.co.jp` を許可リスト追加）
 3. 当日の受信件数・有効と思われるメールリスト・期限切れ契約が **すべて 0 件** ではないか（その場合「本日特筆すべき動きはありませんでした」のみ表示）
-4. 管理者に依頼して `php artisan report:daily-sales --dry-run` でデータが取得できるか確認
+4. 管理者に依頼して `php artisan report:daily-delivery-report --dry-run` でデータが取得できるか確認
 
 ### Q. AI 提案が表示されない
 A. 要対応（有効と思われるメールリスト＋期限切れ契約）が **0件** の場合、AI 提案は生成されません。
@@ -232,10 +232,10 @@ A. 技術者メール本文から名前を抽出できなかったケース。`E
 A. **テナント単位**で管理（`report_recipients.tenant_id`）。同じテナント内のユーザー全員が同じ配信先リストを共有します。
 
 ### Q. 配信時刻を変更したい
-A. `routes/console.php` の `Schedule::command('report:daily-sales')->dailyAt('08:30')` を変更（要デプロイ）。
+A. `routes/console.php` の `Schedule::command('report:daily-delivery-report')->dailyAt('08:30')` を変更（要デプロイ）。
 
 ### Q. レポート種別を増やしたい（週次・アラート等）
-A. `report_recipients.report_type` カラムで切り分け可能（現状は `daily_sales` のみ）。  
+A. `report_recipients.report_type` カラムで切り分け可能（現状は `daily_delivery_report` のみ）。  
 将来的に `weekly` `alert` 等を追加する設計になっており、配信先テーブルは流用できます。新しい Mailable ＋ Builder ＋ コマンド ＋ Scheduler を追加する形になります。
 
 ---
