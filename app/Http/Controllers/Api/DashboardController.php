@@ -52,16 +52,22 @@ class DashboardController extends Controller
                 'total'  => (int) $d->total,
             ]);
 
-        // 月別売上（過去6ヶ月）
-        $monthlyRevenue = collect(range(5, 0))->map(function ($i) use ($now) {
+        // 月別売上（過去6ヶ月） — N+1 解消版 (Sentry PHP-LARAVEL-C 対応)
+        // 旧: 月ごとに sum() を 6 回発行し whereMonth/whereYear で EXTRACT() を使うためインデックス未活用
+        // 新: DATE_TRUNC('month', ...) で 1 クエリ集計 + updated_at の範囲検索でインデックス活用
+        $startOfWindow = $now->copy()->subMonths(5)->startOfMonth();
+        $totalsByMonth = Deal::where('status', '成約')
+            ->where('updated_at', '>=', $startOfWindow)
+            ->selectRaw("DATE_TRUNC('month', updated_at) AS month_start, SUM(amount) AS revenue")
+            ->groupBy('month_start')
+            ->get()
+            ->mapWithKeys(fn($row) => [Carbon::parse($row->month_start)->format('Y-m') => (int) $row->revenue]);
+
+        $monthlyRevenue = collect(range(5, 0))->map(function ($i) use ($now, $totalsByMonth) {
             $month = $now->copy()->subMonths($i);
-            $revenue = Deal::where('status', '成約')
-                ->whereMonth('updated_at', $month->month)
-                ->whereYear('updated_at', $month->year)
-                ->sum('amount');
             return [
                 'month'   => $month->format('n月'),
-                'revenue' => (int) $revenue,
+                'revenue' => $totalsByMonth[$month->format('Y-m')] ?? 0,
             ];
         })->values();
 
