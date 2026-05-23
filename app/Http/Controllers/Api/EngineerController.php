@@ -505,23 +505,39 @@ class EngineerController extends Controller
         }
 
         if (in_array($ext, ['xlsx', 'xls', 'xlsm'])) {
-            $spreadsheet = SpreadsheetIOFactory::load($file->getPathname());
-            $text = '';
-            // 最初の2シートまで抽出（基本情報シートを優先）
-            foreach (array_slice($spreadsheet->getAllSheets(), 0, 2) as $sheet) {
-                $text .= '=== ' . $sheet->getTitle() . " ===\n";
-                foreach ($sheet->getRowIterator() as $row) {
-                    $rowCells = [];
-                    $cellIter = $row->getCellIterator();
-                    $cellIter->setIterateOnlyExistingCells(true);
-                    foreach ($cellIter as $cell) {
-                        $val = trim($cell->getFormattedValue());
-                        if ($val !== '') $rowCells[] = $val;
+            $path = $file->getPathname();
+            // PhpSpreadsheet OOM 防御: 抽出スコープのみ memory_limit を引上げ
+            $prevMem = ini_get('memory_limit');
+            ini_set('memory_limit', '1G');
+            $spreadsheet = null;
+            try {
+                $reader = SpreadsheetIOFactory::createReaderForFile($path);
+                $reader->setReadEmptyCells(false);
+                $spreadsheet = $reader->load($path);
+                $text = '';
+                // 最初の2シートまで抽出（基本情報シートを優先）
+                foreach (array_slice($spreadsheet->getAllSheets(), 0, 2) as $sheet) {
+                    $text .= '=== ' . $sheet->getTitle() . " ===\n";
+                    foreach ($sheet->getRowIterator() as $row) {
+                        $rowCells = [];
+                        $cellIter = $row->getCellIterator();
+                        $cellIter->setIterateOnlyExistingCells(true);
+                        foreach ($cellIter as $cell) {
+                            $val = trim($cell->getFormattedValue());
+                            if ($val !== '') $rowCells[] = $val;
+                        }
+                        if (!empty($rowCells)) $text .= implode("\t", $rowCells) . "\n";
                     }
-                    if (!empty($rowCells)) $text .= implode("\t", $rowCells) . "\n";
                 }
+                return $text;
+            } finally {
+                if ($spreadsheet !== null) {
+                    $spreadsheet->disconnectWorksheets();
+                    unset($spreadsheet);
+                }
+                ini_set('memory_limit', $prevMem);
+                gc_collect_cycles();
             }
-            return $text;
         }
 
         if (in_array($ext, ['docx', 'doc'])) {

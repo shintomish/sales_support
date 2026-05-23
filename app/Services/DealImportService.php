@@ -189,46 +189,62 @@ class DealImportService
      */
     private function loadRows(string $filePath): array
     {
-        $spreadsheet = IOFactory::load($filePath);
+        // PhpSpreadsheet OOM 防御: 読込スコープのみ memory_limit を引上げ
+        $prevMem = ini_get('memory_limit');
+        ini_set('memory_limit', '1G');
+        $spreadsheet = null;
+        try {
+            $reader = IOFactory::createReaderForFile($filePath);
+            $reader->setReadEmptyCells(false);
+            // 「台帳」シートのみ読み込む（他シートをロードしない）
+            $reader->setLoadSheetsOnly([self::SHEET_NAME]);
+            $spreadsheet = $reader->load($filePath);
 
-        // 「台帳」シートを取得
-        if (!$spreadsheet->sheetNameExists(self::SHEET_NAME)) {
-            throw new \Exception("シート「" . self::SHEET_NAME . "」が見つかりません。");
-        }
-
-        $sheet = $spreadsheet->getSheetByName(self::SHEET_NAME);
-        $allRows = $sheet->toArray(null, true, true, false);
-
-        // ヘッダー行（「項番」がある行）を検索
-        $headerRowIndex = null;
-        foreach ($allRows as $i => $row) {
-            if (isset($row[0]) && $row[0] === self::HEADER_KEYWORD) {
-                $headerRowIndex = $i;
-                break;
+            if (!$spreadsheet->sheetNameExists(self::SHEET_NAME)) {
+                throw new \Exception("シート「" . self::SHEET_NAME . "」が見つかりません。");
             }
-        }
 
-        if ($headerRowIndex === null) {
-            throw new \Exception("ヘッダー行（「項番」列）が見つかりません。");
-        }
+            $sheet = $spreadsheet->getSheetByName(self::SHEET_NAME);
+            $allRows = $sheet->toArray(null, true, true, false);
 
-        // ヘッダー行の次からデータ行を取得
-        // 削除フラグが 1 の行・項番が空の行は除外
-        $dataRows = [];
-        for ($i = $headerRowIndex + 1; $i < count($allRows); $i++) {
-            $row = $allRows[$i];
-            // 項番が空 → 空行とみなしスキップ
-            if (empty($row[0])) {
-                continue;
+            // ヘッダー行（「項番」がある行）を検索
+            $headerRowIndex = null;
+            foreach ($allRows as $i => $row) {
+                if (isset($row[0]) && $row[0] === self::HEADER_KEYWORD) {
+                    $headerRowIndex = $i;
+                    break;
+                }
             }
-            // 削除フラグが 1 → スキップ
-            if (isset($row[self::COL_DELETE_FLAG]) && $row[self::COL_DELETE_FLAG] == 1) {
-                continue;
-            }
-            $dataRows[] = $row;
-        }
 
-        return $dataRows;
+            if ($headerRowIndex === null) {
+                throw new \Exception("ヘッダー行（「項番」列）が見つかりません。");
+            }
+
+            // ヘッダー行の次からデータ行を取得
+            // 削除フラグが 1 の行・項番が空の行は除外
+            $dataRows = [];
+            for ($i = $headerRowIndex + 1; $i < count($allRows); $i++) {
+                $row = $allRows[$i];
+                // 項番が空 → 空行とみなしスキップ
+                if (empty($row[0])) {
+                    continue;
+                }
+                // 削除フラグが 1 → スキップ
+                if (isset($row[self::COL_DELETE_FLAG]) && $row[self::COL_DELETE_FLAG] == 1) {
+                    continue;
+                }
+                $dataRows[] = $row;
+            }
+
+            return $dataRows;
+        } finally {
+            if ($spreadsheet !== null) {
+                $spreadsheet->disconnectWorksheets();
+                unset($spreadsheet);
+            }
+            ini_set('memory_limit', $prevMem);
+            gc_collect_cycles();
+        }
     }
 
     /**
