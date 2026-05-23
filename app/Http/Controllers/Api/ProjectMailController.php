@@ -59,15 +59,20 @@ class ProjectMailController extends Controller
         }
 
         if ($search) {
-            $query->where(function ($q) use ($search) {
+            $searchBody = $request->boolean('search_body');
+            $query->where(function ($q) use ($search, $searchBody) {
                 $q->where('title', 'ilike', "%{$search}%")
                   ->orWhere('customer_name', 'ilike', "%{$search}%")
                   ->orWhere('work_location', 'ilike', "%{$search}%")
                   ->orWhere('sales_contact', 'ilike', "%{$search}%")
-                  ->orWhereHas('email', fn($eq) => $eq
-                      ->where('from_address', 'ilike', "%{$search}%")
-                      ->orWhere('from_name', 'ilike', "%{$search}%")
-                      ->orWhere('subject', 'ilike', "%{$search}%"));
+                  ->orWhereHas('email', function ($eq) use ($search, $searchBody) {
+                      $eq->where('from_address', 'ilike', "%{$search}%")
+                         ->orWhere('from_name', 'ilike', "%{$search}%")
+                         ->orWhere('subject', 'ilike', "%{$search}%");
+                      if ($searchBody) {
+                          $eq->orWhere('body_text', 'ilike', "%{$search}%");
+                      }
+                  });
             });
         }
 

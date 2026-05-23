@@ -59,16 +59,21 @@ class EngineerMailController extends Controller
         }
 
         if ($search) {
-            $query->where(function ($q) use ($search) {
+            $searchBody = $request->boolean('search_body');
+            $query->where(function ($q) use ($search, $searchBody) {
                 $q->where('name', 'ilike', "%{$search}%")
                   ->orWhere('nearest_station', 'ilike', "%{$search}%")
                   ->orWhere('affiliation_type', 'ilike', "%{$search}%")
                   ->orWhere('affiliation', 'ilike', "%{$search}%")
                   ->orWhere('skills', 'ilike', "%{$search}%")
-                  ->orWhereHas('email', fn($eq) => $eq
-                      ->where('from_address', 'ilike', "%{$search}%")
-                      ->orWhere('from_name', 'ilike', "%{$search}%")
-                      ->orWhere('subject', 'ilike', "%{$search}%"));
+                  ->orWhereHas('email', function ($eq) use ($search, $searchBody) {
+                      $eq->where('from_address', 'ilike', "%{$search}%")
+                         ->orWhere('from_name', 'ilike', "%{$search}%")
+                         ->orWhere('subject', 'ilike', "%{$search}%");
+                      if ($searchBody) {
+                          $eq->orWhere('body_text', 'ilike', "%{$search}%");
+                      }
+                  });
             });
         }
 
