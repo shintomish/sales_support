@@ -128,4 +128,50 @@ class EmailClassificationServiceTest extends TestCase
 
         $this->assertSame('engineer', $email->fresh()->category);
     }
+
+    // ─── 営業挨拶／会社紹介メールは other に分類 ───
+
+    /** 報告ケース 2026-05-23: 企業向け問い合わせフォーム経由の B2B 営業挨拶メール */
+    public function test_classifies_as_other_when_subject_has_kigyou_toiawase(): void
+    {
+        $email = $this->makeEmail(
+            'Re: 企業向け問い合わせに投稿がありました。',
+            "お世話になっております。\nエンジニアが在籍しており、貴社のご要望に応じてエンジニアのご紹介が可能です。\nご挨拶もかねて会社紹介に伺いたく、お打ち合わせ方法についてご返信ください。",
+        );
+
+        $this->service->classify($email);
+
+        $fresh = $email->fresh();
+        $this->assertSame('other', $fresh->category);
+        $this->assertStringStartsWith(
+            'subject_other_keyword:',
+            $fresh->extracted_data['classification_reason'] ?? '',
+        );
+    }
+
+    public function test_classifies_as_other_when_body_has_goaisatsu_mokanete(): void
+    {
+        $email = $this->makeEmail(
+            'ご連絡',
+            'お世話になっております。ご挨拶もかねて、貴社にお伺いさせていただきたく存じます。',
+        );
+
+        $this->service->classify($email);
+
+        $this->assertSame('other', $email->fresh()->category);
+    }
+
+    public function test_classifies_as_other_overrides_engineer_body_keyword(): void
+    {
+        // 「エンジニアのご紹介」と「ご挨拶もかねて」が同時に含まれる場合、
+        // 営業挨拶ルールが優先されて other に分類される
+        $email = $this->makeEmail(
+            'ご挨拶',
+            "ご挨拶もかねて会社紹介に伺いたく存じます。\n弊社にもエンジニアのご紹介が可能です。",
+        );
+
+        $this->service->classify($email);
+
+        $this->assertSame('other', $email->fresh()->category);
+    }
 }

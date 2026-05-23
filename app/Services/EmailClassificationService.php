@@ -50,6 +50,23 @@ class EmailClassificationService
     // 例: 【AWS・28歳】インフラ歴6年／70万
     private const ENGINEER_AGE_PRICE_PATTERN = '/\d{2}歳.*[\/／]\d{2,3}万/u';
 
+    // 件名にこれらが含まれる場合は other（営業挨拶／会社紹介）と判定し、
+    // 案件・技術者の判定をスキップする
+    private const OTHER_SUBJECT_KEYWORDS = [
+        '企業向け問い合わせ',
+        'お問い合わせフォーム',
+    ];
+
+    // 本文にこれらが含まれる場合は other（営業挨拶／会社紹介）と判定し、
+    // engineer/project 判定より優先する
+    private const OTHER_BODY_KEYWORDS = [
+        'ご挨拶もかねて',
+        'ご挨拶も兼ねて',
+        '会社紹介に伺い',
+        'ご挨拶に伺い',
+        'ご協業のお付き合い',
+    ];
+
     // 本文にこれらが含まれる場合は技術者メールと判定
     private const ENGINEER_BODY_KEYWORDS = [
         '弊社要員をご紹介',
@@ -197,6 +214,20 @@ class EmailClassificationService
         if (str_ends_with($fromAddress, '@aizen-sol.co.jp')
             && !str_starts_with($fromAddress, 'outsource@')) {
             return ['other', 'own_domain', $urls];
+        }
+
+        // 0.5. 営業挨拶／会社紹介メール（cc に outsource@ を含む B2B 営業フォーム経由など）
+        //      → other。engineer/project の本文キーワード判定より先に振り分ける。
+        //      件名キーワード優先
+        foreach (self::OTHER_SUBJECT_KEYWORDS as $kw) {
+            if (mb_strpos($subject, $kw) !== false) {
+                return ['other', 'subject_other_keyword:' . $kw, $urls];
+            }
+        }
+        foreach (self::OTHER_BODY_KEYWORDS as $kw) {
+            if (mb_strpos($body, $kw) !== false) {
+                return ['other', 'body_other_keyword:' . $kw, $urls];
+            }
         }
 
         // 1. 添付ファイルあり
