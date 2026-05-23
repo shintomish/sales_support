@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\Email;
 use App\Models\ProjectMailSource;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -145,45 +146,49 @@ class ProjectMailScoringService
         if ($limit !== null) $query->limit($limit);
 
         $count = 0;
-        foreach ($query->get() as $pms) {
-            if (!$pms->email) continue;
-            try {
-                $email   = $pms->email;
-                $subject = $email->subject ?? '';
-                $body    = $email->body_text ?? strip_tags($email->body_html ?? '');
-                $from    = $email->from_address ?? '';
-                $text    = $subject . "\n" . $body;
+        // batchSize 件分の UPDATE を 1 トランザクションにまとめて fsync 回数を削減
+        // (Sentry 2026-05-23 N+1 警告対応)。1件単位の例外は内部 try/catch で握りつぶす。
+        DB::transaction(function () use ($query, &$count) {
+            foreach ($query->get() as $pms) {
+                if (!$pms->email) continue;
+                try {
+                    $email   = $pms->email;
+                    $subject = $email->subject ?? '';
+                    $body    = $email->body_text ?? strip_tags($email->body_html ?? '');
+                    $from    = $email->from_address ?? '';
+                    $text    = $subject . "\n" . $body;
 
-                if ($this->isExcluded($subject, $from)) {
-                    $pms->update(['score' => 0, 'score_reasons' => ['excluded'], 'status' => 'excluded']);
-                } else {
-                    [$score, $reasons] = $this->calcScore($text);
-                    $domainData = $this->domainBonus($from, $pms->tenant_id);
-                    if ($domainData['bonus'] !== 0) {
-                        $score    += $domainData['bonus'];
-                        $sign      = $domainData['bonus'] > 0 ? '+' : '';
-                        $pct       = round($domainData['rate'] * 100);
-                        $reasons[] = "domain:{$domainData['domain']}:{$sign}{$domainData['bonus']}({$pct}%/{$domainData['sample']}件)";
+                    if ($this->isExcluded($subject, $from)) {
+                        $pms->update(['score' => 0, 'score_reasons' => ['excluded'], 'status' => 'excluded']);
+                    } else {
+                        [$score, $reasons] = $this->calcScore($text);
+                        $domainData = $this->domainBonus($from, $pms->tenant_id);
+                        if ($domainData['bonus'] !== 0) {
+                            $score    += $domainData['bonus'];
+                            $sign      = $domainData['bonus'] > 0 ? '+' : '';
+                            $pct       = round($domainData['rate'] * 100);
+                            $reasons[] = "domain:{$domainData['domain']}:{$sign}{$domainData['bonus']}({$pct}%/{$domainData['sample']}件)";
+                        }
+                        $score     = max(0, min(100, $score));
+                        $extracted = $this->extract($email);
+                        $status = match(true) {
+                            $score >= self::SCORE_OK     => 'new',
+                            $score >= self::SCORE_REVIEW => 'review',
+                            default                      => 'excluded',
+                        };
+                        $pms->update(array_merge($this->sanitizeExtracted($extracted), [
+                            'score'         => $score,
+                            'score_reasons' => $reasons,
+                            'engine'        => 'rule',
+                            'status'        => $status,
+                        ]));
                     }
-                    $score     = max(0, min(100, $score));
-                    $extracted = $this->extract($email);
-                    $status = match(true) {
-                        $score >= self::SCORE_OK     => 'new',
-                        $score >= self::SCORE_REVIEW => 'review',
-                        default                      => 'excluded',
-                    };
-                    $pms->update(array_merge($this->sanitizeExtracted($extracted), [
-                        'score'         => $score,
-                        'score_reasons' => $reasons,
-                        'engine'        => 'rule',
-                        'status'        => $status,
-                    ]));
+                    $count++;
+                } catch (\Throwable $e) {
+                    Log::error("[ProjectMailRescore] pms_id={$pms->id} 失敗: " . $e->getMessage());
                 }
-                $count++;
-            } catch (\Throwable $e) {
-                Log::error("[ProjectMailRescore] pms_id={$pms->id} 失敗: " . $e->getMessage());
             }
-        }
+        });
         return $count;
     }
 
