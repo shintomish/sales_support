@@ -56,6 +56,12 @@ class EmailController extends Controller
         }
         if ($category) {
             $query->where('category', $category);
+        } else {
+            // カテゴリ未指定時は bounce を暗黙除外（検索ノイズ削減）
+            // bounce を見たい場合は ?category=bounce を明示指定すること
+            $query->where(function ($q) {
+                $q->where('category', '!=', 'bounce')->orWhereNull('category');
+            });
         }
         return response()->json(
             $query->withCount('attachments')->paginate($perPage)
