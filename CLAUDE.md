@@ -138,6 +138,11 @@ docker compose up -d
   - 実体: `/mnt/c/Users/<user>/Dropbox/Public/Book/03_Aizen/990_Sales_Support/claude_memory/`
   - 職場・自宅共通: `ln -s "/mnt/c/Users/<user>/Dropbox/.../claude_memory" ~/.claude/projects/-home-shintomi-sales-support/memory`
   - 既存 memory ディレクトリがある場合は `mv ... memory.bak.YYYYMMDD` で退避してから symlink を貼る
+- Claude Code 設定 (`settings.json` / `statusline-command.sh`) 共有: Dropbox 経由 symlink (2026-05-23〜)
+  - 実体: `/mnt/c/Users/<user>/Dropbox/Public/Book/03_Aizen/990_Sales_Support/.claude/{settings.json,statusline-command.sh}`
+  - 職場・自宅共通: `ln -s "/mnt/c/Users/<user>/Dropbox/.../.claude/settings.json" ~/.claude/settings.json` （statusline-command.sh も同様）
+  - 既存ファイルは `mv ... .bak.YYYYMMDD` で退避してから symlink を貼る
+  - **注意**: 編集は即両環境に反映。環境別に分けたい場合は symlink を外す。Dropbox 同期遅延中の両環境同時編集はコンフリクトファイルを生むので片側編集に統一
 
 ## 長期記憶の参照方法
 過去のセッションで議論した設計判断・トラブル対応は以下で検索できる:
