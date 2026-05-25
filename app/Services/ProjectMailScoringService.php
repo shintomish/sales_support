@@ -136,12 +136,16 @@ class ProjectMailScoringService
 
     /**
      * 既存レコードを全件再スコアリング＋再抽出（バッチ処理対応）
+     *
+     * @param int|null $tenantId Schedule tick(Auth無し)から呼ぶ時に明示スコープ。
+     *                           null の場合は GlobalScope(Auth)に委ねる。
      */
-    public function rescoreAll(?int $limit = null, int $offset = 0): int
+    public function rescoreAll(?int $limit = null, int $offset = 0, ?int $tenantId = null): int
     {
         $query = ProjectMailSource::with('email')
             ->whereNotNull('email_id')
             ->orderBy('id');
+        if ($tenantId !== null) $query->where('tenant_id', $tenantId);
         if ($offset > 0) $query->skip($offset);
         if ($limit !== null) $query->limit($limit);
 

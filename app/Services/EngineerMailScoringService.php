@@ -185,7 +185,7 @@ class EngineerMailScoringService
      * @param int|null $limit  処理件数の上限
      * @param int      $offset 処理開始位置（バッチ処理用）
      */
-    public function rescoreAll(?int $limit = null, int $offset = 0): int
+    public function rescoreAll(?int $limit = null, int $offset = 0, ?int $tenantId = null): int
     {
         ini_set('memory_limit', '512M');
 
@@ -193,6 +193,7 @@ class EngineerMailScoringService
         $query = EngineerMailSource::with(['email.attachments'])
             ->whereNotNull('email_id')
             ->orderBy('id');
+        if ($tenantId !== null) $query->where('tenant_id', $tenantId);
         if ($offset > 0) $query->skip($offset);
         if ($limit !== null) $query->limit($limit);
 

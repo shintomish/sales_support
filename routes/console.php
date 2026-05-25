@@ -84,6 +84,19 @@ Schedule::call(function () {
         Log::error('[Schedule] score-project-mails 失敗');
     });
 
+// ── 全件再スコアリング ジョブ処理（毎分・時間ボックス処理。docs #4）
+// rescore_jobs の最古の未完了 job を 1 件、~50 秒バジェット内でバッチ処理する。
+// フロントは POST /rescore-all で job 登録 → /rescore-status をポーリング。
+Schedule::call(function () {
+    app(\App\Services\RescoreJobRunner::class)->tick();
+})
+    ->everyMinute()
+    ->name('rescore-jobs-tick')
+    ->withoutOverlapping()
+    ->onFailure(function () {
+        Log::error('[Schedule] rescore-jobs-tick 失敗');
+    });
+
 // ── hot テーブル 手動 VACUUM（毎日 2:50 JST、cleanup-emails の直前）
 // 2026-05-19: autovacuum 0.05 scale でも emails / engineer_mail_sources の
 // Heap Fetches が日中 1000+ 蓄積し score-engineer-mails の cold-start レイテンシが

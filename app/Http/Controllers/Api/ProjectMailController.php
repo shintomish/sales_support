@@ -11,6 +11,7 @@ use App\Models\EngineerMailSource;
 use App\Models\EngineerProfile;
 use App\Models\EngineerSkill;
 use App\Models\ProjectMailSource;
+use App\Models\RescoreJob;
 use App\Models\Skill;
 use App\Services\ClaudeService;
 use App\Services\FreshMailMatchingService;
@@ -155,23 +156,43 @@ class ProjectMailController extends Controller
         }
     }
 
-    // 既存レコードを全件再スコアリング＋再抽出（バッチ処理対応）
+    // 全件再スコアリングを非同期ジョブとして登録（Schedule tick が処理。docs #4）
     public function rescoreAll(Request $request): JsonResponse
     {
-        set_time_limit(120);
-        ini_set('memory_limit', '512M');
-        $batchSize = 300;
-        $offset    = $request->integer('offset', 0);
-        $count     = $this->scoringService->rescoreAll($batchSize, $offset);
-        $total     = ProjectMailSource::whereNotNull('email_id')->count();
-        $remaining = max(0, $total - ($offset + $count));
+        // 既に未完了の同種ジョブがあればそれを返す（二重起動防止）
+        $existing = RescoreJob::where('type', RescoreJob::TYPE_PROJECT)
+            ->whereIn('status', RescoreJob::ACTIVE_STATUSES)
+            ->orderByDesc('id')
+            ->first();
+        if ($existing) {
+            return response()->json([
+                'message' => '再スコアリングは既に実行中です',
+                'job'     => $existing,
+            ], 202);
+        }
+
+        $total = ProjectMailSource::whereNotNull('email_id')->count();
+        $job = RescoreJob::create([
+            'type'         => RescoreJob::TYPE_PROJECT,
+            'status'       => RescoreJob::STATUS_PENDING,
+            'total_count'  => $total,
+            'requested_by' => auth()->id(),
+        ]);
 
         return response()->json([
-            'message'   => "{$count}件を再スコアリングしました",
-            'count'     => $count,
-            'remaining' => $remaining,
-            'offset'    => $offset + $count,
-        ]);
+            'message' => '再スコアリングを開始しました（バックグラウンドで処理されます）',
+            'job'     => $job,
+        ], 202);
+    }
+
+    // 直近の再スコアリングジョブの進捗を返す（フロントのポーリング用。docs #4）
+    public function rescoreStatus(): JsonResponse
+    {
+        $job = RescoreJob::where('type', RescoreJob::TYPE_PROJECT)
+            ->orderByDesc('id')
+            ->first();
+
+        return response()->json(['job' => $job]);
     }
 
     // 既存レコードの抽出情報を一括再計算（バッチ処理対応）
