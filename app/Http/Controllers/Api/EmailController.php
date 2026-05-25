@@ -5,6 +5,7 @@ use App\Models\Email;
 use App\Models\GmailToken;
 use App\Services\GmailService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use OpenApi\Attributes as OA;
@@ -241,9 +242,24 @@ class EmailController extends Controller
         ]
     )]
     // 未読件数
+    // 未読件数（バッジ用）
+    //
+    // is_read を参照する index は HOT 更新を阻害し markAllRead を激遅にするため
+    // 全廃した（2026_05_25 migration）。代わりに件数を短時間キャッシュして
+    // index 非依存で速く保つ。markAllRead 時に forget して即時 0 に反映する。
+    private function unreadCountCacheKey(int $tenantId): string
+    {
+        return "emails:unread_count:{$tenantId}";
+    }
+
     public function unreadCount()
     {
-        $count = Email::where('is_read', false)->count();
+        $tenantId = auth()->user()->tenant_id;
+        $count = Cache::remember(
+            $this->unreadCountCacheKey($tenantId),
+            30,
+            fn () => Email::where('is_read', false)->count()
+        );
         return response()->json(['count' => $count]);
     }
 
@@ -362,6 +378,9 @@ class EmailController extends Controller
 
             $total += Email::whereIn('id', $ids)->update(['is_read' => true]);
         }
+
+        // 未読カウントキャッシュを破棄（次回取得時に再計算 = 実質 0 を即時反映）
+        Cache::forget($this->unreadCountCacheKey($tenantId));
 
         return response()->json([
             'message' => "{$total}件を既読にしました",
