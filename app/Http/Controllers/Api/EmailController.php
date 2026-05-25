@@ -10,6 +10,17 @@ use Illuminate\Support\Facades\Log;
 use OpenApi\Attributes as OA;
 class EmailController extends Controller
 {
+    // markAllRead の 1 バッチあたり更新行数。
+    // emails は is_read を含む index が複数あり UPDATE が非 HOT になるため、
+    // 1 行あたり全 index(計10本) への新タプル挿入コストが乗る。実測で
+    // 200 件/バッチ ≒ 最悪(コールド)でも約45秒と 2min の statement_timeout に
+    // 十分な余裕がある一方、500 件はタイムアウトした。安全側に 200 を採用。
+    private const MARK_READ_BATCH_SIZE = 200;
+
+    // markAllRead の暴走防止: 1 リクエストで処理する最大バッチ数の上限。
+    // 取込スケジューラが裏で is_read=false を増やし続けても無限ループしない。
+    private const MARK_READ_MAX_BATCHES = 5000;
+
     public function __construct(
         private GmailService $gmailService,
     ) {}
@@ -327,15 +338,34 @@ class EmailController extends Controller
         ]
     )]
     // 全件既読
+    //
+    // 未読が数千件あると単一 UPDATE では statement_timeout(2min) に達するため、
+    // 未読 id を小バッチで取得 → whereIn で更新、を分割コミットしながら繰り返す。
+    // emails は is_read を含む index が複数あり UPDATE が非 HOT になるため
+    // 1 行ごとに全 index への新タプル挿入コストが乗る点に留意（バッチ幅の根拠）。
     public function markAllRead()
     {
         $tenantId = auth()->user()->tenant_id;
-        $updated = Email::where('tenant_id', $tenantId)
-            ->where('is_read', false)
-            ->update(['is_read' => true]);
+        $total    = 0;
+
+        // 各バッチは独立した文として即コミットされる（明示トランザクション無し）。
+        // そのため途中で実行が打ち切られても処理済み分は確定し、再実行で続行できる。
+        for ($i = 0; $i < self::MARK_READ_MAX_BATCHES; $i++) {
+            $ids = Email::where('tenant_id', $tenantId)
+                ->where('is_read', false)
+                ->limit(self::MARK_READ_BATCH_SIZE)
+                ->pluck('id');
+
+            if ($ids->isEmpty()) {
+                break;
+            }
+
+            $total += Email::whereIn('id', $ids)->update(['is_read' => true]);
+        }
+
         return response()->json([
-            'message' => "{$updated}件を既読にしました",
-            'count'   => $updated,
+            'message' => "{$total}件を既読にしました",
+            'count'   => $total,
         ]);
     }
 }
