@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\Email;
 use App\Models\ProjectMailSource;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
@@ -280,17 +281,27 @@ class ProjectMailScoringService
         }
 
         // 判断済みレコードのみ集計（review = 未判断は除外）
-        $rows = ProjectMailSource::where('tenant_id', $tenantId)
-            ->whereNotIn('status', ['review'])
-            ->whereHas('email', fn($q) => $q->where('from_address', 'like', '%@' . $domain))
-            ->selectRaw("
-                COUNT(*) as total,
-                SUM(CASE WHEN status != 'excluded' THEN 1 ELSE 0 END) as project_count
-            ")
-            ->first();
+        //
+        // この集計は emails / project_mail_sources をいずれも Seq Scan するため
+        // Disk IO が高い（本番 pg_stat_statements で読み取りIO 第1位・31,615回）。
+        // ドメイン案件率は緩やかにしか変わらない統計なので、共有キャッシュ(6h)で
+        // 集計回数を「ドメイン数 × 6h に1回」程度まで削減する。
+        [$total, $projectCount] = Cache::remember(
+            "domain_bonus_agg:{$tenantId}:{$domain}",
+            now()->addHours(6),
+            function () use ($tenantId, $domain) {
+                $rows = ProjectMailSource::where('tenant_id', $tenantId)
+                    ->whereNotIn('status', ['review'])
+                    ->whereHas('email', fn($q) => $q->where('from_address', 'like', '%@' . $domain))
+                    ->selectRaw("
+                        COUNT(*) as total,
+                        SUM(CASE WHEN status != 'excluded' THEN 1 ELSE 0 END) as project_count
+                    ")
+                    ->first();
 
-        $total        = (int) ($rows->total ?? 0);
-        $projectCount = (int) ($rows->project_count ?? 0);
+                return [(int) ($rows->total ?? 0), (int) ($rows->project_count ?? 0)];
+            }
+        );
 
         // 最低5件のサンプルが必要
         if ($total < 5) {
