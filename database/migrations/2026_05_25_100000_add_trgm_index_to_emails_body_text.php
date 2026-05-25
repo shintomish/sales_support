@@ -48,6 +48,10 @@ return new class extends Migration
             $$
         SQL);
 
+        // Supabase Session Pooler の statement_timeout は 2min。CONCURRENTLY は 76k 行で
+        // ~150 秒かかる実測のためタイムアウトする (2026-05-25 本番で 2分FAIL を確認)。
+        // この session に限り timeout を無効化する (SET LOCAL は tx 内専用なので使えない)。
+        DB::statement('SET statement_timeout = 0');
         DB::statement('CREATE INDEX CONCURRENTLY IF NOT EXISTS emails_body_text_trgm_idx ON public.emails USING GIN (body_text gin_trgm_ops)');
     }
 
