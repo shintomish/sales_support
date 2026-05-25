@@ -10,6 +10,7 @@ services:
     volumes:
       - .:/var/www
       - ./docker/php/uploads.ini:/usr/local/etc/php/conf.d/uploads.ini
+      - ./docker/php/www.conf:/usr/local/etc/php-fpm.d/zzz-www.conf:ro
     networks:
       - sales_support_network
   db:
