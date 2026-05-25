@@ -38,6 +38,12 @@ class EmailController extends Controller
         $searchBody = $request->boolean('search_body');
         $unread     = $request->boolean('unread');
         $category   = $request->input('category');   // engineer / project / null
+        // 本文検索ガード: pg_trgm GIN index は trigram (3-char window) ベースのため、
+        // 検索語が 3 文字未満だと index が物理的に使えず Seq Scan で全件走査となる
+        // (本案件で日本語 2 文字検索が 14-98 秒の暴走を観測)。subject/from 検索は維持。
+        if ($searchBody && mb_strlen((string) $search) < 3) {
+            $searchBody = false;
+        }
         $query = Email::query()
             ->orderBy('received_at', 'desc');
         if ($search) {
