@@ -89,4 +89,9 @@ EXPOSE 9000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
   CMD pgrep -f php-fpm > /dev/null || exit 1
 
-CMD ["sh", "-c", "mkdir -p /tmp/chromium-data && chmod 777 /tmp/chromium-data && chown -R www-data:www-data /var/www/storage /var/www/bootstrap/cache && service cron start && php-fpm"]
+# Puppeteer Chrome の "current" symlink を起動時に自己修復する
+# - build 時にも同 symlink を作成しているが、image によっては symlink が消えている
+#   ケースがあり (本番 2026-05-26 PDF 生成エラー)、起動毎に貼り直して再発を防ぐ
+# - chrome のバージョン更新 (npm update puppeteer 等) で linux-* ディレクトリ名が
+#   変わっても、最新の linux-* を最初に拾うため .env を書き換え不要
+CMD ["sh", "-c", "mkdir -p /tmp/chromium-data && chmod 777 /tmp/chromium-data && chown -R www-data:www-data /var/www/storage /var/www/bootstrap/cache && CHROME_DIR=$(ls -d /opt/puppeteer-cache/chrome/linux-*/ 2>/dev/null | head -1 | sed 's:/$::') && [ -n \"$CHROME_DIR\" ] && ln -sfn \"$CHROME_DIR\" /opt/puppeteer-cache/chrome/current && chown -h www-data:www-data /opt/puppeteer-cache/chrome/current; service cron start && php-fpm"]
