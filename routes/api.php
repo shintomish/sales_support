@@ -198,6 +198,7 @@ Route::prefix('v1')->middleware(['supabase.auth'])->group(function () {
     Route::prefix('emails')->group(function () {
         Route::get('/',              [EmailController::class, 'index']);
         Route::get('/unread-count',  [EmailController::class, 'unreadCount']);
+        Route::get('/self-owners',   [EmailController::class, 'selfOwners']); // 自社タブの担当者(from ローカル部)一覧
         Route::post('/sync',         [EmailController::class, 'sync']);
         Route::post('/mark-all-read',[EmailController::class, 'markAllRead']); // 全件既読
         Route::get('/{id}',                                      [EmailController::class, 'show']);

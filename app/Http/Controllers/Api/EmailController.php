@@ -76,6 +76,27 @@ class EmailController extends Controller
         if ($unread) {
             $query->where('is_read', false);
         }
+        // 自社/他社スコープ（営業打ち合わせ 2026-05-25 §要望1）。
+        // 自社 = to_address が当社 xxx@aizen-sol.co.jp（catch-all の outsource@ は除く＝その他扱い）。
+        // 他社(顧客) = それ以外（外部宛 or outsource宛）。担当者 = to のローカル部。
+        $selfOwner = preg_replace('/[^A-Za-z0-9._\-]/', '', (string) $request->input('self_owner')); // 自社の特定担当者
+        $mailScope = $request->input('mail_scope'); // 'self'(自社全担当者) | 'customer'(他社)
+        if ($selfOwner !== '') {
+            // selfOwners と同一定義に揃える: to の先頭 aizen ローカル部 = 担当者、かつ outsource を含まない
+            // （ILIKE 部分一致だと outsource 併記や複数宛を重複カウントし、ドロップダウン件数とズレる）
+            $query->whereRaw("lower(substring(to_address from '([A-Za-z0-9._%+\\-]+)@aizen-sol\\.co\\.jp')) = ?", [mb_strtolower($selfOwner)])
+                  ->where('to_address', 'not ilike', '%outsource@aizen-sol.co.jp%');
+        } elseif ($mailScope === 'self') {
+            $query->where('to_address', 'ilike', '%@aizen-sol.co.jp%')
+                  ->where('to_address', 'not ilike', '%outsource@aizen-sol.co.jp%');
+        }
+        // 自社ビューでは spam（subject 前置 "[spam]"）を除外（営業打ち合わせ §要望1）
+        if ($selfOwner !== '' || $mailScope === 'self') {
+            $query->where(function ($q) {
+                $q->where('subject', 'not ilike', '[spam]%')->orWhereNull('subject');
+            });
+        }
+
         if ($category) {
             $query->where('category', $category);
         } else {
@@ -88,6 +109,26 @@ class EmailController extends Controller
         return response()->json(
             $query->withCount('attachments')->paginate($perPage)
         );
+    }
+
+    // 自社メールの担当者(to のローカル部)一覧 + 件数。
+    // 自社 = to_address が当社 xxx@aizen-sol.co.jp（catch-all の outsource@ は除外＝その他扱い）。
+    // spam（subject 前置 "[spam]"）も除外。フロント「自社」タブの担当者ドロップダウン構築用。
+    // 3画面（/emails・/project-mails・/engineer-mails）共通（営業打ち合わせ 2026-05-25 §要望1）。
+    public function selfOwners()
+    {
+        $owners = Email::where('to_address', 'ilike', '%@aizen-sol.co.jp%')
+            ->where('to_address', 'not ilike', '%outsource@aizen-sol.co.jp%')
+            ->where(function ($q) {
+                $q->where('subject', 'not ilike', '[spam]%')->orWhereNull('subject');
+            })
+            ->selectRaw("lower(substring(to_address from '([A-Za-z0-9._%+\\-]+)@aizen-sol\\.co\\.jp')) as owner, count(*) as count")
+            ->groupByRaw('1')
+            ->orderByDesc('count')
+            ->get()
+            ->filter(fn ($r) => !empty($r->owner))
+            ->values();
+        return response()->json(['owners' => $owners]);
     }
 
     #[OA\Get(
