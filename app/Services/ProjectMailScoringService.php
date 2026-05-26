@@ -198,6 +198,94 @@ class ProjectMailScoringService
     }
 
     /**
+     * ドメイン信頼度補正だけを既存スコアに軽量反映する（営業打ち合わせ 2026-05-25 §4.6 ケースC）。
+     *
+     * 「全件再スコア」ボタンを営業 UI から外した代替。提案実績の蓄積で経時変動する
+     * domain bonus を既存スコアへ反映する。全件再スコア（score+抽出を全再計算）と違い:
+     *   - extract() を呼ばない＝手編集した顧客名・単価等の抽出情報を壊さない
+     *   - calcScore() も呼ばず、本文(body_text=TOAST)を読まない＝Disk IO 最小
+     * 仕組み: score_reasons の旧 `domain:...` 行から旧補正値を読み、
+     *   新スコア = clamp(現スコア − 旧補正 + 現 domainBonus()) として差分反映する。
+     * clamp 域（極端値）でのみ基礎点の誤差が出るが、しきい値(40/60)を跨がないため
+     * status(new/review/excluded) 判定には影響しない。
+     * 値に変化が無い行は UPDATE しない（Disk IO 抑制 — 夜次運用では大半が不変）。
+     * isExcluded 由来の除外（score_reasons=['excluded']）は subject/from ベースで
+     * domain bonus と無関係なので据え置く。
+     *
+     * @return int 実際にスコア/状態が変化して更新した件数
+     */
+    public function refreshDomainBonus(?int $tenantId = null, ?int $limit = null, int $chunkSize = 500): int
+    {
+        // from_address だけ必要（body_text=TOAST は読まない＝Disk IO 抑制）。
+        $query = ProjectMailSource::with(['email' => fn($q) => $q->select('id', 'from_address')])
+            ->whereNotNull('email_id');
+        if ($tenantId !== null) $query->where('tenant_id', $tenantId);
+
+        $changed = 0;
+        $applyBatch = function ($rows) use (&$changed) {
+            DB::transaction(function () use ($rows, &$changed) {
+                foreach ($rows as $pms) {
+                    if (!$pms->email) continue;
+                    $reasons = $pms->score_reasons ?? [];
+                    // isExcluded 由来の除外（subject/from ベース）は据え置き
+                    if ($reasons === ['excluded']) continue;
+                    try {
+                        $from = $pms->email->from_address ?? '';
+
+                        // 既存の domain 補正を score_reasons から読み取り、旧行は除去（後で貼り直す）
+                        $oldBonus = 0;
+                        $reasons  = array_values(array_filter($reasons, function ($r) use (&$oldBonus) {
+                            if (is_string($r) && preg_match('/^domain:.+:([+-]?\d+)\(/u', $r, $m)) {
+                                $oldBonus = (int) $m[1];
+                                return false;
+                            }
+                            return true;
+                        }));
+
+                        $domainData = $this->domainBonus($from, $pms->tenant_id);
+                        $newBonus   = $domainData['bonus'];
+                        if ($newBonus !== 0) {
+                            $sign      = $newBonus > 0 ? '+' : '';
+                            $pct       = round($domainData['rate'] * 100);
+                            $reasons[] = "domain:{$domainData['domain']}:{$sign}{$newBonus}({$pct}%/{$domainData['sample']}件)";
+                        }
+
+                        // base = 現スコア − 旧補正、新スコア = clamp(base + 新補正)
+                        $newScore  = max(0, min(100, ((int) $pms->score - $oldBonus) + $newBonus));
+                        $newStatus = match(true) {
+                            $newScore >= self::SCORE_OK     => 'new',
+                            $newScore >= self::SCORE_REVIEW => 'review',
+                            default                         => 'excluded',
+                        };
+
+                        // 変化なしは書かない（Disk IO 抑制）
+                        if ((int) $pms->score === $newScore
+                            && $pms->status === $newStatus
+                            && ($pms->score_reasons ?? []) === $reasons) {
+                            continue;
+                        }
+                        $pms->update([
+                            'score'         => $newScore,
+                            'score_reasons' => $reasons,
+                            'status'        => $newStatus,
+                        ]);
+                        $changed++;
+                    } catch (\Throwable $e) {
+                        Log::error("[RefreshDomainBonus] pms_id={$pms->id} 失敗: " . $e->getMessage());
+                    }
+                }
+            });
+        };
+
+        if ($limit !== null) {
+            $applyBatch($query->orderBy('id')->limit($limit)->get());
+        } else {
+            $query->chunkById($chunkSize, $applyBatch);
+        }
+        return $changed;
+    }
+
+    /**
      * 既存レコードの抽出情報だけを再計算（スコアは変えない・バッチ処理対応）
      */
     public function reextractAll(?int $limit = null, int $offset = 0): int

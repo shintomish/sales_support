@@ -97,6 +97,23 @@ Schedule::call(function () {
         Log::error('[Schedule] rescore-jobs-tick 失敗');
     });
 
+// ── ドメイン信頼度補正の蓄積反映（毎日 02:40 JST・本番限定。営業打ち合わせ 2026-05-25 §4.6 ケースC）
+// 「全件再スコア」ボタンを営業 UI から外した代替。提案実績の蓄積で経時変動する domain bonus を
+// 既存スコアへ軽量反映する（extract は触らず score/status のみ・変化行のみ UPDATE）。
+// ローカル Supabase は Disk IO 予算が小さいため本番のみで実行。
+Schedule::call(function () {
+    $changed = app(\App\Services\ProjectMailScoringService::class)->refreshDomainBonus();
+    Log::info("[Schedule] domain bonus 反映完了: {$changed}件更新");
+})
+    ->dailyAt('02:40')
+    ->timezone('Asia/Tokyo')
+    ->environments(['production'])
+    ->name('refresh-domain-bonus')
+    ->withoutOverlapping()
+    ->onFailure(function () {
+        Log::error('[Schedule] refresh-domain-bonus 失敗');
+    });
+
 // ── hot テーブル 手動 VACUUM（毎日 2:50 JST、cleanup-emails の直前）
 // 2026-05-19: autovacuum 0.05 scale でも emails / engineer_mail_sources の
 // Heap Fetches が日中 1000+ 蓄積し score-engineer-mails の cold-start レイテンシが
