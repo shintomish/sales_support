@@ -32,6 +32,7 @@ class RefinitivPoParserService
      *   po_number: ?string,
      *   total_amount: ?int,
      *   description: ?string,
+     *   period_months: ?int,
      *   requested_delivery_date: ?string,
      *   amount_based_receipt: ?string,
      *   purchase_request_line: ?string,
@@ -97,6 +98,7 @@ class RefinitivPoParserService
 - po_number: ヘッダの「注文書 (新規)」直下にある 10 桁前後の数字（例: 8000089588）
 - total_amount: 「金額」または「小計」の JPY 金額（円、整数のみ。カンマや通貨記号は除く）
 - description: 明細行の品名行（例: "Aizen - SMBC Nikko - Market data support for Jefferies JV"）
+- period_months: 注文書がカバーする月数を整数で返す。description の英語月名範囲（"Apr-Jun2026"=3 / "Jan-Mar2026"=3 / "Dec2025-Feb2026"=3 / "Apr2026"=1）または日本語表記（"4-6月"=3 / "4月"=1）から判定。年跨ぎも対応。判別不能なら null
 - requested_delivery_date: 希望納入日 (YYYY-MM-DD)
 - amount_based_receipt: 「金額による受入」の値（Yes/No）
 - purchase_request_line: 「購入申請明細番号」
@@ -117,6 +119,7 @@ class RefinitivPoParserService
   "po_number": "...",
   "total_amount": 1234567,
   "description": "...",
+  "period_months": 3,
   "requested_delivery_date": "2026-06-30",
   "amount_based_receipt": "Yes",
   "purchase_request_line": "1",
@@ -144,7 +147,7 @@ PROMPT;
         }
 
         $keys = [
-            'po_number', 'total_amount', 'description', 'requested_delivery_date',
+            'po_number', 'total_amount', 'description', 'period_months', 'requested_delivery_date',
             'amount_based_receipt', 'purchase_request_line', 'requester', 'request_number',
             'plant_id', 'plant_name', 'tr_plant_id', 'ship_to_address_name',
             'classification_domain', 'classification_code',
@@ -152,6 +155,13 @@ PROMPT;
         $out = [];
         foreach ($keys as $k) {
             $out[$k] = $decoded[$k] ?? null;
+        }
+        // period_months は整数として正規化（Claude が文字列で返すケースに備える）
+        if ($out['period_months'] !== null) {
+            $out['period_months'] = (int) $out['period_months'];
+            if ($out['period_months'] <= 0) {
+                $out['period_months'] = null;
+            }
         }
         return $out;
     }

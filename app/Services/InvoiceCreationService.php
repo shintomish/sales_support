@@ -34,7 +34,12 @@ class InvoiceCreationService
      *   vendor_metadata?: array|null,
      *   language?: string|null,
      *   subject_name?: string|null,
+     *   override_basic_unit_price?: int|float|null,
      * } $options
+     *
+     * override_basic_unit_price: Refinitiv 取込のように「PO合計を月数で割った単月額」を
+     *   契約由来の income_amount より優先したい場合に指定する。指定時は基本月額行の
+     *   description / unit_price をこの値で上書きする。
      */
     public function createFromDeal(Deal $deal, string $yearMonth, array $options = []): Invoice
     {
@@ -49,6 +54,11 @@ class InvoiceCreationService
             ->first();
 
         $calc = $this->calculator->calculate($contract, $record);
+
+        // Refinitiv 取込のように PO 単月額が指定されている場合は契約由来の basic を上書き
+        if (isset($options['override_basic_unit_price']) && $options['override_basic_unit_price'] !== null) {
+            $calc['basic'] = (float) $options['override_basic_unit_price'];
+        }
 
         // 請求日のデフォルトは対象年月の月末（業務慣習）
         [$y, $m] = explode('-', $yearMonth);

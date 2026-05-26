@@ -49,11 +49,13 @@ class RefinitivInvoiceController extends Controller
      * POST /api/v1/invoices/refinitiv/issue
      *
      * Body:
-     *   deal_id        : 対象 SES契約 (deal_id)
-     *   year_month     : YYYY-MM
-     *   po_number      : 注文書番号（既存抽出結果を編集後に送る想定）
-     *   vendor_metadata: その他の情報セクションのキー/値（自由形式 JSON）
-     *   issued_date?   : 発行日（未指定なら年月末）
+     *   deal_id         : 対象 SES契約 (deal_id)
+     *   year_month      : YYYY-MM
+     *   po_number       : 注文書番号（既存抽出結果を編集後に送る想定）
+     *   vendor_metadata : その他の情報セクションのキー/値（自由形式 JSON）
+     *   issued_date?    : 発行日（未指定なら年月末）
+     *   monthly_amount? : 単月請求額（PO合計÷月数）。指定時は契約由来の月額より優先して
+     *                     基本月額行に反映する。Refinitiv は 3ヶ月一括 PO が多いため必須に近い扱い。
      */
     public function issue(Request $request): JsonResponse
     {
@@ -63,6 +65,7 @@ class RefinitivInvoiceController extends Controller
             'po_number'         => ['required', 'string', 'max:50'],
             'vendor_metadata'   => ['nullable', 'array'],
             'issued_date'       => ['nullable', 'date'],
+            'monthly_amount'    => ['nullable', 'integer', 'min:0'],
         ]);
 
         $deal = Deal::query()->findOrFail($v['deal_id']);
@@ -79,12 +82,14 @@ class RefinitivInvoiceController extends Controller
         }
 
         $invoice = $this->creationService->createFromDeal($deal, $v['year_month'], [
-            'issued_date'     => $v['issued_date'] ?? null,
-            'order_number'    => $v['po_number'],
-            'vendor_metadata' => $v['vendor_metadata'] ?? null,
-            'language'        => 'en',
+            'issued_date'              => $v['issued_date'] ?? null,
+            'order_number'             => $v['po_number'],
+            'vendor_metadata'          => $v['vendor_metadata'] ?? null,
+            'language'                 => 'en',
             // 注文書の品名行 (例: "Aizen - JBIC - Market data consulting Apr-Jun2026") を件名に転用
-            'subject_name'    => $v['vendor_metadata']['description'] ?? null,
+            'subject_name'             => $v['vendor_metadata']['description'] ?? null,
+            // PO 合計÷月数 を基本月額として反映（指定時のみ）
+            'override_basic_unit_price' => $v['monthly_amount'] ?? null,
         ]);
 
         return response()->json($invoice->load('lines'), 201);
