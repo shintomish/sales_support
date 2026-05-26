@@ -172,6 +172,11 @@ class ProjectMailMatchingService
                 $reasons[] = "年齢条件OK（{$engAge}歳/{$ageLimit}）";
                 return 15;
             }
+            // 営業打ち合わせ 2026-05-25 §4.2: 上限+2歳までは即除外せず減点（候補に残す）
+            if ($engAge <= $limit + 2) {
+                $reasons[] = "年齢わずかに超過（{$engAge}歳/上限{$limit}歳）";
+                return 7;
+            }
             $excluded = true;
             return 0;
         }
@@ -193,6 +198,11 @@ class ProjectMailMatchingService
             if ($engAge >= $minAge && $engAge <= $maxAge) {
                 return 15;
             }
+            // 営業打ち合わせ 2026-05-25 §4.2: 範囲上限+2歳までは即除外せず減点（候補に残す）
+            if ($engAge > $maxAge && $engAge <= $maxAge + 2) {
+                $reasons[] = "年齢わずかに超過（{$engAge}歳/上限{$maxAge}歳）";
+                return 7;
+            }
             $excluded = true;
             return 0;
         }
@@ -206,7 +216,7 @@ class ProjectMailMatchingService
         $engStyle  = $engineer->profile?->work_style; // remote / office / hybrid / null
 
         if ($remoteOk === null) {
-            return 5; // 情報不足
+            return 1; // 情報不足は1点（営業打ち合わせ §2.2・閾値70両立のため0でなく1に緩和）
         }
 
         if ($remoteOk === true) {
@@ -232,7 +242,7 @@ class ProjectMailMatchingService
         if ($engStyle === 'hybrid') {
             return 7;
         }
-        return 5; // 不明
+        return 1; // 不明は1点（営業打ち合わせ §2.2・閾値70両立のため0でなく1に緩和）
     }
 
     // ─────────────────────────────────────────────────────────
@@ -391,7 +401,7 @@ class ProjectMailMatchingService
         $engLoc  = mb_strtolower(trim($engineer->profile?->preferred_location ?? ''));
 
         if ($mailLoc === '' || $engLoc === '') {
-            return 2; // 情報不足
+            return 1; // 情報不足は1点（営業打ち合わせ §2.2・閾値70両立のため0でなく1に緩和）
         }
 
         // 都道府県レベルの一致確認
@@ -418,7 +428,7 @@ class ProjectMailMatchingService
         $affiliationType = $engineer->affiliation_type; // self/bp/null
 
         if ($contractType === null || $affiliationType === null) {
-            return 3; // 情報不足
+            return 1; // 情報不足は1点（営業打ち合わせ §2.2・閾値70両立のため0でなく1に緩和）
         }
 
         // 準委任・請負 → 個人（self）または BP が適合
@@ -454,7 +464,7 @@ class ProjectMailMatchingService
             'available'  => 5,
             'scheduled'  => 3,
             'working'    => 1,
-            default      => 3, // 不明: 中間点
+            default      => 1, // 不明は1点（営業打ち合わせ §2.2・閾値70両立のため0でなく1に緩和）
         };
         $score += $statusScore;
 
@@ -530,7 +540,7 @@ class ProjectMailMatchingService
         $pastCount = $engineer->profile?->past_client_count;
 
         if ($pastCount === null) {
-            return [2, $reasons];
+            return [1, $reasons]; // 不明は1点（営業打ち合わせ §2.2・閾値70両立のため0でなく1に緩和）
         }
 
         if ($pastCount >= 5) {
@@ -541,7 +551,7 @@ class ProjectMailMatchingService
         } elseif ($pastCount >= 1) {
             $score = 3;
         } else {
-            $score = 1;
+            $score = 1; // 0社は1点（営業打ち合わせ §2.2・0点化を1点に緩和）
         }
 
         return [$score, $reasons];
