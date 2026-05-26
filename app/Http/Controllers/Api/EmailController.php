@@ -12,10 +12,15 @@ class EmailController extends Controller
 {
     // markAllRead の 1 バッチあたり更新行数。
     // emails は is_read を含む index が複数あり UPDATE が非 HOT になるため、
-    // 1 行あたり全 index(計10本) への新タプル挿入コストが乗る。実測で
-    // 200 件/バッチ ≒ 最悪(コールド)でも約45秒と 2min の statement_timeout に
-    // 十分な余裕がある一方、500 件はタイムアウトした。安全側に 200 を採用。
+    // 1 行あたり全 index(計10本・含 trgm GIN 221MB) への新タプル挿入コストが乗る。
+    // 200 件/バッチ で 2026-05-25 に statement_timeout(2min) を超過する Sentry が再発したため、
+    // 各バッチに SET LOCAL statement_timeout = '5min' を掛けて止血している。
+    // 根治は非同期ジョブ化 or HOT 化 migration (is_read を非PK index から外す)。
     private const MARK_READ_BATCH_SIZE = 200;
+
+    // 1 バッチあたりの statement_timeout 上書き値。
+    // 既定 2min ではバッチが間に合わないため、本エンドポイントに限り 5min まで許容する。
+    private const MARK_READ_STATEMENT_TIMEOUT = '5min';
 
     // markAllRead の暴走防止: 1 リクエストで処理する最大バッチ数の上限。
     // 取込スケジューラが裏で is_read=false を増やし続けても無限ループしない。
@@ -339,17 +344,20 @@ class EmailController extends Controller
     )]
     // 全件既読
     //
-    // 未読が数千件あると単一 UPDATE では statement_timeout(2min) に達するため、
+    // 未読が数千件あると単一 UPDATE では statement_timeout(既定2min) に達するため、
     // 未読 id を小バッチで取得 → whereIn で更新、を分割コミットしながら繰り返す。
     // emails は is_read を含む index が複数あり UPDATE が非 HOT になるため
     // 1 行ごとに全 index への新タプル挿入コストが乗る点に留意（バッチ幅の根拠）。
+    //
+    // 2026-05-25 Sentry: 200件バッチでも timeout した実績があるため、
+    // 各バッチを transaction で囲って SET LOCAL statement_timeout = '5min' を適用する。
+    // transaction 境界 = バッチ境界なので、途中で実行が打ち切られても処理済みバッチ分は
+    // 確定し、再実行で続行できる性質は維持される。
     public function markAllRead()
     {
         $tenantId = auth()->user()->tenant_id;
         $total    = 0;
 
-        // 各バッチは独立した文として即コミットされる（明示トランザクション無し）。
-        // そのため途中で実行が打ち切られても処理済み分は確定し、再実行で続行できる。
         for ($i = 0; $i < self::MARK_READ_MAX_BATCHES; $i++) {
             $ids = Email::where('tenant_id', $tenantId)
                 ->where('is_read', false)
@@ -360,7 +368,12 @@ class EmailController extends Controller
                 break;
             }
 
-            $total += Email::whereIn('id', $ids)->update(['is_read' => true]);
+            $total += DB::transaction(function () use ($ids) {
+                // emails の非HOT UPDATE が既定 2min を超えるケースに備え、
+                // このトランザクションに限り timeout を一時的に引き上げる。
+                DB::statement("SET LOCAL statement_timeout = '" . self::MARK_READ_STATEMENT_TIMEOUT . "'");
+                return Email::whereIn('id', $ids)->update(['is_read' => true]);
+            });
         }
 
         return response()->json([
