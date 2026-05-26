@@ -177,9 +177,13 @@ Schedule::command('vision:rotate-key')
         Log::error('[Schedule] Vision API キーローテーション失敗');
     });
 
-// ── 朝の日次配信レポート（毎日 8:30 JST）前日の配信・提案実績をメール送信
+// ── 朝の日次配信レポート（毎日 8:40 JST）前日の配信・提案実績をメール送信
+// 8:30 は :30 の 15分ジョブ群（classify / score-* = Claude API）と同一 schedule:run 内で
+// 逐次実行され、レポートの番が回るのが ~8:34 になり朝の Session Pooler 飽和に巻き込まれて
+// ECHECKOUTTIMEOUT で落ちていた（2026-05-26）。15分境界(:30/:45)を外し、:30 バッチが
+// 捌けた後の 8:40 に移動して競合を回避する。
 Schedule::command("report:daily-delivery-report")
-    ->dailyAt("08:30")
+    ->dailyAt("08:40")
     ->timezone("Asia/Tokyo")
     ->name("daily-delivery-report")
     ->withoutOverlapping()
