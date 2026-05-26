@@ -1065,7 +1065,11 @@ class InvoiceController extends Controller
      *
      * 既存の見積/注文/請求から下書きを複写する。
      *   - doc_type は元と同じ
-     *   - 採番は当月で新規（issued_date=今日 / year_month=当月）
+     *   - 採番は「対象データの翌月」で新規
+     *     - year_month = 元の year_month の翌月
+     *     - issued_date = 元の issued_date の翌月同日（月末日の overflow を避けるため
+     *       addMonthNoOverflow を使う。例: 元=2026-01-31 → 2026-02-28）
+     *     - 元 issued_date が null の場合は year_month 初日にフォールバック
      *   - 注文書は acknowledgement_no も同時採番
      *   - status=draft / approval_status=draft / 承認/PDF/受領メタは全リセット
      *   - 元データへのリンクは保持しない（quote_number 等の SES台帳フィードバックも行わない）
@@ -1081,8 +1085,22 @@ class InvoiceController extends Controller
             ]);
         }
 
-        $issuedDate = now()->toDateString();
-        $yearMonth  = \Carbon\Carbon::parse($issuedDate)->format('Y-m');
+        // 対象データの翌月で採番する
+        $yearMonth = \Carbon\Carbon::createFromFormat('Y-m', $invoice->year_month)
+            ->addMonthNoOverflow()
+            ->format('Y-m');
+        $issuedDate = $invoice->issued_date
+            ? \Carbon\Carbon::parse($invoice->issued_date)->addMonthNoOverflow()->toDateString()
+            : \Carbon\Carbon::createFromFormat('Y-m', $yearMonth)->startOfMonth()->toDateString();
+
+        // 当月の2ヶ月先以降の複写は禁止（誤って先々月分まで作らないため）
+        // 許容: 計算後 year_month <= 当月+1
+        $maxAllowedYm = now()->addMonthNoOverflow()->format('Y-m');
+        if (strcmp($yearMonth, $maxAllowedYm) > 0) {
+            throw ValidationException::withMessages([
+                'year_month' => ['当月の2ヶ月先の複写はできません'],
+            ]);
+        }
 
         $kind = match ($invoice->doc_type) {
             'estimate'       => 'estimate',
