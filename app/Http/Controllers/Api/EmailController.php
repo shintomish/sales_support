@@ -1,15 +1,24 @@
 <?php
 namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
+use App\Mail\ReplyMail;
+use App\Models\DeliveryCampaign;
+use App\Models\DeliverySendHistory;
 use App\Models\Email;
 use App\Models\GmailToken;
 use App\Services\GmailService;
+use App\Traits\UsesSenderDisplayName;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Str;
 use OpenApi\Attributes as OA;
 class EmailController extends Controller
 {
+    use UsesSenderDisplayName;
+
     // markAllRead の 1 バッチあたり更新行数。
     // emails は is_read を含む index が複数あり UPDATE が非 HOT になるため、
     // 1 行あたり全 index(計10本・含 trgm GIN 221MB) への新タプル挿入コストが乗る。
@@ -421,5 +430,123 @@ class EmailController extends Controller
             'message' => "{$total}件を既読にしました",
             'count'   => $total,
         ]);
+    }
+
+    /**
+     * 受信メールへの返信送信。SelfMailsView の「返信」フォームから呼ばれる。
+     * POST /api/v1/emails/{id}/reply
+     *
+     * - 受信メール (emails.id) を元に Re: 返信を送信する
+     * - In-Reply-To/References ヘッダで RFC822 スレッドを維持
+     *   (rfc_message_id が null = 2026-05-27 migration 以前の受信メールはヘッダ省略)
+     * - 送信履歴は delivery_campaigns / delivery_send_histories に send_type='delivery' で記録
+     *   (送信元 emails.id は別途追跡不可だが、subject/body/到達日時で検索できる前提)
+     * - 添付は一時保存→送信→削除 (ProposalMail と同パターン)
+     *
+     * 営業打ち合わせ 2026-05-25 §要望1+E-4 の中核実装。
+     */
+    public function reply(Request $request, int $id): JsonResponse
+    {
+        $tenantId = auth()->user()->tenant_id;
+        $email    = Email::where('tenant_id', $tenantId)->findOrFail($id);
+
+        $v = $request->validate([
+            'to'            => 'required|email',
+            'cc'            => 'nullable|array',
+            'cc.*'          => 'email',
+            'bcc'           => 'nullable|array',
+            'bcc.*'         => 'email',
+            'subject'       => 'required|string|max:500',
+            'body'          => 'required|string',
+            'attachments'   => 'nullable|array',
+            'attachments.*' => 'file|max:10240',
+        ]);
+
+        $userId      = auth()->id();
+        $senderName  = auth()->user()->name  ?? '';
+        // Reply-To は送信者本人の email を使う (営業担当宛に直接返信が戻るように)。
+        // 未設定なら config の reply_to → from へフォールバック。
+        $senderEmail = auth()->user()->email
+            ?? config('mail.reply_to.address', config('mail.from.address'))
+            ?? '';
+
+        // 添付ファイルを一時ディレクトリに保存（ProposalMail と同じ流儀）
+        $attachmentPaths = [];
+        if ($request->hasFile('attachments')) {
+            $dir = storage_path('app/temp/replies/' . uniqid());
+            @mkdir($dir, 0755, true);
+            foreach ($request->file('attachments') as $file) {
+                $dest = $dir . '/' . $file->getClientOriginalName();
+                $file->move($dir, $file->getClientOriginalName());
+                $attachmentPaths[] = $dest;
+            }
+        }
+
+        // send_type='delivery'（単発送信）: 提案スレッドには載せない、自社返信の証跡として記録。
+        // project_mail_id / engineer_mail_source_id は紐づかないため null のまま。
+        $campaign = DeliveryCampaign::create([
+            'tenant_id'     => $tenantId,
+            'send_type'     => 'delivery',
+            'user_id'       => $userId,
+            'subject'       => $v['subject'],
+            'body'          => $v['body'],
+            'total_count'   => 1,
+            'success_count' => 0,
+            'failed_count'  => 0,
+            'sent_at'       => now(),
+        ]);
+
+        $messageId = '<' . Str::uuid() . '@aizen-sol.co.jp>';
+        $inReplyTo = $email->rfc_message_id; // null の場合 ReplyMail 側でヘッダを省略
+
+        try {
+            $mailable = new ReplyMail(
+                mailSubject: $v['subject'],
+                body: $v['body'],
+                senderName: $senderName,
+                senderEmail: $senderEmail,
+                uploadedFiles: $attachmentPaths,
+                messageId: $messageId,
+                inReplyTo: $inReplyTo,
+                fromDisplayName: $this->senderDisplayName(),
+            );
+
+            $send = Mail::to($v['to']);
+            if (!empty($v['cc']))  { $send->cc($v['cc']); }
+            if (!empty($v['bcc'])) { $send->bcc($v['bcc']); }
+            $send->send($mailable);
+
+            DeliverySendHistory::create([
+                'tenant_id'      => $tenantId,
+                'campaign_id'    => $campaign->id,
+                'email'          => $v['to'],
+                'name'           => null,
+                'status'         => 'sent',
+                'ses_message_id' => $messageId,
+            ]);
+            $campaign->update(['success_count' => 1]);
+
+            Log::info("[EmailReply] email_id={$id} to={$v['to']} cc=" . count($v['cc'] ?? []) . " bcc=" . count($v['bcc'] ?? []) . " attachments=" . count($attachmentPaths));
+            return response()->json(['message' => '返信を送信しました']);
+        } catch (\Exception $e) {
+            DeliverySendHistory::create([
+                'tenant_id'      => $tenantId,
+                'campaign_id'    => $campaign->id,
+                'email'          => $v['to'],
+                'name'           => null,
+                'status'         => 'failed',
+                'ses_message_id' => $messageId,
+                'error_message'  => $e->getMessage(),
+            ]);
+            $campaign->update(['failed_count' => 1]);
+            Log::error("[EmailReply] 送信失敗 email_id={$id}: " . $e->getMessage());
+            return response()->json(['message' => 'メール送信に失敗しました'], 500);
+        } finally {
+            foreach ($attachmentPaths as $path) { if (is_file($path)) @unlink($path); }
+            if ($attachmentPaths) {
+                $dir = dirname($attachmentPaths[0]);
+                if (is_dir($dir) && count(array_diff(scandir($dir), ['.', '..'])) === 0) @rmdir($dir);
+            }
+        }
     }
 }

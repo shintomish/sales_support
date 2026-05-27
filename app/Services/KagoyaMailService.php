@@ -102,6 +102,14 @@ class KagoyaMailService
         $subject = $this->decodeHeader($headers['subject'] ?? '(件名なし)');
         $from = $this->decodeHeader($headers['from'] ?? '');
         $to = $this->decodeHeader($headers['to'] ?? '');
+        // RFC822 Message-ID（< > 込み）。SelfMailsView 返信時の In-Reply-To 用。
+        // header line には複数 token 入る可能性があるため最初の <...> のみ抽出。
+        $rfcMessageId = null;
+        if (!empty($headers['message-id'])) {
+            if (preg_match('/<([^>]+)>/', $headers['message-id'], $mm)) {
+                $rfcMessageId = mb_substr(trim($mm[1]), 0, 998);
+            }
+        }
 
         [$fromName, $fromAddress] = $this->parseFrom($from);
 
@@ -138,6 +146,7 @@ class KagoyaMailService
             Email::create([
                 'tenant_id'        => $tenantId,
                 'gmail_message_id' => $uid,
+                'rfc_message_id'   => $rfcMessageId,
                 'thread_id'        => null,
                 'subject'          => mb_substr($subject, 0, 255),
                 'from_address'     => $fromAddress,
@@ -177,6 +186,7 @@ class KagoyaMailService
         $email = Email::create([
             'tenant_id'        => $tenantId,
             'gmail_message_id' => $uid,
+            'rfc_message_id'   => $rfcMessageId,
             'thread_id'        => null,
             'subject'          => mb_substr($subject, 0, 255),
             'from_address'     => $fromAddress,

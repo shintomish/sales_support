@@ -13,6 +13,7 @@ class Email extends Model
     protected $fillable = [
         'tenant_id',
         'gmail_message_id',
+        'rfc_message_id',
         'thread_id',
         'subject',
         'from_address',
