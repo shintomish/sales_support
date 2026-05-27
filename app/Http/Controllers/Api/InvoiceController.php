@@ -890,7 +890,15 @@ class InvoiceController extends Controller
         ]);
 
         try {
-            $mailable = new \App\Mail\InvoiceMail($v['subject'], $v['body'], $attachments);
+            // From / Reply-To をログインユーザー個人にして、返信が担当者宛に届くようにする (2026-05-27 fix)
+            $user = \Illuminate\Support\Facades\Auth::user();
+            $mailable = new \App\Mail\InvoiceMail(
+                subjectText:     $v['subject'],
+                bodyText:        $v['body'],
+                attachmentItems: $attachments,
+                senderName:      (string) ($user?->name ?? ''),
+                senderEmail:     (string) ($user?->email ?? ''),
+            );
             $mail = \Illuminate\Support\Facades\Mail::to($v['to_emails']);
             if (!empty($v['cc_emails'])) {
                 $mail->cc($v['cc_emails']);

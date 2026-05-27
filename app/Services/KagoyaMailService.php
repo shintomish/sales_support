@@ -245,7 +245,10 @@ class KagoyaMailService
         }
 
         // ③ 差出人メール + 件名（Re:除去）で最新の送信履歴を探す
-        if (!$history && $fromAddress) {
+        // ただし from が自社ドメインの場合は、一斉配信の自己 BCC コピー(from=to=outsource@)が
+        // 自分自身の DSH に「返信」として紐付く False Positive を起こすためスキップ。
+        // 客先からの本物の返信は from が外部ドメインなのでガードに掛からない。
+        if (!$history && $fromAddress && !$isSelfFrom) {
             $originalSubject = trim(preg_replace('/^(Re:\s*|RE:\s*|Fwd:\s*|FW:\s*)*/iu', '', $subject));
             if ($originalSubject) {
                 $history = DeliverySendHistory::where('email', $fromAddress)

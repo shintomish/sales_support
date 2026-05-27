@@ -71,7 +71,10 @@ class DeliveryCampaignService
     public function sendCampaign(DeliveryCampaign $campaign, array $attachmentPaths = [], array $excludeIds = []): void
     {
         $testTo      = config('mail.delivery_test_to');
-        $senderEmail = config('mail.from.address') ?? '';
+        // Reply-To をログインユーザー(営業担当)個人のアドレスにして、客先返信が outsource@ ではなく
+        // 担当者宛に届くようにする (2026-05-27 fix)。User の email が未設定の場合のみ outsource@ にフォールバック。
+        $user        = \App\Models\User::find($this->userId);
+        $senderEmail = $user?->email ?: (config('mail.from.address') ?? '');
         // ユーザ別の From 表示名 (メール署名設定)
         $fromDisplayName = \App\Models\EmailBodyTemplate::where('user_id', $this->userId)->value('sender_display_name') ?: null;
 

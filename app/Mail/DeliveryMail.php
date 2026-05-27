@@ -10,6 +10,8 @@ use Illuminate\Mail\Mailables\Envelope;
 use Illuminate\Mail\Mailables\Attachment;
 use Illuminate\Mail\Mailables\Headers;
 use Illuminate\Queue\SerializesModels;
+use Symfony\Component\Mime\Address as SymfonyAddress;
+use Symfony\Component\Mime\Email as SymfonyEmail;
 
 class DeliveryMail extends Mailable
 {
@@ -27,9 +29,21 @@ class DeliveryMail extends Mailable
 
     public function envelope(): Envelope
     {
+        // 返信先(Reply-To)はログインユーザー(営業担当)個人にする。
+        // 客先が返信ボタンを押した時に outsource@ ではなく担当者の個別アドレスに届くため、
+        // /emails 自社タブで campaign 紐付けバッジが表示される (2026-05-27 fix)。
+        // Laravel の Mailable は Envelope replyTo を addReplyTo（追加）するため、
+        // config('mail.reply_to') が残ってしまう。Symfony 側で setReplyTo して上書きする。
         $replyTo = $this->senderEmail
             ? [new Address($this->senderEmail, $this->senderName)]
             : [];
+
+        $using = [];
+        if (!empty($replyTo)) {
+            $using[] = function (SymfonyEmail $email) {
+                $email->replyTo(new SymfonyAddress($this->senderEmail, $this->senderName));
+            };
+        }
 
         return new Envelope(
             from: new Address(
@@ -38,6 +52,7 @@ class DeliveryMail extends Mailable
             ),
             replyTo: $replyTo,
             subject: $this->mailSubject,
+            using: $using,
         );
     }
 
