@@ -123,7 +123,7 @@ class EmailController extends Controller
     // 自社メールの担当者(to のローカル部)一覧 + 件数。
     // 自社 = to_address が当社 xxx@aizen-sol.co.jp（catch-all の outsource@ は除外＝その他扱い）。
     // spam（subject 前置 "[spam]"）も除外。フロント「自社」タブの担当者ドロップダウン構築用。
-    // 3画面（/emails・/project-mails・/engineer-mails）共通（営業打ち合わせ 2026-05-25 §要望1）。
+    // /emails の自社モード専用（営業打ち合わせ 2026-05-25 §要望1）。
     public function selfOwners()
     {
         $owners = Email::where('to_address', 'ilike', '%@aizen-sol.co.jp%')
