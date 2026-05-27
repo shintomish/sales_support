@@ -115,9 +115,28 @@ class EmailController extends Controller
                 $q->where('category', '!=', 'bounce')->orWhereNull('category');
             });
         }
-        return response()->json(
-            $query->withCount('attachments')->paginate($perPage)
-        );
+        $paginator = $query->withCount('attachments')->paginate($perPage);
+
+        // 自社スコープ時のみ、各メールがどの一斉配信(delivery_campaigns)への返信か逆引きして注入。
+        // DeliverySendHistory.reply_email_id = email.id を whereIn 一括取得(N+1 回避・30件/page なので軽量)。
+        // /emails 自社タブのバッジ表示用 (営業打ち合わせ 2026-05-25 派生機能)。
+        if ($selfOwner !== '' || $mailScope === 'self') {
+            $ids = collect($paginator->items())->pluck('id')->all();
+            if (!empty($ids)) {
+                $replyMap = DeliverySendHistory::whereIn('reply_email_id', $ids)
+                    ->whereNotNull('reply_email_id')
+                    ->with('campaign:id,subject,sent_at')
+                    ->get()
+                    ->keyBy('reply_email_id');
+                foreach ($paginator->items() as $em) {
+                    $h = $replyMap->get($em->id);
+                    $em->reply_to_campaign_id      = $h?->campaign?->id;
+                    $em->reply_to_campaign_subject = $h?->campaign?->subject;
+                }
+            }
+        }
+
+        return response()->json($paginator);
     }
 
     // 自社メールの担当者(to のローカル部)一覧 + 件数。
