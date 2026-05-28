@@ -103,7 +103,9 @@ class BackfillReceivedAtFromDate extends Command
             return;
         }
 
-        if ($email->received_at == $newReceivedAt->toDateTimeString()) {
+        // 既存値も Carbon (datetime cast) なので秒精度で同値判定する。
+        // 旧実装は Carbon vs string の loose 比較で常に false になり全件 UPDATE していた。
+        if ($email->received_at && $email->received_at->equalTo($newReceivedAt)) {
             $skipped++;
             return;
         }
