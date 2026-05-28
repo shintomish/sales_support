@@ -360,7 +360,8 @@ class EmailController extends Controller
                     try {
                         $base        = preg_replace('/[^\w\-\.]/u', '_', pathinfo($filename, PATHINFO_FILENAME));
                         $base        = preg_replace('/[^\x00-\x7F]/u', '', $base) ?: substr(md5($filename), 0, 8);
-                        $storagePath = "attachments/{$email->tenant_id}/{$email->id}/{$base}.{$ext}";
+                        // path に attachment id を含めて同一メール内の同名添付衝突を防ぐ
+                        $storagePath = "attachments/{$email->tenant_id}/{$email->id}/{$attachment->id}_{$base}.{$ext}";
                         $storage     = app(\App\Services\SupabaseStorageService::class);
                         $url         = $storage->uploadBinary($binary, $storagePath, $mimeType);
                         $attachment->update(['storage_path' => $url]);

@@ -202,27 +202,32 @@ class KagoyaMailService
         ]);
 
         foreach ($attachments as $att) {
-            $storagePath = null;
-            if (!empty($att['binary'])) {
-                try {
-                    $ext  = strtolower(pathinfo($att['filename'], PATHINFO_EXTENSION)) ?: 'bin';
-                    $base = preg_replace('/[^\w\-\.]/u', '_', pathinfo($att['filename'], PATHINFO_FILENAME));
-                    $base = preg_replace('/[^\x00-\x7F]/u', '', $base) ?: substr(md5($att['filename']), 0, 8);
-                    $path = "attachments/{$tenantId}/{$email->id}/{$base}.{$ext}";
-                    $storage = app(\App\Services\SupabaseStorageService::class);
-                    $storagePath = $storage->uploadBinary($att['binary'], $path, $att['mime_type']);
-                } catch (\Throwable $e) {
-                    Log::warning("[KagoyaIMAP] 添付Storage保存失敗: {$att['filename']}: " . $e->getMessage());
-                }
-            }
-            EmailAttachment::create([
+            // EmailAttachment を先に作成して id を取得し、path に埋め込んで
+            // 同一メール内で同名添付 (unknown.bin / attachment.pdf 等) が衝突するのを防ぐ。
+            $record = EmailAttachment::create([
                 'email_id'            => $email->id,
                 'filename'            => $att['filename'],
                 'mime_type'           => $att['mime_type'],
                 'size'                => $att['size'],
                 'gmail_attachment_id' => null,
-                'storage_path'        => $storagePath,
+                'storage_path'        => null,
             ]);
+
+            if (!empty($att['binary'])) {
+                try {
+                    $ext  = strtolower(pathinfo($att['filename'], PATHINFO_EXTENSION)) ?: 'bin';
+                    $base = preg_replace('/[^\w\-\.]/u', '_', pathinfo($att['filename'], PATHINFO_FILENAME));
+                    $base = preg_replace('/[^\x00-\x7F]/u', '', $base) ?: substr(md5($att['filename']), 0, 8);
+                    $path = "attachments/{$tenantId}/{$email->id}/{$record->id}_{$base}.{$ext}";
+                    $storage = app(\App\Services\SupabaseStorageService::class);
+                    $storagePath = $storage->uploadBinary($att['binary'], $path, $att['mime_type']);
+                    if ($storagePath) {
+                        $record->update(['storage_path' => $storagePath]);
+                    }
+                } catch (\Throwable $e) {
+                    Log::warning("[KagoyaIMAP] 添付Storage保存失敗: {$att['filename']}: " . $e->getMessage());
+                }
+            }
         }
 
         // 返信紐づけ
