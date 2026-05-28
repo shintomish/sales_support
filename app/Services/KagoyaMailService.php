@@ -113,11 +113,13 @@ class KagoyaMailService
 
         [$fromName, $fromAddress] = $this->parseFrom($from);
 
-        // INTERNALDATE（サーバー受信時刻）を優先、なければDateヘッダー
-        $receivedAt = $internalDate
-            ? Carbon::parse($internalDate)->utc()
-            : ($headers['date'] ?? null
-                ? Carbon::parse($headers['date'])->utc()
+        // Date ヘッダー（送信者メーラーの送信時刻）を優先、なければ INTERNALDATE。
+        // Kagoya 配送遅延時に INTERNALDATE が大きく後ろにズレるため (例: 送信10:37→取込19:29)、
+        // メーラー上の見え方と一致する Date ヘッダーを優先する。改竄リスクはあるが UX を優先。
+        $receivedAt = ($headers['date'] ?? null)
+            ? Carbon::parse($headers['date'])->utc()
+            : ($internalDate
+                ? Carbon::parse($internalDate)->utc()
                 : Carbon::now()->utc());
 
         // バウンスメール（不達通知）/ 上流スパム判定済みメールは category='bounce' の
