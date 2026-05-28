@@ -313,7 +313,7 @@ body.sans-en {
 
 <div class="date-top">{{ $isAcknowledgement ? '　　　/　　/　　' : ($isRefinitiv ? $refDate($issuedAt) : ($isEnglish ? $englishDate($issuedAt) : $reiwa($issuedAt))) }}</div>
 
-<h1 class="title {{ ($isPurchaseOrder || $isEstimate) ? 'spaced' : '' }}">{{ $docTitle }}</h1>
+<h1 class="title spaced">{{ $docTitle }}</h1>
 
 <table class="head">
     <tr>
