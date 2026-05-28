@@ -301,7 +301,7 @@ class EmailController extends Controller
     )]
     // 未読件数 (is_read 系 index 削除に伴い Seq Scan 化したため 60s キャッシュで I/O 抑制)
     // 5分毎ポーリングのバッジ表示用途で 60s 遅延は許容範囲。
-    // markAllRead 完了時は invalidate されないが、次の 60s で自然に反映される。
+    // markAllRead 完了時は RescoreJobRunner::runMarkReadTick が Cache::forget で即時 invalidate する。
     public function unreadCount()
     {
         $tenantId = auth()->user()->tenant_id;

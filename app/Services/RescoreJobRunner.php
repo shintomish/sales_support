@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\Email;
 use App\Models\RescoreJob;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
@@ -124,6 +125,7 @@ class RescoreJobRunner
                 $job->status      = RescoreJob::STATUS_COMPLETED;
                 $job->finished_at = now();
                 $job->save();
+                Cache::forget("emails:unread_count:tenant:{$job->tenant_id}");
                 Log::info('[RescoreJobRunner] mark_read 完了', [
                     'job_id'    => $job->id,
                     'tenant_id' => $job->tenant_id,
