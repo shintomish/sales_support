@@ -143,11 +143,16 @@
 @page { size: A4; margin: 12mm 14mm 10mm 14mm; }
 * { box-sizing: border-box; }
 body {
-    font-family: 'Noto Sans CJK JP', 'Noto Sans JP', 'Yu Gothic', sans-serif;
+    /* 国内帳票 (見積書/注文書/注文請書/請求書) は元紙ベースに合わせ明朝で出力 */
+    font-family: 'Noto Serif CJK JP', 'Yu Mincho', 'MS Mincho', serif;
     font-size: 10pt;
     color: #111;
     margin: 0;
     padding: 0;
+}
+/* リフィニティブ英文請求書 / 英文見積書は元ネタに合わせ Helvetica 系で出力 (日本語混在は CJK ゴシックを fallback) */
+body.sans-en {
+    font-family: 'Helvetica', 'Arial', 'Noto Sans CJK JP', sans-serif;
 }
 .date-top { text-align: right; font-size: 10pt; margin-bottom: 2mm; }
 .title {
@@ -304,7 +309,7 @@ body {
 .ref-extra .ref-value { word-break: break-all; }
 </style>
 </head>
-<body>
+<body class="@if($isRefinitiv || $isEnglish) sans-en @endif">
 
 <div class="date-top">{{ $isAcknowledgement ? '　　　/　　/　　' : ($isRefinitiv ? $refDate($issuedAt) : ($isEnglish ? $englishDate($issuedAt) : $reiwa($issuedAt))) }}</div>
 
