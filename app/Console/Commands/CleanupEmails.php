@@ -10,7 +10,7 @@ use Illuminate\Support\Facades\Log;
  * メールレコードの定期クリーンアップ。
  *
  * 処理内容:
- *   0. bounce 7日超 → 即レコード削除（容量・検索ノイズ対策。dedup anchor は新着取込時のみ参照されるため7日で十分）
+ *   0. bounce 3日超 → LIMIT 500 バッチで削除（容量・検索ノイズ・Disk IO 対策。dedup anchor は新着取込時のみ参照されるため3日で十分）
  *   1. 分類済み 30日超 → body_text / body_html を NULL化（容量削減）
  *   2. 分類済み 90日超 → レコード削除
  *   3. 未分類   14日超 → レコード削除（処理漏れとみなす）
@@ -25,18 +25,35 @@ class CleanupEmails extends Command
         $dryRun = $this->option('dry-run');
         $label  = $dryRun ? '[DRY-RUN] ' : '';
 
-        // ── Step 0: bounce 7日超 → 即削除 ──
+        // ── Step 0: bounce 3日超 → LIMIT 500 バッチで削除 ──
         // outsource@ には外部ML経由のバウンス通知が日次 4,000+ 件流入するため、
-        // 短期で削除して蓄積・検索ノイズを抑える。dedup anchor 用途は新着取込時のみで
-        // 過去のバウンスを再参照することはほぼ無いため 7日で十分。
-        $deleteBounceQuery = Email::where('category', 'bounce')
-            ->where('received_at', '<', now()->subDays(7));
-
-        $deleteBounceCount = $deleteBounceQuery->count();
-        $this->line("{$label}レコード削除対象（bounce 7日超）: {$deleteBounceCount}件");
+        // 短期で削除して蓄積・Disk IO 圧迫を抑える。dedup anchor 用途は新着取込時のみで
+        // 過去のバウンスを再参照することはほぼ無いため 3日で十分。
+        // 一括 DELETE は project_mail_sources の cascade で statement_timeout になるため
+        // 必ず LIMIT バッチでループする (CLAUDE memory: bounce_cascade_timeout)。
+        $deleteBounceCount = Email::where('category', 'bounce')
+            ->where('received_at', '<', now()->subDays(3))
+            ->count();
+        $this->line("{$label}レコード削除対象（bounce 3日超）: {$deleteBounceCount}件");
 
         if (!$dryRun && $deleteBounceCount > 0) {
-            $deleteBounceQuery->delete();
+            $totalDeleted = 0;
+            $maxIterations = (int) ceil($deleteBounceCount / 500) + 5;
+            for ($i = 0; $i < $maxIterations; $i++) {
+                $deleted = Email::whereIn('id', function ($q) {
+                    $q->select('id')
+                        ->from('emails')
+                        ->where('category', 'bounce')
+                        ->where('received_at', '<', now()->subDays(3))
+                        ->orderBy('id')
+                        ->limit(500);
+                })->delete();
+                $totalDeleted += $deleted;
+                if ($deleted < 500) {
+                    break;
+                }
+            }
+            $this->line("{$label}bounce 実削除: {$totalDeleted}件");
         }
 
         // ── Step 1: 分類済み 30日超 → 本文NULL化 ──
