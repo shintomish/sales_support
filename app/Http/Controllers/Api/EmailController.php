@@ -6,6 +6,7 @@ use App\Models\DeliveryCampaign;
 use App\Models\DeliverySendHistory;
 use App\Models\Email;
 use App\Models\GmailToken;
+use App\Models\RescoreJob;
 use App\Services\GmailService;
 use App\Traits\UsesSenderDisplayName;
 use Illuminate\Http\JsonResponse;
@@ -18,22 +19,6 @@ use OpenApi\Attributes as OA;
 class EmailController extends Controller
 {
     use UsesSenderDisplayName;
-
-    // markAllRead の 1 バッチあたり更新行数。
-    // emails は is_read を含む index が複数あり UPDATE が非 HOT になるため、
-    // 1 行あたり全 index(計10本・含 trgm GIN 221MB) への新タプル挿入コストが乗る。
-    // 200 件/バッチ で 2026-05-25 に statement_timeout(2min) を超過する Sentry が再発したため、
-    // 各バッチに SET LOCAL statement_timeout = '5min' を掛けて止血している。
-    // 根治は非同期ジョブ化 or HOT 化 migration (is_read を非PK index から外す)。
-    private const MARK_READ_BATCH_SIZE = 200;
-
-    // 1 バッチあたりの statement_timeout 上書き値。
-    // 既定 2min ではバッチが間に合わないため、本エンドポイントに限り 5min まで許容する。
-    private const MARK_READ_STATEMENT_TIMEOUT = '5min';
-
-    // markAllRead の暴走防止: 1 リクエストで処理する最大バッチ数の上限。
-    // 取込スケジューラが裏で is_read=false を増やし続けても無限ループしない。
-    private const MARK_READ_MAX_BATCHES = 5000;
 
     public function __construct(
         private GmailService $gmailService,
@@ -412,44 +397,62 @@ class EmailController extends Controller
             new OA\Response(response: 401, description: '認証エラー'),
         ]
     )]
-    // 全件既読
+    // 全件既読 (非同期ジョブ化版 / rescore-all と同パターン)
     //
-    // 未読が数千件あると単一 UPDATE では statement_timeout(既定2min) に達するため、
-    // 未読 id を小バッチで取得 → whereIn で更新、を分割コミットしながら繰り返す。
-    // emails は is_read を含む index が複数あり UPDATE が非 HOT になるため
-    // 1 行ごとに全 index への新タプル挿入コストが乗る点に留意（バッチ幅の根拠）。
-    //
-    // 2026-05-25 Sentry: 200件バッチでも timeout した実績があるため、
-    // 各バッチを transaction で囲って SET LOCAL statement_timeout = '5min' を適用する。
-    // transaction 境界 = バッチ境界なので、途中で実行が打ち切られても処理済みバッチ分は
-    // 確定し、再実行で続行できる性質は維持される。
+    // 未読が数千件あると同期 UPDATE では nginx の fastcgi_read_timeout (5min) や
+    // statement_timeout を超え 502/500 で UI が「失敗」表示になる事象が頻発したため
+    // (詳細: [[project_markallread_sync_timeout]])、本エンドポイントは job 登録のみ行い 202 を返す。
+    // 実処理は毎分の Schedule::call('rescore-jobs-tick') が RescoreJobRunner::runMarkReadTick で進める。
+    // フロントは /emails/mark-read-status をポーリングして進捗を表示する。
     public function markAllRead()
     {
         $tenantId = auth()->user()->tenant_id;
-        $total    = 0;
 
-        for ($i = 0; $i < self::MARK_READ_MAX_BATCHES; $i++) {
-            $ids = Email::where('tenant_id', $tenantId)
-                ->where('is_read', false)
-                ->limit(self::MARK_READ_BATCH_SIZE)
-                ->pluck('id');
-
-            if ($ids->isEmpty()) {
-                break;
-            }
-
-            $total += DB::transaction(function () use ($ids) {
-                // emails の非HOT UPDATE が既定 2min を超えるケースに備え、
-                // このトランザクションに限り timeout を一時的に引き上げる。
-                DB::statement("SET LOCAL statement_timeout = '" . self::MARK_READ_STATEMENT_TIMEOUT . "'");
-                return Email::whereIn('id', $ids)->update(['is_read' => true]);
-            });
+        // 既に未完了の同種ジョブがあればそれを返す (二重起動防止)
+        $existing = RescoreJob::where('type', RescoreJob::TYPE_MARK_READ)
+            ->whereIn('status', RescoreJob::ACTIVE_STATUSES)
+            ->orderByDesc('id')
+            ->first();
+        if ($existing) {
+            return response()->json([
+                'message' => '既読処理は既に実行中です',
+                'job'     => $existing,
+            ], 202);
         }
 
-        return response()->json([
-            'message' => "{$total}件を既読にしました",
-            'count'   => $total,
+        $total = Email::where('tenant_id', $tenantId)
+            ->where('is_read', false)
+            ->count();
+
+        if ($total === 0) {
+            return response()->json([
+                'message' => '未読メールはありません',
+                'count'   => 0,
+                'job'     => null,
+            ]);
+        }
+
+        $job = RescoreJob::create([
+            'type'         => RescoreJob::TYPE_MARK_READ,
+            'status'       => RescoreJob::STATUS_PENDING,
+            'total_count'  => $total,
+            'requested_by' => auth()->id(),
         ]);
+
+        return response()->json([
+            'message' => "{$total}件の既読化を開始しました（バックグラウンドで処理されます）",
+            'job'     => $job,
+        ], 202);
+    }
+
+    // 直近の全件既読ジョブの進捗を返す（フロントのポーリング用）
+    public function markReadStatus(): JsonResponse
+    {
+        $job = RescoreJob::where('type', RescoreJob::TYPE_MARK_READ)
+            ->orderByDesc('id')
+            ->first();
+
+        return response()->json(['job' => $job]);
     }
 
     /**

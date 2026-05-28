@@ -201,16 +201,23 @@ class EmailControllerTest extends TestCase
         $res->assertOk()->assertJson(['count' => 2]);
     }
 
-    // ─── markAllRead ───
+    // ─── markAllRead (非同期ジョブ化版) ───
 
-    public function test_mark_all_read_marks_all_unread_emails(): void
+    public function test_mark_all_read_creates_pending_job_and_runner_processes_unread(): void
     {
         $this->actingAsUser();
         Email::factory()->count(3)->create(['tenant_id' => $this->authUser->tenant_id, 'is_read' => false]);
 
         $res = $this->postJson('/api/v1/emails/mark-all-read');
 
-        $res->assertOk()->assertJson(['count' => 3]);
+        $res->assertStatus(202)->assertJsonPath('job.total_count', 3);
+
+        // job が作成された段階では未読は更新されていない
+        $this->assertSame(3, Email::where('tenant_id', $this->authUser->tenant_id)->where('is_read', false)->count());
+
+        // Schedule tick 相当を直接呼び出して既読化を実行
+        app(\App\Services\RescoreJobRunner::class)->tick();
+
         $this->assertSame(0, Email::where('tenant_id', $this->authUser->tenant_id)->where('is_read', false)->count());
     }
 
@@ -222,9 +229,31 @@ class EmailControllerTest extends TestCase
         $other = Tenant::factory()->create();
         $otherEmail = Email::factory()->create(['tenant_id' => $other->id, 'is_read' => false]);
 
-        $this->postJson('/api/v1/emails/mark-all-read')->assertOk();
+        $this->postJson('/api/v1/emails/mark-all-read')->assertStatus(202);
+        app(\App\Services\RescoreJobRunner::class)->tick();
 
         $this->assertFalse($otherEmail->fresh()->is_read);
+    }
+
+    public function test_mark_all_read_returns_ok_when_no_unread(): void
+    {
+        $this->actingAsUser();
+        Email::factory()->create(['tenant_id' => $this->authUser->tenant_id, 'is_read' => true]);
+
+        $res = $this->postJson('/api/v1/emails/mark-all-read');
+
+        $res->assertOk()->assertJson(['count' => 0, 'job' => null]);
+    }
+
+    public function test_mark_all_read_returns_existing_job_when_already_running(): void
+    {
+        $this->actingAsUser();
+        Email::factory()->create(['tenant_id' => $this->authUser->tenant_id, 'is_read' => false]);
+
+        $first = $this->postJson('/api/v1/emails/mark-all-read')->assertStatus(202)->json('job.id');
+        $second = $this->postJson('/api/v1/emails/mark-all-read')->assertStatus(202)->json('job.id');
+
+        $this->assertSame($first, $second);
     }
 
     // ─── sync ───

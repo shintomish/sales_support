@@ -2,7 +2,9 @@
 
 namespace App\Services;
 
+use App\Models\Email;
 use App\Models\RescoreJob;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -22,6 +24,19 @@ class RescoreJobRunner
 
     /** 1 tick の処理時間バジェット(秒)。Schedule の everyMinute に収める */
     private const TIME_BUDGET_SEC = 50;
+
+    /**
+     * mark_read 用バッチ件数。emails は is_read を含む index が複数あり
+     * UPDATE が非 HOT 化、加えて body_text の trgm GIN (368MB) への
+     * 新タプル挿入コストが乗るため小さめに保つ。[[project_markallread_sync_timeout]]
+     */
+    private const MARK_READ_BATCH_SIZE = 200;
+
+    /** mark_read 1 バッチに許容する statement_timeout (既定 2min では足りないため) */
+    private const MARK_READ_STATEMENT_TIMEOUT = '5min';
+
+    /** mark_read tick の 1 回あたり最大ループ回数 (取込スケジューラと並行しても暴走しない安全弁) */
+    private const MARK_READ_MAX_BATCHES_PER_TICK = 50;
 
     public function __construct(
         private ProjectMailScoringService  $projectScoring,
@@ -48,6 +63,11 @@ class RescoreJobRunner
         $deadline = microtime(true) + self::TIME_BUDGET_SEC;
 
         try {
+            if ($job->type === RescoreJob::TYPE_MARK_READ) {
+                $this->runMarkReadTick($job, $deadline);
+                return;
+            }
+
             while (microtime(true) < $deadline && $job->cursor_offset < $job->total_count) {
                 $this->runBatch($job);
 
@@ -85,5 +105,67 @@ class RescoreJobRunner
         } else {
             $this->engineerScoring->rescoreAll(self::BATCH_SIZE, $job->cursor_offset, $job->tenant_id);
         }
+    }
+
+    /**
+     * mark_read 用の tick 処理。
+     *
+     * 完了判定は cursor_offset/total_count ではなく「未読が残っているか」で行う。
+     * 取込スケジューラが裏で is_read=false を増やしても、本 tick の時間バジェット内で
+     * 取り切れるだけ取り続け、次 tick で再開する。
+     */
+    private function runMarkReadTick(RescoreJob $job, float $deadline): void
+    {
+        $batches = 0;
+        while (microtime(true) < $deadline && $batches < self::MARK_READ_MAX_BATCHES_PER_TICK) {
+            $batches++;
+            $hasMore = $this->runMarkReadBatch($job);
+            if (!$hasMore) {
+                $job->status      = RescoreJob::STATUS_COMPLETED;
+                $job->finished_at = now();
+                $job->save();
+                Log::info('[RescoreJobRunner] mark_read 完了', [
+                    'job_id'    => $job->id,
+                    'tenant_id' => $job->tenant_id,
+                    'processed' => $job->processed_count,
+                    'total'     => $job->total_count,
+                ]);
+                return;
+            }
+        }
+    }
+
+    /**
+     * mark_read 1 バッチ。未読 id を MARK_READ_BATCH_SIZE 件取得→whereIn UPDATE。
+     * 戻り値: 処理対象が見つかったか (false なら未読 0 件)
+     *
+     * emails の非HOT UPDATE が既定 statement_timeout (2min) を超えるため
+     * 各バッチ専用に SET LOCAL で 5min まで引き上げる。
+     */
+    private function runMarkReadBatch(RescoreJob $job): bool
+    {
+        return DB::transaction(function () use ($job) {
+            DB::statement("SET LOCAL statement_timeout = '" . self::MARK_READ_STATEMENT_TIMEOUT . "'");
+
+            $ids = Email::withoutGlobalScopes()
+                ->where('tenant_id', $job->tenant_id)
+                ->where('is_read', false)
+                ->limit(self::MARK_READ_BATCH_SIZE)
+                ->pluck('id');
+
+            if ($ids->isEmpty()) {
+                return false;
+            }
+
+            $updated = Email::withoutGlobalScopes()
+                ->whereIn('id', $ids)
+                ->update(['is_read' => true]);
+
+            $job->processed_count = ($job->processed_count ?? 0) + $updated;
+            $job->cursor_offset   = $job->processed_count;
+            $job->save();
+
+            return true;
+        });
     }
 }

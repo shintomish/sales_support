@@ -200,7 +200,8 @@ Route::prefix('v1')->middleware(['supabase.auth'])->group(function () {
         Route::get('/unread-count',  [EmailController::class, 'unreadCount']);
         Route::get('/self-owners',   [EmailController::class, 'selfOwners']); // 自社タブの担当者(from ローカル部)一覧
         Route::post('/sync',         [EmailController::class, 'sync']);
-        Route::post('/mark-all-read',[EmailController::class, 'markAllRead']); // 全件既読
+        Route::post('/mark-all-read',     [EmailController::class, 'markAllRead']);    // 全件既読 (非同期ジョブ登録 202)
+        Route::get ('/mark-read-status',  [EmailController::class, 'markReadStatus']); // 全件既読の進捗ポーリング
         Route::get('/{id}',                                      [EmailController::class, 'show']);
         Route::patch('/{id}/link',                               [EmailController::class, 'link']);
         Route::get('/{id}/attachments/{attachmentId}/download',  [EmailController::class, 'downloadAttachment']);

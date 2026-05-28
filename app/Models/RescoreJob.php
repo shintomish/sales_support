@@ -9,8 +9,9 @@ class RescoreJob extends Model
 {
     use BelongsToTenant;
 
-    public const TYPE_PROJECT  = 'project_mail';
-    public const TYPE_ENGINEER = 'engineer_mail';
+    public const TYPE_PROJECT   = 'project_mail';
+    public const TYPE_ENGINEER  = 'engineer_mail';
+    public const TYPE_MARK_READ = 'mark_read';
 
     public const STATUS_PENDING    = 'pending';
     public const STATUS_PROCESSING = 'processing';
