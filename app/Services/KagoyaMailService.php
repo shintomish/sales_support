@@ -16,9 +16,15 @@ class KagoyaMailService
 
     /**
      * KAGOYA IMAP から直接メールを取得し emails テーブルに保存する
+     *
+     * UID-based incremental fetch:
+     * 前回取込済の最大 UID + 1 から先頭 (`UID FETCH last+1:*`) を取得することで、
+     * シーケンス番号窓 (旧 `FETCH exists-99:exists`) で発生していた構造的取りこぼしを排除する。
+     * 1回の sync は $budgetSeconds で打ち切り、残りは次回 sync が引き取る (UID 順保証)。
      */
-    public function syncEmails(int $maxFetch = 100): int
+    public function syncEmails(int $budgetSeconds = 100): int
     {
+        $startTime = microtime(true);
         $tenantId = 1;
 
         if (!$this->connect()) {
@@ -38,9 +44,20 @@ class KagoyaMailService
 
             if ($exists === 0) return 0;
 
-            // 最新 $maxFetch 件の UID を取得
-            $start = max(1, $exists - $maxFetch + 1);
-            $fetchResp = $this->imapCommand("FETCH {$start}:{$exists} (UID)");
+            // 前回最終取込 UID を emails から動的算出 (state テーブル不要)
+            $lastUid = (int) (Email::where('tenant_id', $tenantId)
+                ->whereRaw("gmail_message_id ~ '^imap-[0-9]+$'")
+                ->selectRaw("COALESCE(MAX(CAST(SUBSTRING(gmail_message_id FROM 6) AS BIGINT)), 0) AS v")
+                ->value('v'));
+
+            // 初回 (last_uid=0) は最新100件のみ取得して取込爆発を防ぐ。
+            // 2回目以降は UID-based incremental fetch で「未取込分のみ」を全件取得。
+            if ($lastUid === 0) {
+                $start = max(1, $exists - 99);
+                $fetchResp = $this->imapCommand("FETCH {$start}:{$exists} (UID)");
+            } else {
+                $fetchResp = $this->imapCommand("UID FETCH " . ($lastUid + 1) . ":* (UID)");
+            }
 
             $uids = [];
             foreach ($fetchResp['lines'] as $line) {
@@ -48,26 +65,36 @@ class KagoyaMailService
                     $uids[] = (int) $m[1];
                 }
             }
+            // IMAP の UID 順は通常昇順だが、budget timeout 後の安全な再開のため明示ソート
+            sort($uids);
 
-            // 既存 UID を一括チェック
+            // 既存 UID を一括チェック (並行 sync / race condition の保険)
             $existingUids = Email::where('tenant_id', $tenantId)
                 ->whereIn('gmail_message_id', array_map(fn($u) => "imap-{$u}", $uids))
                 ->pluck('gmail_message_id')
-                ->map(fn($id) => str_replace('imap-', '', $id))
+                ->map(fn($id) => (int) substr($id, 5))
                 ->toArray();
 
-            $newUids = array_filter($uids, fn($u) => !in_array((string) $u, $existingUids));
+            $newUids = array_values(array_diff($uids, $existingUids));
 
             if (empty($newUids)) {
-                Log::info("[KagoyaIMAP] 新着なし");
+                Log::info("[KagoyaIMAP] 新着なし", ['last_uid' => $lastUid, 'exists' => $exists]);
                 return 0;
             }
 
-            Log::info("[KagoyaIMAP] 新着: " . count($newUids) . "件");
+            Log::info("[KagoyaIMAP] 新着候補", ['count' => count($newUids), 'last_uid' => $lastUid]);
 
             $stored = 0;
+            $processed = 0;
+            $deferred = 0;
             // UID FETCH で本文取得（一件ずつ）
             foreach ($newUids as $uid) {
+                if (microtime(true) - $startTime > $budgetSeconds) {
+                    $deferred = count($newUids) - $processed;
+                    Log::info("[KagoyaIMAP] budget timeout, 次回 sync で再開", ['deferred' => $deferred]);
+                    break;
+                }
+                $processed++;
                 try {
                     $result = $this->fetchMessageByUid($uid);
                     if (empty($result['body'])) continue;
@@ -81,7 +108,7 @@ class KagoyaMailService
                 }
             }
 
-            Log::info("[KagoyaIMAP] 同期完了", ['stored' => $stored]);
+            Log::info("[KagoyaIMAP] 同期完了", ['stored' => $stored, 'deferred' => $deferred]);
             return $stored;
         } finally {
             $this->disconnect();
