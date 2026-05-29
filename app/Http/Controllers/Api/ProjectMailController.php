@@ -10,6 +10,7 @@ use App\Models\Engineer;
 use App\Models\EngineerMailSource;
 use App\Models\EngineerProfile;
 use App\Models\EngineerSkill;
+use App\Models\Email;
 use App\Models\ProjectMailSource;
 use App\Models\RescoreJob;
 use App\Models\Skill;
@@ -47,9 +48,14 @@ class ProjectMailController extends Controller
         $scoreMin  = $request->integer('score_min', 0);
         $scoreMax  = $request->integer('score_max', 100);
         $search    = $request->input('search');
+        // 取り込み元フィルタ (E-3 2026-05-29)。
+        // 既定は 'imap' (通常メール取込) で手動登録を除外。
+        // 'manual' を渡すと /project-mails/manual ページが手動登録だけを表示する。
+        $source    = $request->input('source', 'imap');
 
         $query = ProjectMailSource::with(['email:id,subject,from_name,from_address,received_at'])
             ->whereBetween('score', [$scoreMin, $scoreMax])
+            ->where('source', $source)
             ->orderByDesc('received_at');
 
         if ($status) {
@@ -93,6 +99,127 @@ class ProjectMailController extends Controller
         ])->findOrFail($id);
 
         return response()->json($pms);
+    }
+
+    // 手動登録: ユーザーが LINE や個別メール等から受け取った案件情報を直接登録する
+    // (E-3 営業打ち合わせ 2026-05-25)。ダミー emails 行を作成して既存スコアリング・
+    // マッチング・提案送信ロジックをそのまま流用する。
+    public function storeManual(Request $request): JsonResponse
+    {
+        $user     = auth()->user();
+        $tenantId = $user->tenant_id;
+
+        $v = $request->validate([
+            'customer_name'    => 'required|string|max:200',
+            'sales_contact'    => 'nullable|string|max:100',
+            'phone'            => 'nullable|string|max:50',
+            'from_address'     => 'nullable|email|max:255',
+            'title'            => 'required|string|max:300',
+            'required_skills'  => 'nullable|array',
+            'required_skills.*'=> 'string|max:100',
+            'preferred_skills' => 'nullable|array',
+            'preferred_skills.*'=> 'string|max:100',
+            'process'          => 'nullable|array',
+            'process.*'        => 'string|max:100',
+            'work_location'    => 'nullable|string|max:200',
+            'remote_ok'        => 'nullable|boolean',
+            'unit_price_min'   => 'nullable|numeric|min:0',
+            'unit_price_max'   => 'nullable|numeric|min:0',
+            'age_limit'        => 'nullable|string|max:50',
+            'nationality_ok'   => 'nullable|boolean',
+            'contract_type'    => 'nullable|string|max:50',
+            'start_date'       => 'nullable|string|max:50',
+            'supply_chain'     => 'nullable|integer|min:1|max:9',
+            'body_text'        => 'nullable|string',
+        ]);
+
+        // スコアリングの calcScore は body_text に対する語彙マッチで点数を出すため、
+        // 手入力された構造化フィールドを本文相当のテキストに整形して食わせる。
+        // ユーザーが追加の自由記述 body_text を入れた場合は連結する。
+        $syntheticBody = $this->buildProjectBody($v);
+
+        $pms = DB::transaction(function () use ($v, $tenantId, $user, $syntheticBody) {
+            // from_address を自社ドメインにすると ProjectMailScoringService::isExcluded で
+            // EXCLUDE_DOMAIN にひっかかり score=0 + status=excluded で保存される。
+            // 手動登録の意図に反するので、未指定時は外部ダミードメインを使う。
+            $email = Email::create([
+                'tenant_id'        => $tenantId,
+                'gmail_message_id' => 'manual-project-' . Str::uuid()->toString(),
+                'subject'          => $v['title'],
+                'from_address'     => $v['from_address'] ?? 'manual+' . $tenantId . '@manual.invalid',
+                'from_name'        => $v['customer_name'],
+                'to_address'       => $user->email,
+                'body_text'        => $syntheticBody,
+                'received_at'      => now(),
+                'is_read'          => true,
+                'category'         => 'manual_project',
+            ]);
+
+            // 既存スコアリング (rule engine) を流して PMS を生成
+            $created = $this->scoringService->score($email);
+
+            // 自動抽出で取りこぼした手入力値で上書き (スコアと email_id は保持)。
+            // status は手動登録の意図を尊重して 'new' に強制 (低スコアでも全件 + 新着で表示)。
+            // source='manual' で /project-mails (通常) と /project-mails/manual を分離する。
+            $created->update([
+                'source'           => 'manual',
+                'status'           => 'new',
+                'customer_name'    => $v['customer_name'],
+                'sales_contact'    => $v['sales_contact']    ?? $created->sales_contact,
+                'phone'            => $v['phone']            ?? $created->phone,
+                'title'            => $v['title'],
+                'required_skills'  => $v['required_skills']  ?? $created->required_skills,
+                'preferred_skills' => $v['preferred_skills'] ?? $created->preferred_skills,
+                'process'          => $v['process']          ?? $created->process,
+                'work_location'    => $v['work_location']    ?? $created->work_location,
+                'remote_ok'        => array_key_exists('remote_ok', $v)      ? $v['remote_ok']      : $created->remote_ok,
+                'unit_price_min'   => $v['unit_price_min']   ?? $created->unit_price_min,
+                'unit_price_max'   => $v['unit_price_max']   ?? $created->unit_price_max,
+                'age_limit'        => $v['age_limit']        ?? $created->age_limit,
+                'nationality_ok'   => array_key_exists('nationality_ok', $v) ? $v['nationality_ok'] : $created->nationality_ok,
+                'contract_type'    => $v['contract_type']    ?? $created->contract_type,
+                'start_date'       => $v['start_date']       ?? $created->start_date,
+                'supply_chain'     => $v['supply_chain']     ?? $created->supply_chain,
+            ]);
+
+            return $created->fresh('email');
+        });
+
+        return response()->json($pms, 201);
+    }
+
+    private function buildProjectBody(array $v): string
+    {
+        $lines = [];
+        $lines[] = '案件ご紹介';
+        $lines[] = '顧客名: ' . $v['customer_name'];
+        if (!empty($v['sales_contact'])) $lines[] = '担当: ' . $v['sales_contact'];
+        if (!empty($v['phone']))         $lines[] = 'TEL: '  . $v['phone'];
+        $lines[] = 'タイトル: ' . $v['title'];
+        if (!empty($v['required_skills']))  $lines[] = '必須スキル: '  . implode(', ', $v['required_skills']);
+        if (!empty($v['preferred_skills'])) $lines[] = '尚可スキル: '  . implode(', ', $v['preferred_skills']);
+        if (!empty($v['process']))          $lines[] = '工程: '        . implode(', ', $v['process']);
+        if (!empty($v['work_location']))    $lines[] = '勤務地: '      . $v['work_location'];
+        if (array_key_exists('remote_ok', $v) && $v['remote_ok'] !== null) {
+            $lines[] = 'リモート: ' . ($v['remote_ok'] ? '可' : '不可');
+        }
+        $min = $v['unit_price_min'] ?? null;
+        $max = $v['unit_price_max'] ?? null;
+        if ($min !== null && $max !== null) $lines[] = "単価: {$min}〜{$max}万";
+        elseif ($min !== null)              $lines[] = "単価: {$min}万";
+        elseif ($max !== null)              $lines[] = "単価: 〜{$max}万";
+        if (!empty($v['age_limit']))     $lines[] = '年齢: ' . $v['age_limit'];
+        if (!empty($v['contract_type'])) $lines[] = '契約: ' . $v['contract_type'];
+        if (!empty($v['start_date']))    $lines[] = '開始時期: ' . $v['start_date'];
+        if (!empty($v['supply_chain'])) {
+            $map = [1 => '一次', 2 => '二次', 3 => '三次'];
+            $lines[] = '商流: ' . ($map[$v['supply_chain']] ?? "{$v['supply_chain']}次") . '請け';
+        }
+        if (!empty($v['body_text'])) {
+            $lines[] = '';
+            $lines[] = $v['body_text'];
+        }
+        return implode("\n", $lines);
     }
 
     // 抽出情報の手動修正

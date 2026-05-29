@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Mail\ProposalMail;
 use App\Models\DeliveryCampaign;
 use App\Models\DeliverySendHistory;
+use App\Models\Email;
 use App\Models\EmailAttachment;
 use App\Models\Engineer;
 use App\Models\EngineerMailSource;
@@ -48,9 +49,13 @@ class EngineerMailController extends Controller
         $scoreMin = $request->integer('score_min', 0);
         $scoreMax = $request->integer('score_max', 100);
         $search   = $request->input('search');
+        // 取り込み元フィルタ (E-3 2026-05-29)。
+        // 既定 'imap' (通常メール取込) で手動登録を除外。/engineer-mails/manual は 'manual' を渡す。
+        $source   = $request->input('source', 'imap');
 
         $query = EngineerMailSource::with(['email:id,subject,from_name,from_address,received_at'])
             ->whereBetween('score', [$scoreMin, $scoreMax])
+            ->where('source', $source)
             ->orderByDesc('received_at');
 
         if ($status) {
@@ -94,6 +99,97 @@ class EngineerMailController extends Controller
         ])->findOrFail($id);
 
         return response()->json($ems);
+    }
+
+    // 手動登録: ユーザーが LINE や個別メール等から受け取った技術者情報を直接登録する
+    // (E-3 営業打ち合わせ 2026-05-25)。ダミー emails 行を作成して既存スコアリング・
+    // マッチング・提案送信ロジックをそのまま流用する。
+    // 単価必須 (EngineerMailScoringService::save の no_unit_price / unit_price_too_low チェックを通過させるため)。
+    public function storeManual(Request $request): JsonResponse
+    {
+        $user     = auth()->user();
+        $tenantId = $user->tenant_id;
+
+        $v = $request->validate([
+            'name'             => 'required|string|max:100',
+            'age'              => 'nullable|integer|min:18|max:99',
+            'affiliation_type' => 'nullable|string|max:50',
+            'affiliation'      => 'nullable|string|max:200',
+            'available_from'   => 'nullable|string|max:50',
+            'nearest_station'  => 'nullable|string|max:100',
+            'skills'           => 'nullable|array',
+            'skills.*'         => 'string|max:100',
+            // 単価は最低どちらか必須 (no_unit_price → excluded を回避)
+            'unit_price_min'   => 'nullable|integer|min:0|required_without:unit_price_max',
+            'unit_price_max'   => 'nullable|integer|min:0|required_without:unit_price_min',
+            'from_address'     => 'nullable|email|max:255',
+            'body_text'        => 'nullable|string',
+        ]);
+
+        $syntheticBody = $this->buildEngineerBody($v);
+
+        $ems = DB::transaction(function () use ($v, $tenantId, $user, $syntheticBody) {
+            // from_address を自社ドメインにすると EngineerMailScoringService::isExcluded で
+            // EXCLUDE_DOMAIN にひっかかり score=0 + status=excluded で保存される。
+            // 手動登録の意図に反するので、未指定時は外部ダミードメインを使う。
+            $email = Email::create([
+                'tenant_id'        => $tenantId,
+                'gmail_message_id' => 'manual-engineer-' . Str::uuid()->toString(),
+                'subject'          => '技術者ご紹介: ' . $v['name'],
+                'from_address'     => $v['from_address'] ?? 'manual+' . $tenantId . '@manual.invalid',
+                'from_name'        => $v['affiliation'] ?? $v['name'],
+                'to_address'       => $user->email,
+                'body_text'        => $syntheticBody,
+                'received_at'      => now(),
+                'is_read'          => true,
+                'category'         => 'manual_engineer',
+            ]);
+
+            $created = $this->scoringService->score($email, false);
+
+            // status は手動登録の意図を尊重して 'new' に強制 (低スコアでも全件 + 新着で表示)。
+            // source='manual' で /engineer-mails (通常) と /engineer-mails/manual を分離する。
+            $created->update([
+                'source'           => 'manual',
+                'status'           => 'new',
+                'name'             => $v['name'],
+                'age'              => $v['age']              ?? $created->age,
+                'affiliation_type' => $v['affiliation_type'] ?? $created->affiliation_type,
+                'affiliation'      => $v['affiliation']      ?? $created->affiliation,
+                'available_from'   => $v['available_from']   ?? $created->available_from,
+                'nearest_station'  => $v['nearest_station']  ?? $created->nearest_station,
+                'skills'           => $v['skills']           ?? $created->skills,
+                'unit_price_min'   => $v['unit_price_min']   ?? $created->unit_price_min,
+                'unit_price_max'   => $v['unit_price_max']   ?? $created->unit_price_max,
+            ]);
+
+            return $created->fresh('email');
+        });
+
+        return response()->json($ems, 201);
+    }
+
+    private function buildEngineerBody(array $v): string
+    {
+        $lines = [];
+        $lines[] = '技術者ご紹介';
+        $lines[] = '氏名: ' . $v['name'];
+        if (!empty($v['age']))              $lines[] = '年齢: ' . $v['age'] . '歳';
+        if (!empty($v['affiliation_type']))  $lines[] = '所属区分: ' . $v['affiliation_type'];
+        if (!empty($v['affiliation']))      $lines[] = '所属: ' . $v['affiliation'];
+        if (!empty($v['available_from']))   $lines[] = '稼働開始: ' . $v['available_from'];
+        if (!empty($v['nearest_station']))  $lines[] = '最寄り駅: ' . $v['nearest_station'];
+        if (!empty($v['skills']))           $lines[] = 'スキル: ' . implode(', ', $v['skills']);
+        $min = $v['unit_price_min'] ?? null;
+        $max = $v['unit_price_max'] ?? null;
+        if ($min !== null && $max !== null) $lines[] = "希望単価: {$min}〜{$max}万";
+        elseif ($min !== null)              $lines[] = "希望単価: {$min}万〜";
+        elseif ($max !== null)              $lines[] = "希望単価: 〜{$max}万";
+        if (!empty($v['body_text'])) {
+            $lines[] = '';
+            $lines[] = $v['body_text'];
+        }
+        return implode("\n", $lines);
     }
 
     // 抽出情報の手動修正

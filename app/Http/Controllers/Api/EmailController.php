@@ -94,10 +94,12 @@ class EmailController extends Controller
         if ($category) {
             $query->where('category', $category);
         } else {
-            // カテゴリ未指定時は bounce を暗黙除外（検索ノイズ削減）
-            // bounce を見たい場合は ?category=bounce を明示指定すること
+            // カテゴリ未指定時は bounce / 手動登録 (manual_project, manual_engineer) を暗黙除外。
+            // manual_* は /project-mails と /engineer-mails の手動登録フローで作られるダミー emails 行で、
+            // /emails の通常リストには載せない (検索ノイズ削減・E-3)。
             $query->where(function ($q) {
-                $q->where('category', '!=', 'bounce')->orWhereNull('category');
+                $q->whereNotIn('category', ['bounce', 'manual_project', 'manual_engineer'])
+                  ->orWhereNull('category');
             });
         }
         $paginator = $query->withCount('attachments')->paginate($perPage);

@@ -18,6 +18,7 @@ class ProjectMailSource extends Model
         'score',
         'score_reasons',
         'engine',
+        'source',
         'customer_name',
         'sales_contact',
         'phone',

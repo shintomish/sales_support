@@ -212,6 +212,7 @@ Route::prefix('v1')->middleware(['supabase.auth'])->group(function () {
     // ── 案件メール（スコアリング済み）────────────────────
     Route::prefix('project-mails')->group(function () {
         Route::get('/',              [ProjectMailController::class, 'index']);
+        Route::post('/manual',       [ProjectMailController::class, 'storeManual']); // E-3 手動登録
         Route::post('/rescore-all',   [ProjectMailController::class, 'rescoreAll']);
         Route::get('/rescore-status', [ProjectMailController::class, 'rescoreStatus']);
         Route::post('/reextract-all', [ProjectMailController::class, 'reextractAll']);
@@ -238,6 +239,7 @@ Route::prefix('v1')->middleware(['supabase.auth'])->group(function () {
     // ── 技術者メール（スコアリング済み）──────────────────
     Route::prefix('engineer-mails')->group(function () {
         Route::get('/',              [EngineerMailController::class, 'index']);
+        Route::post('/manual',       [EngineerMailController::class, 'storeManual']); // E-3 手動登録
         Route::post('/rescore-all',  [EngineerMailController::class, 'rescoreAll']);
         Route::get('/rescore-status', [EngineerMailController::class, 'rescoreStatus']);
         Route::get('/{id}',                           [EngineerMailController::class, 'show']);

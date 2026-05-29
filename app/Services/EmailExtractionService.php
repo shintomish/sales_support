@@ -91,7 +91,9 @@ class EmailExtractionService
     public function extractPending(int $limit = 20): int
     {
         // category設定済み かつ extracted_data に result キーがまだないもの
+        // manual_project / manual_engineer は手入力済みなので Claude 抽出をスキップ (E-3)
         $emails = Email::whereNotNull('category')
+            ->whereNotIn('category', ['manual_project', 'manual_engineer'])
             ->where(function ($q) {
                 $q->whereNull('extracted_data')
                   ->orWhereRaw("extracted_data->>'result' IS NULL");

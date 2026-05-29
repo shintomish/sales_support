@@ -18,6 +18,7 @@ class EngineerMailSource extends Model
         'score',
         'score_reasons',
         'engine',
+        'source',
         'name',
         'age',
         'unit_price_min',
