@@ -63,9 +63,8 @@ class RefinitivPoParserService
     {
         $prompt = $this->buildPrompt($rawText);
 
-        // Refinitiv PDF 抽出は精度優先で Opus 4.8 を使用 (config 経由で切替可)。
-        // Opus は adaptive thinking effort=high がデフォルトのため、Sonnet より latency が伸びる。
-        // timeout は 60s → 120s に拡大。
+        // Refinitiv PDF 抽出モデルは config 経由で切替可 (デフォルト Sonnet 4.6)。
+        // Opus 4.8 切替時の latency 増加を許容するため timeout は 120s 維持。
         $response = Http::withHeaders([
             'anthropic-version' => '2023-06-01',
             'x-api-key'         => $this->apiKey,
