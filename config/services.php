@@ -41,6 +41,12 @@ return [
         // .env CLAUDE_MODEL で上書き可能。
         'model'   => env('CLAUDE_MODEL', 'claude-sonnet-4-6'),
 
+        // Refinitiv 注文書 PDF 抽出専用モデル。1回ミスると請求書がズレるため精度優先で
+        // Opus 4.8 を採用 (2026-05-29 試用開始)。コストは Sonnet 比 1.67倍だが
+        // 月次の Refinitiv PDF 件数は少数なので影響軽微。
+        // 試用結果が悪ければ .env CLAUDE_REFINITIV_MODEL=claude-sonnet-4-6 で戻せる。
+        'refinitiv_model' => env('CLAUDE_REFINITIV_MODEL', 'claude-opus-4-8'),
+
         // 要件マッチング (docs/480) で 1 リクエストあたり生成する match result の上限。
         // 鮮度マッチで上位 N 件を一括判定する場合のコストガード。
         'requirement_match_max_per_request' => env('CLAUDE_REQUIREMENT_MATCH_MAX_PER_REQUEST', 5),
