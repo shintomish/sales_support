@@ -179,13 +179,15 @@ class SignedScanUploadService
 
     /**
      * UI 表示 / ダウンロード時の Content-Disposition 用ファイル名 (日本語含む)。
-     * 形式: INV-SIC-202606-001-シックコンピューター-新システム稼働.pdf
+     * 形式: INV-SIC-202606-001-シックコンピューター様-新システム稼働.pdf
+     * 顧客名には敬称「様」を付与 (発送相手を明示するため)。
      */
     public function buildDownloadFilename(Invoice $invoice): string
     {
-        $number   = $invoice->invoice_number ?? 'UNKNOWN';
-        $customer = $this->sanitize($invoice->customer_name_snapshot ?? '', 30);
-        $subject  = $this->sanitize($invoice->subject_name ?? '', 30);
+        $number      = $invoice->invoice_number ?? 'UNKNOWN';
+        $customerSan = $this->sanitize($invoice->customer_name_snapshot ?? '', 30);
+        $customer    = $customerSan !== '' ? $customerSan . '様' : '';
+        $subject     = $this->sanitize($invoice->subject_name ?? '', 30);
 
         $parts = array_filter([$number, $customer, $subject], fn ($v) => $v !== '');
         return implode('-', $parts) . '.pdf';
