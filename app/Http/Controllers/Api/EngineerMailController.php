@@ -16,6 +16,7 @@ use App\Models\PublicProject;
 use App\Models\RescoreJob;
 use App\Models\Skill;
 use App\Services\ClaudeService;
+use App\Services\DeliveryCampaignService;
 use App\Services\EngineerMailScoringService;
 use App\Services\FreshMailMatchingService;
 use App\Services\GmailService;
@@ -725,54 +726,43 @@ class EngineerMailController extends Controller
             'attachments.*' => 'file|max:10240',
         ]);
 
-        $userId      = auth()->id();
-        $senderName  = auth()->user()->name ?? '';
-        $senderEmail = $this->replyToAddress();
-
-        $campaign = DeliveryCampaign::create([
-            'tenant_id'               => $tenantId,
+        $service = new DeliveryCampaignService(
+            tenantId: $tenantId,
+            userId:   auth()->id(),
+        );
+        $result = $service->sendSingleProposal([
             'send_type'               => 'engineer_proposal',
             'engineer_mail_source_id' => $id,
-            'user_id'                 => $userId,
+            'public_project_id'       => $v['project_id'] ?? null,
+            'to'                      => $v['to'],
+            'to_name'                 => $v['to_name'] ?? null,
             'subject'                 => $v['subject'],
             'body'                    => $v['body'],
-            'total_count'             => 1,
-            'success_count'           => 0,
-            'failed_count'            => 0,
-            'sent_at'                 => now(),
+            'attachment_paths'        => $this->moveProposalAttachments($request),
+            'sender_name'             => auth()->user()->name ?? '',
+            'sender_email'            => $this->replyToAddress(),
+            'from_display_name'       => $this->senderDisplayName(),
+            'log_context'             => ['engineer_mail_id' => $id],
         ]);
 
-        $messageId = '<' . Str::uuid() . '@aizen-sol.co.jp>';
-        try {
-            $uploadedFiles = $request->file('attachments') ?? [];
-            Mail::to($v['to'])->send(new ProposalMail($v['subject'], $v['body'], $senderName, $senderEmail, $uploadedFiles, $messageId, fromDisplayName: $this->senderDisplayName()));
-            DeliverySendHistory::create([
-                'tenant_id'         => $tenantId,
-                'campaign_id'       => $campaign->id,
-                'public_project_id' => $v['project_id'],
-                'email'             => $v['to'],
-                'name'              => $v['to_name'] ?? null,
-                'status'            => 'sent',
-                'ses_message_id'    => $messageId,
-            ]);
-            $campaign->update(['success_count' => 1]);
-            Log::info("技術者提案メール送信 engineer_mail_id={$id} to={$v['to']}");
-            return response()->json(['message' => '送信しました']);
-        } catch (\Exception $e) {
-            DeliverySendHistory::create([
-                'tenant_id'         => $tenantId,
-                'campaign_id'       => $campaign->id,
-                'public_project_id' => $v['project_id'],
-                'email'             => $v['to'],
-                'name'              => $v['to_name'] ?? null,
-                'status'            => 'failed',
-                'ses_message_id'    => $messageId,
-                'error_message'     => $e->getMessage(),
-            ]);
-            $campaign->update(['failed_count' => 1]);
-            Log::error("技術者提案メール送信失敗 engineer_mail_id={$id}: " . $e->getMessage());
-            return response()->json(['message' => 'メール送信に失敗しました'], 500);
+        return $result['success']
+            ? response()->json(['message' => '送信しました'])
+            : response()->json(['message' => 'メール送信に失敗しました'], 500);
+    }
+
+    /** request->file('attachments') を一時ディレクトリへ移動してパス配列を返す。 */
+    private function moveProposalAttachments(Request $request, string $subdir = 'engineer-proposals'): array
+    {
+        if (!$request->hasFile('attachments')) return [];
+        $dir = storage_path("app/temp/{$subdir}/" . uniqid());
+        @mkdir($dir, 0755, true);
+        $paths = [];
+        foreach ($request->file('attachments') as $file) {
+            $dest = $dir . '/' . $file->getClientOriginalName();
+            $file->move($dir, $file->getClientOriginalName());
+            $paths[] = $dest;
         }
+        return $paths;
     }
 
     /**
@@ -892,52 +882,27 @@ PROMPT;
 
         $pms = ProjectMailSource::where('tenant_id', $tenantId)->findOrFail($v['project_mail_id']);
 
-        $userId      = auth()->id();
-        $senderName  = auth()->user()->name  ?? '';
-        $senderEmail = $this->replyToAddress();
-
-        $campaign = DeliveryCampaign::create([
-            'tenant_id'               => $tenantId,
+        $service = new DeliveryCampaignService(
+            tenantId: $tenantId,
+            userId:   auth()->id(),
+        );
+        $result = $service->sendSingleProposal([
             'send_type'               => 'engineer_proposal',
             'project_mail_id'         => $pms->id,
             'engineer_mail_source_id' => $ems->id,
-            'user_id'                 => $userId,
+            'to'                      => $v['to'],
+            'to_name'                 => $v['to_name'] ?? null,
             'subject'                 => $v['subject'],
             'body'                    => $v['body'],
-            'total_count'             => 1,
-            'success_count'           => 0,
-            'failed_count'            => 0,
-            'sent_at'                 => now(),
+            'sender_name'             => auth()->user()->name ?? '',
+            'sender_email'            => $this->replyToAddress(),
+            'from_display_name'       => $this->senderDisplayName(),
+            'log_context'             => ['ems_id' => $id, 'project_mail_id' => $pms->id],
         ]);
 
-        $messageId = '<' . Str::uuid() . '@aizen-sol.co.jp>';
-        try {
-            Mail::to($v['to'])->send(new ProposalMail($v['subject'], $v['body'], $senderName, $senderEmail, [], $messageId, fromDisplayName: $this->senderDisplayName()));
-            DeliverySendHistory::create([
-                'tenant_id'      => $tenantId,
-                'campaign_id'    => $campaign->id,
-                'email'          => $v['to'],
-                'name'           => $v['to_name'] ?? null,
-                'status'         => 'sent',
-                'ses_message_id' => $messageId,
-            ]);
-            $campaign->update(['success_count' => 1]);
-            Log::info("鮮度マッチング(EM側) 提案送信 ems_id={$id} project_mail_id={$pms->id} to={$v['to']}");
-            return response()->json(['message' => '送信しました']);
-        } catch (\Exception $e) {
-            DeliverySendHistory::create([
-                'tenant_id'      => $tenantId,
-                'campaign_id'    => $campaign->id,
-                'email'          => $v['to'],
-                'name'           => $v['to_name'] ?? null,
-                'status'         => 'failed',
-                'ses_message_id' => $messageId,
-                'error_message'  => $e->getMessage(),
-            ]);
-            $campaign->update(['failed_count' => 1]);
-            Log::error("鮮度マッチング(EM側) 提案失敗 ems_id={$id} project_mail_id={$pms->id}: " . $e->getMessage());
-            return response()->json(['message' => 'メール送信に失敗しました'], 500);
-        }
+        return $result['success']
+            ? response()->json(['message' => '送信しました'])
+            : response()->json(['message' => 'メール送信に失敗しました'], 500);
     }
 
     private function replyToAddress(): string
@@ -968,64 +933,26 @@ PROMPT;
             'project_mail_ids.*' => 'integer',
         ]);
 
-        $sent        = 0;
-        $failed      = [];
-        $userId      = auth()->id();
-        $senderName  = auth()->user()->name  ?? '';
-        $senderEmail = $this->replyToAddress();
-
-        $campaign = DeliveryCampaign::create([
-            'tenant_id'               => $tenantId,
+        $service = new DeliveryCampaignService(
+            tenantId: $tenantId,
+            userId:   auth()->id(),
+        );
+        $result = $service->sendBulkProposal([
             'send_type'               => 'engineer_proposal_bulk',
             'engineer_mail_source_id' => $id,
-            'user_id'                 => $userId,
+            'recipients'              => $v['recipients'],
             'subject'                 => $v['subject'],
             'body'                    => $v['body'],
-            'total_count'             => count($v['recipients']),
-            'success_count'           => 0,
-            'failed_count'            => 0,
-            'sent_at'                 => now(),
+            'sender_name'             => auth()->user()->name ?? '',
+            'sender_email'            => $this->replyToAddress(),
+            'from_display_name'       => $this->senderDisplayName(),
+            'log_context'             => ['engineer_mail_id' => $id],
         ]);
-
-        foreach ($v['recipients'] as $recipient) {
-            $messageId = '<' . Str::uuid() . '@aizen-sol.co.jp>';
-            try {
-                Mail::to($recipient['to'])->send(new ProposalMail($v['subject'], $v['body'], $senderName, $senderEmail, [], $messageId, fromDisplayName: $this->senderDisplayName()));
-                DeliverySendHistory::create([
-                    'tenant_id'      => $tenantId,
-                    'campaign_id'    => $campaign->id,
-                    'email'          => $recipient['to'],
-                    'name'           => $recipient['name'] ?? null,
-                    'status'         => 'sent',
-                    'ses_message_id' => $messageId,
-                ]);
-                $sent++;
-            } catch (\Exception $e) {
-                DeliverySendHistory::create([
-                    'tenant_id'      => $tenantId,
-                    'campaign_id'    => $campaign->id,
-                    'email'          => $recipient['to'],
-                    'name'           => $recipient['name'] ?? null,
-                    'status'         => 'failed',
-                    'ses_message_id' => $messageId,
-                    'error_message'  => $e->getMessage(),
-                ]);
-                Log::error("BP一括提案送信失敗 engineer_mail_id={$id} to={$recipient['to']}: " . $e->getMessage());
-                $failed[] = $recipient['to'];
-            }
-        }
-
-        $campaign->update([
-            'success_count' => $sent,
-            'failed_count'  => count($failed),
-        ]);
-
-        Log::info("BP一括提案送信完了 engineer_mail_id={$id} sent={$sent} failed=" . count($failed));
 
         return response()->json([
-            'message' => "{$sent}件送信しました",
-            'sent'    => $sent,
-            'failed'  => $failed,
+            'message' => "{$result['sent']}件送信しました",
+            'sent'    => $result['sent'],
+            'failed'  => $result['failed'],
         ]);
     }
 

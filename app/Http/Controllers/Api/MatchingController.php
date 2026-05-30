@@ -10,6 +10,7 @@ use App\Models\Engineer;
 use App\Models\PublicProject;
 use App\Models\Skill;
 use App\Services\ClaudeService;
+use App\Services\DeliveryCampaignService;
 use App\Services\MatchingService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -303,54 +304,27 @@ class MatchingController extends Controller
             'body'    => 'required|string',
         ]);
 
-        $userId      = auth()->id();
-        $senderName  = auth()->user()->name  ?? '';
-        $senderEmail = $this->replyToAddress();
-
-        $campaign = DeliveryCampaign::create([
-            'tenant_id'     => $tenantId,
-            'send_type'     => 'matching_proposal',
-            'user_id'       => $userId,
-            'subject'       => $v['subject'],
-            'body'          => $v['body'],
-            'total_count'   => 1,
-            'success_count' => 0,
-            'failed_count'  => 0,
-            'sent_at'       => now(),
+        $service = new DeliveryCampaignService(
+            tenantId: $tenantId,
+            userId:   auth()->id(),
+        );
+        $result = $service->sendSingleProposal([
+            'send_type'         => 'matching_proposal',
+            'engineer_id'       => $engineerId,
+            'public_project_id' => $projectId,
+            'to'                => $v['to'],
+            'to_name'           => $v['to_name'] ?? null,
+            'subject'           => $v['subject'],
+            'body'              => $v['body'],
+            'sender_name'       => auth()->user()->name ?? '',
+            'sender_email'      => $this->replyToAddress(),
+            'from_display_name' => $this->senderDisplayName(),
+            'log_context'       => ['project' => $projectId, 'engineer' => $engineerId],
         ]);
 
-        $messageId = '<' . Str::uuid() . '@aizen-sol.co.jp>';
-        try {
-            Mail::to($v['to'])->send(new ProposalMail($v['subject'], $v['body'], $senderName, $senderEmail, [], $messageId, fromDisplayName: $this->senderDisplayName()));
-            DeliverySendHistory::create([
-                'tenant_id'         => $tenantId,
-                'campaign_id'       => $campaign->id,
-                'engineer_id'       => $engineerId,
-                'public_project_id' => $projectId,
-                'email'             => $v['to'],
-                'name'              => $v['to_name'] ?? null,
-                'status'            => 'sent',
-                'ses_message_id'    => $messageId,
-            ]);
-            $campaign->update(['success_count' => 1]);
-            Log::info("マッチング提案メール送信 project={$projectId} engineer={$engineerId} to={$v['to']}");
-            return response()->json(['message' => '送信しました']);
-        } catch (\Exception $e) {
-            DeliverySendHistory::create([
-                'tenant_id'         => $tenantId,
-                'campaign_id'       => $campaign->id,
-                'engineer_id'       => $engineerId,
-                'public_project_id' => $projectId,
-                'email'             => $v['to'],
-                'name'              => $v['to_name'] ?? null,
-                'status'            => 'failed',
-                'ses_message_id'    => $messageId,
-                'error_message'     => $e->getMessage(),
-            ]);
-            $campaign->update(['failed_count' => 1]);
-            Log::error("マッチング提案メール送信失敗 project={$projectId} engineer={$engineerId}: " . $e->getMessage());
-            return response()->json(['message' => 'メール送信に失敗しました'], 500);
-        }
+        return $result['success']
+            ? response()->json(['message' => '送信しました'])
+            : response()->json(['message' => 'メール送信に失敗しました'], 500);
     }
 
     private function replyToAddress(): string

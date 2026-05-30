@@ -3,9 +3,11 @@
 namespace App\Services;
 
 use App\Mail\DeliveryMail;
+use App\Mail\ProposalMail;
 use App\Models\DeliveryAddress;
 use App\Models\DeliveryCampaign;
 use App\Models\DeliverySendHistory;
+use App\Models\EmailBodyTemplate;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
@@ -157,6 +159,205 @@ class DeliveryCampaignService
                 @rmdir($dir);
             }
         }
+    }
+
+    /**
+     * 単一宛先への提案メール送信 (proposal / matching_proposal / engineer_proposal 等)。
+     *
+     * 1 DeliveryCampaign + 1 DeliverySendHistory を作り、ProposalMail で送信、
+     * sent/failed の集計と添付一時ファイルのクリーンアップまで行う共通処理。
+     * 旧実装は同パターンが 6+ controller method に丸ごとコピペされていた (docs/730 §Medium #12)。
+     *
+     * @param array{
+     *   send_type: string,
+     *   to: string, to_name?: string|null,
+     *   subject: string, body: string,
+     *   attachment_paths?: array<string>,
+     *   sender_name: string, sender_email: string, from_display_name?: string|null,
+     *   project_mail_id?: int|null,
+     *   engineer_mail_source_id?: int|null,
+     *   engineer_id?: int|null,
+     *   public_project_id?: int|null,
+     *   log_context?: array<string,mixed>,
+     * } $params
+     *
+     * @return array{campaign: DeliveryCampaign, success: bool, history: DeliverySendHistory, message_id: string}
+     */
+    public function sendSingleProposal(array $params): array
+    {
+        $attachmentPaths = $params['attachment_paths'] ?? [];
+        $campaign = DeliveryCampaign::create([
+            'tenant_id'               => $this->tenantId,
+            'send_type'               => $params['send_type'],
+            'project_mail_id'         => $params['project_mail_id'] ?? null,
+            'engineer_mail_source_id' => $params['engineer_mail_source_id'] ?? null,
+            'user_id'                 => $this->userId,
+            'subject'                 => $params['subject'],
+            'body'                    => $params['body'],
+            'total_count'             => 1,
+            'success_count'           => 0,
+            'failed_count'            => 0,
+            'sent_at'                 => now(),
+        ]);
+
+        $messageId = '<' . Str::uuid() . '@aizen-sol.co.jp>';
+        $logCtx    = $params['log_context'] ?? [];
+        $logCtxStr = $logCtx ? ' ' . json_encode($logCtx, JSON_UNESCAPED_UNICODE) : '';
+
+        try {
+            Mail::to($params['to'])->send(new ProposalMail(
+                $params['subject'],
+                $params['body'],
+                $params['sender_name'],
+                $params['sender_email'],
+                $attachmentPaths,
+                $messageId,
+                fromDisplayName: $params['from_display_name'] ?? null,
+            ));
+
+            $history = DeliverySendHistory::create([
+                'tenant_id'         => $this->tenantId,
+                'campaign_id'       => $campaign->id,
+                'engineer_id'       => $params['engineer_id']        ?? null,
+                'public_project_id' => $params['public_project_id']  ?? null,
+                'email'             => $params['to'],
+                'name'              => $params['to_name']            ?? null,
+                'status'            => 'sent',
+                'ses_message_id'    => $messageId,
+            ]);
+            $campaign->update(['success_count' => 1]);
+
+            Log::info("[Proposal] {$params['send_type']} sent to={$params['to']}{$logCtxStr}");
+
+            return ['campaign' => $campaign, 'success' => true, 'history' => $history, 'message_id' => $messageId];
+
+        } catch (\Throwable $e) {
+            $history = DeliverySendHistory::create([
+                'tenant_id'         => $this->tenantId,
+                'campaign_id'       => $campaign->id,
+                'engineer_id'       => $params['engineer_id']        ?? null,
+                'public_project_id' => $params['public_project_id']  ?? null,
+                'email'             => $params['to'],
+                'name'              => $params['to_name']            ?? null,
+                'status'            => 'failed',
+                'ses_message_id'    => $messageId,
+                'error_message'     => $e->getMessage(),
+            ]);
+            $campaign->update(['failed_count' => 1]);
+
+            Log::error("[Proposal] {$params['send_type']} failed to={$params['to']}{$logCtxStr}: " . $e->getMessage());
+
+            return ['campaign' => $campaign, 'success' => false, 'history' => $history, 'message_id' => $messageId];
+
+        } finally {
+            // 添付一時ファイルのクリーンアップ
+            foreach ($attachmentPaths as $path) {
+                if (is_file($path)) @unlink($path);
+            }
+            if ($attachmentPaths) {
+                $dir = dirname($attachmentPaths[0]);
+                if (is_dir($dir) && count(array_diff(scandir($dir), ['.', '..'])) === 0) {
+                    @rmdir($dir);
+                }
+            }
+        }
+    }
+
+    /**
+     * 複数宛先の bulk 提案送信 (send_type='bulk' / 'engineer_proposal_bulk')。
+     *
+     * 1 DeliveryCampaign + N DeliverySendHistory を作り、recipients[] を順に送信する。
+     * sendSingleProposal を内部で再利用すると campaign が宛先数だけ作られてしまうため、
+     * ここでは inline で 1 campaign + N history を構築する。
+     *
+     * @param array{
+     *   send_type: string,
+     *   recipients: array<int, array{to: string, name?: string|null}>,
+     *   subject: string, body: string,
+     *   attachment_paths?: array<string>,
+     *   sender_name: string, sender_email: string, from_display_name?: string|null,
+     *   project_mail_id?: int|null,
+     *   engineer_mail_source_id?: int|null,
+     *   log_context?: array<string,mixed>,
+     * } $params
+     *
+     * @return array{campaign: DeliveryCampaign, sent: int, failed: array<int,string>}
+     */
+    public function sendBulkProposal(array $params): array
+    {
+        $recipients      = $params['recipients'];
+        $attachmentPaths = $params['attachment_paths'] ?? [];
+        $logCtx          = $params['log_context'] ?? [];
+        $logCtxStr       = $logCtx ? ' ' . json_encode($logCtx, JSON_UNESCAPED_UNICODE) : '';
+
+        $campaign = DeliveryCampaign::create([
+            'tenant_id'               => $this->tenantId,
+            'send_type'               => $params['send_type'],
+            'project_mail_id'         => $params['project_mail_id'] ?? null,
+            'engineer_mail_source_id' => $params['engineer_mail_source_id'] ?? null,
+            'user_id'                 => $this->userId,
+            'subject'                 => $params['subject'],
+            'body'                    => $params['body'],
+            'total_count'             => count($recipients),
+            'success_count'           => 0,
+            'failed_count'            => 0,
+            'sent_at'                 => now(),
+        ]);
+
+        $sent   = 0;
+        $failed = [];
+
+        foreach ($recipients as $r) {
+            $messageId = '<' . Str::uuid() . '@aizen-sol.co.jp>';
+            try {
+                Mail::to($r['to'])->send(new ProposalMail(
+                    $params['subject'],
+                    $params['body'],
+                    $params['sender_name'],
+                    $params['sender_email'],
+                    $attachmentPaths,
+                    $messageId,
+                    fromDisplayName: $params['from_display_name'] ?? null,
+                ));
+                DeliverySendHistory::create([
+                    'tenant_id'      => $this->tenantId,
+                    'campaign_id'    => $campaign->id,
+                    'email'          => $r['to'],
+                    'name'           => $r['name'] ?? null,
+                    'status'         => 'sent',
+                    'ses_message_id' => $messageId,
+                ]);
+                $sent++;
+            } catch (\Throwable $e) {
+                DeliverySendHistory::create([
+                    'tenant_id'      => $this->tenantId,
+                    'campaign_id'    => $campaign->id,
+                    'email'          => $r['to'],
+                    'name'           => $r['name'] ?? null,
+                    'status'         => 'failed',
+                    'ses_message_id' => $messageId,
+                    'error_message'  => $e->getMessage(),
+                ]);
+                $failed[] = $r['to'];
+                Log::error("[ProposalBulk] {$params['send_type']} failed to={$r['to']}{$logCtxStr}: " . $e->getMessage());
+            }
+        }
+
+        $campaign->update(['success_count' => $sent, 'failed_count' => count($failed)]);
+        Log::info("[ProposalBulk] {$params['send_type']} sent={$sent} failed=" . count($failed) . $logCtxStr);
+
+        // 添付一時ファイルのクリーンアップ
+        foreach ($attachmentPaths as $path) {
+            if (is_file($path)) @unlink($path);
+        }
+        if ($attachmentPaths) {
+            $dir = dirname($attachmentPaths[0]);
+            if (is_dir($dir) && count(array_diff(scandir($dir), ['.', '..'])) === 0) {
+                @rmdir($dir);
+            }
+        }
+
+        return ['campaign' => $campaign, 'sent' => $sent, 'failed' => $failed];
     }
 
     /**
