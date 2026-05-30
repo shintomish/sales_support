@@ -52,7 +52,8 @@ class DealController extends Controller
                 'expected_close_date' => 'expected_close_date',
                 'created_at'          => 'created_at',
             ], 'created_at', 'desc'))
-            ->paginate(20);
+            // マスター select 用に per_page=500 まで許容 (docs/730 §Medium #18)
+            ->paginate(min(max((int) $request->query('per_page', 20), 1), 500));
         return DealResource::collection($deals);
     }
 

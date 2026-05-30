@@ -60,7 +60,8 @@ class ContactController extends Controller
             $query->orderBy('contacts.id', 'desc');
         }
 
-        $contacts = $query->paginate(20);
+        // マスター select 用に per_page=500 まで許容 (docs/730 §Medium #18)
+        $contacts = $query->paginate(min(max((int) $request->query('per_page', 20), 1), 500));
         return ContactResource::collection($contacts);
     }
 
