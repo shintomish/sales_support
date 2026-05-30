@@ -27,8 +27,12 @@ class ProjectMailMatchingService
     {
         $tenantId = $mail->tenant_id;
 
+        // テナント全 Engineer をメモリ展開する設計 (docs/730 §Medium #9)。
+        // 大規模テナント時の OOM 防止に HARD_LIMIT で安全弁。
+        $HARD_LIMIT = 500;
         $engineers = Engineer::with(['engineerSkills.skill', 'profile'])
             ->where('tenant_id', $tenantId)
+            ->limit($HARD_LIMIT)
             ->get();
 
         return $engineers

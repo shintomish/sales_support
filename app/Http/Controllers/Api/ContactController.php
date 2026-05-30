@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Contact;
 use App\Http\Resources\ContactResource;
+use App\Support\TenantExistsRule;
 use Illuminate\Http\Request;
 use OpenApi\Attributes as OA;
 
@@ -92,7 +93,7 @@ class ContactController extends Controller
     public function store(Request $request)
     {
         $validated = $request->validate([
-            'customer_id' => 'required|exists:customers,id',
+            'customer_id' => ['required', TenantExistsRule::for('customers')],
             'name'        => 'required|string|max:255',
             'department'  => 'nullable|string|max:100',
             'position'    => 'nullable|string|max:100',
@@ -157,7 +158,7 @@ class ContactController extends Controller
     public function update(Request $request, Contact $contact)
     {
         $validated = $request->validate([
-            'customer_id' => 'required|exists:customers,id',
+            'customer_id' => ['required', TenantExistsRule::for('customers')],
             'name'        => 'required|string|max:255',
             'department'  => 'nullable|string|max:100',
             'position'    => 'nullable|string|max:100',

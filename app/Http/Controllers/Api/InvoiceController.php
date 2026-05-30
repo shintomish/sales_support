@@ -1097,13 +1097,17 @@ class InvoiceController extends Controller
             ]);
         }
 
-        // 対象データの翌月で採番する
-        $yearMonth = \Carbon\Carbon::createFromFormat('Y-m', $invoice->year_month)
+        // 対象データの翌月で採番する。
+        // `createFromFormat('Y-m', ...)` は日付欄を「今日の日」で補完するため、
+        // 当日が28〜31日かつ対象月にその日が存在しない (例: 5/30 で year_month='2026-02')
+        // と翌月へロールオーバーし、addMonthNoOverflow が「翌々月」を返してしまう
+        // (docs/730 §High #7)。`!Y-m-d` で明示的に月初日として組み立てる。
+        $yearMonth = \Carbon\Carbon::createFromFormat('!Y-m-d', $invoice->year_month . '-01')
             ->addMonthNoOverflow()
             ->format('Y-m');
         $issuedDate = $invoice->issued_date
             ? \Carbon\Carbon::parse($invoice->issued_date)->addMonthNoOverflow()->toDateString()
-            : \Carbon\Carbon::createFromFormat('Y-m', $yearMonth)->startOfMonth()->toDateString();
+            : \Carbon\Carbon::createFromFormat('!Y-m-d', $yearMonth . '-01')->toDateString();
 
         // 当月の2ヶ月先以降の複写は禁止（誤って先々月分まで作らないため）
         // 許容: 計算後 year_month <= 当月+1

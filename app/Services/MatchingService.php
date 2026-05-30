@@ -25,13 +25,8 @@ class MatchingService
         $this->apiKey = config('services.anthropic.api_key');
     }
 
-    /**
-     * 案件と技術者のマッチングスコアを計算してDBにキャッシュする
-     *
-     * @return array{ score: float, skill_match_score: float, price_match_score: float,
-     *               location_match_score: float, availability_match_score: float }
-     */
-    public function calculate(PublicProject $project, Engineer $engineer): array
+    /** 単発スコアリング (in-memory). DB キャッシュ更新は `$persist=true` のときだけ. */
+    public function calculate(PublicProject $project, Engineer $engineer, bool $persist = false): array
     {
         $project->loadMissing(['requiredSkills.skill']);
         $engineer->loadMissing(['engineerSkills.skill', 'profile']);
@@ -51,14 +46,18 @@ class MatchingService
             2
         );
 
-        MatchingScore::updateOrCreate(
-            ['project_id' => $project->id, 'engineer_id' => $engineer->id],
-            array_merge($factors, [
-                'tenant_id'     => $project->tenant_id,
-                'score'         => $score,
-                'calculated_at' => now(),
-            ])
-        );
+        // GET 経路 (recommendEngineers / recommendProjects) からは書込しない (docs/730 §Medium #8)。
+        // 一覧表示のたびに候補件数分の SELECT+UPDATE が走っていたのを抑制。
+        if ($persist) {
+            MatchingScore::updateOrCreate(
+                ['project_id' => $project->id, 'engineer_id' => $engineer->id],
+                array_merge($factors, [
+                    'tenant_id'     => $project->tenant_id,
+                    'score'         => $score,
+                    'calculated_at' => now(),
+                ])
+            );
+        }
 
         return array_merge(['score' => $score], $factors);
     }
@@ -75,6 +74,10 @@ class MatchingService
     {
         $projectMax = $project->unit_price_max;
 
+        // 安全弁: テナント全 Engineer をメモリ展開してから PHP 側 sort するため
+        // 大規模テナントで OOM 化するリスクがあった (docs/730 §Medium #9)。
+        // 中長期では事前 DB スコアリング + LIMIT が望ましいが、まず HARD_LIMIT で抑える。
+        $HARD_LIMIT = 500;
         $engineers = Engineer::with(['engineerSkills.skill', 'profile'])
             ->where('tenant_id', $project->tenant_id)
             ->whereHas('profile', function ($q) use ($projectMax) {
@@ -85,6 +88,7 @@ class MatchingService
                     $q->where('desired_unit_price_max', '<=', $projectMax);
                 }
             })
+            ->limit($HARD_LIMIT)
             ->get();
 
         return $engineers
@@ -110,6 +114,7 @@ class MatchingService
             return collect();
         }
 
+        $HARD_LIMIT = 500;
         $projects = PublicProject::with(['requiredSkills.skill'])
             ->where('tenant_id', $engineer->tenant_id)
             ->open()
@@ -118,6 +123,7 @@ class MatchingService
                 $q->whereNull('unit_price_max')
                   ->orWhere('unit_price_max', '>=', $eDesiredMax);
             })
+            ->limit($HARD_LIMIT)
             ->get();
 
         return $projects

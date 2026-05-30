@@ -8,6 +8,7 @@ use App\Models\Email;
 use App\Models\GmailToken;
 use App\Models\RescoreJob;
 use App\Services\GmailService;
+use App\Support\TenantExistsRule;
 use App\Traits\UsesSenderDisplayName;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -282,9 +283,9 @@ class EmailController extends Controller
     public function link(Request $request, int $id)
     {
         $request->validate([
-            'contact_id'  => 'nullable|exists:contacts,id',
-            'deal_id'     => 'nullable|exists:deals,id',
-            'customer_id' => 'nullable|exists:customers,id',
+            'contact_id'  => ['nullable', TenantExistsRule::for('contacts')],
+            'deal_id'     => ['nullable', TenantExistsRule::for('deals')],
+            'customer_id' => ['nullable', TenantExistsRule::for('customers')],
         ]);
         $email = Email::findOrFail($id);
         $email->update($request->only(['contact_id', 'deal_id', 'customer_id']));

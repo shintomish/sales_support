@@ -9,6 +9,8 @@ use App\Models\Deal;
 use App\Models\Task;
 use App\Models\Activity;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Cache;
 use OpenApi\Attributes as OA;
 
 class DashboardController extends Controller
@@ -25,22 +27,33 @@ class DashboardController extends Controller
     )]
     public function index()
     {
-        $now = Carbon::now();
+        $now      = Carbon::now();
+        $tenantId = Auth::user()?->tenant_id;
 
-        // KPI
-        $kpi = [
-            'customers'          => Customer::count(),
-            'deals_active'       => Deal::whereNotIn('status', ['成約', '失注'])->count(),
-            'won_this_month'     => Deal::where('status', '成約')
-                                        ->whereMonth('updated_at', $now->month)
-                                        ->whereYear('updated_at', $now->year)
-                                        ->count(),
-            'revenue_this_month' => Deal::where('status', '成約')
-                                        ->whereMonth('updated_at', $now->month)
-                                        ->whereYear('updated_at', $now->year)
-                                        ->sum('amount'),
-            'deals'              => Deal::count(),
-        ];
+        // KPI: 旧実装は Deal テーブルに 4 本のクエリ (count/count/count/sum) を発行していたが、
+        // SUM(CASE WHEN ...) で 1 本に集約。whereMonth/whereYear (EXTRACT) は index 未使用だったが
+        // updated_at >= startOfMonth の範囲条件にして deals(updated_at) を活用可能にした。
+        // 結果全体を tenant 単位で 30 秒キャッシュ (docs/730 §Medium #11)。
+        $cacheKey = "dashboard:{$tenantId}";
+        $kpi = Cache::remember($cacheKey . ':kpi', 30, function () use ($now) {
+            $startOfMonth = $now->copy()->startOfMonth();
+            $row = Deal::query()
+                ->selectRaw(
+                    "COUNT(*) AS total_deals,
+                     SUM(CASE WHEN status NOT IN ('成約', '失注') THEN 1 ELSE 0 END) AS active_deals,
+                     SUM(CASE WHEN status = '成約' AND updated_at >= ? THEN 1 ELSE 0 END) AS won_this_month,
+                     SUM(CASE WHEN status = '成約' AND updated_at >= ? THEN amount ELSE 0 END) AS revenue_this_month",
+                    [$startOfMonth, $startOfMonth]
+                )
+                ->first();
+            return [
+                'customers'          => Customer::count(),
+                'deals_active'       => (int) ($row->active_deals ?? 0),
+                'won_this_month'     => (int) ($row->won_this_month ?? 0),
+                'revenue_this_month' => (int) ($row->revenue_this_month ?? 0),
+                'deals'              => (int) ($row->total_deals ?? 0),
+            ];
+        });
 
         // 商談パイプライン
         $pipeline = Deal::selectRaw('status, count(*) as count, sum(amount) as total')

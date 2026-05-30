@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Task;
 use App\Http\Resources\TaskResource;
+use App\Support\TenantExistsRule;
 use Illuminate\Http\Request;
 use Carbon\Carbon;
 use OpenApi\Attributes as OA;
@@ -103,8 +104,8 @@ class TaskController extends Controller
             'priority'    => 'required|in:高,中,低',
             'status'      => 'required|in:未着手,進行中,完了',
             'due_date'    => 'nullable|date',
-            'customer_id' => 'nullable|exists:customers,id',
-            'deal_id'     => 'nullable|exists:deals,id',
+            'customer_id' => ['nullable', TenantExistsRule::for('customers')],
+            'deal_id'     => ['nullable', TenantExistsRule::for('deals')],
             'description' => 'nullable|string|max:2000',
         ], $this->messages());
 
@@ -154,8 +155,8 @@ class TaskController extends Controller
             'priority'    => 'required|in:高,中,低',
             'status'      => 'required|in:未着手,進行中,完了',
             'due_date'    => 'nullable|date',
-            'customer_id' => 'nullable|exists:customers,id',
-            'deal_id'     => 'nullable|exists:deals,id',
+            'customer_id' => ['nullable', TenantExistsRule::for('customers')],
+            'deal_id'     => ['nullable', TenantExistsRule::for('deals')],
             'description' => 'nullable|string|max:2000',
         ], $this->messages());
 

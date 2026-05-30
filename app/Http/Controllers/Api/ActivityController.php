@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Activity;
 use App\Http\Resources\ActivityResource;
+use App\Support\TenantExistsRule;
 use Illuminate\Http\Request;
 use OpenApi\Attributes as OA;
 
@@ -91,9 +92,9 @@ class ActivityController extends Controller
     public function store(Request $request)
     {
         $validated = $request->validate([
-            'customer_id'   => 'required|exists:customers,id',
-            'contact_id'    => 'nullable|exists:contacts,id',
-            'deal_id'       => 'nullable|exists:deals,id',
+            'customer_id'   => ['required', TenantExistsRule::for('customers')],
+            'contact_id'    => ['nullable', TenantExistsRule::for('contacts')],
+            'deal_id'       => ['nullable', TenantExistsRule::for('deals')],
             'type'          => 'required|in:訪問,電話,メール,その他',
             'subject'       => 'required|string|max:255',
             'content'       => 'nullable|string|max:5000',
@@ -142,9 +143,9 @@ class ActivityController extends Controller
     public function update(Request $request, Activity $activity)
     {
         $validated = $request->validate([
-            'customer_id'   => 'required|exists:customers,id',
-            'contact_id'    => 'nullable|exists:contacts,id',
-            'deal_id'       => 'nullable|exists:deals,id',
+            'customer_id'   => ['required', TenantExistsRule::for('customers')],
+            'contact_id'    => ['nullable', TenantExistsRule::for('contacts')],
+            'deal_id'       => ['nullable', TenantExistsRule::for('deals')],
             'type'          => 'required|in:訪問,電話,メール,その他',
             'subject'       => 'required|string|max:255',
             'content'       => 'nullable|string|max:5000',

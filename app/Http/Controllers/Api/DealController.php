@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Deal;
 use App\Http\Resources\DealResource;
+use App\Support\TenantExistsRule;
 use Illuminate\Http\Request;
 use OpenApi\Attributes as OA;
 
@@ -85,8 +86,8 @@ class DealController extends Controller
     public function store(Request $request)
     {
         $validated = $request->validate([
-            'customer_id'         => 'required|exists:customers,id',
-            'contact_id'          => 'nullable|exists:contacts,id',
+            'customer_id'         => ['required', TenantExistsRule::for('customers')],
+            'contact_id'          => ['nullable', TenantExistsRule::for('contacts')],
             'title'               => 'required|string|max:255',
             'amount'              => 'nullable|numeric|min:0|max:999999999999',
             'status'              => 'required|in:新規,提案,交渉,成約,失注,稼働中,更新交渉中,期限切れ',
@@ -139,8 +140,8 @@ class DealController extends Controller
     public function update(Request $request, Deal $deal)
     {
         $validated = $request->validate([
-            'customer_id'         => 'required|exists:customers,id',
-            'contact_id'          => 'nullable|exists:contacts,id',
+            'customer_id'         => ['required', TenantExistsRule::for('customers')],
+            'contact_id'          => ['nullable', TenantExistsRule::for('contacts')],
             'title'               => 'required|string|max:255',
             'amount'              => 'nullable|numeric|min:0|max:999999999999',
             'status'              => 'required|in:新規,提案,交渉,成約,失注,稼働中,更新交渉中,期限切れ',

@@ -311,14 +311,24 @@ class EngineerMailController extends Controller
             ->all();
         $fallbackPmsByCustomer = collect();
         if (!empty($customerIdsForFallback)) {
-            // 顧客名で照合: posted_by_customer の name == PMS.customer_name となるレコードの最新を一括取得
+            // 顧客名で照合: posted_by_customer の name == PMS.customer_name となるレコードの最新を取得。
+            // 旧実装は顧客ごとに 1 クエリ発行 (N+1) で customer_name に index なしの Seq Scan を
+            // N 回繰り返していた (docs/730 §Medium #10)。1 本にまとめて latest_by_customer_name を取る。
             $customers = \App\Models\Customer::whereIn('id', $customerIdsForFallback)->get();
-            foreach ($customers as $cust) {
-                $latest = ProjectMailSource::with('email')
-                    ->where('customer_name', $cust->name)
+            $customerNames = $customers->pluck('name')->filter()->unique()->values()->all();
+            $latestPmsByName = !empty($customerNames)
+                ? ProjectMailSource::with('email')
+                    ->whereIn('customer_name', $customerNames)
+                    ->orderBy('customer_name')
                     ->orderByDesc('received_at')
-                    ->first();
-                if ($latest) $fallbackPmsByCustomer[$cust->id] = $latest;
+                    ->get()
+                    ->groupBy('customer_name')
+                    ->map(fn ($coll) => $coll->first())
+                : collect();
+            foreach ($customers as $cust) {
+                if (isset($latestPmsByName[$cust->name])) {
+                    $fallbackPmsByCustomer[$cust->id] = $latestPmsByName[$cust->name];
+                }
             }
         }
 
