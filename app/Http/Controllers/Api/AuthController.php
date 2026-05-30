@@ -4,46 +4,12 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Auth;
-use App\Models\User;
 
 class AuthController extends Controller
 {
-    public function login(Request $request)
-    {
-        $request->validate([
-            'email'    => 'required|email',
-            'password' => 'required',
-        ]);
-
-        if (!Auth::attempt($request->only('email', 'password'))) {
-            return response()->json([
-                'message' => '認証情報が正しくありません'
-            ], 401);
-        }
-
-        $user  = Auth::user()->load('tenant');
-        $token = $user->createToken('api-token')->plainTextToken;
-
-        return response()->json([
-            'token' => $token,
-            'user'  => [
-                'id'         => $user->id,
-                'name'       => $user->name,
-                'email'      => $user->email,
-                'role'       => $user->role,
-                'tenant_id'  => $user->tenant_id,
-                'tenant'     => $user->tenant,
-            ],
-        ]);
-    }
-
-    public function logout(Request $request)
-    {
-        $request->user()->currentAccessToken()->delete();
-
-        return response()->json(['message' => 'ログアウト完了']);
-    }
+    // 旧 login / logout (Sanctum ベース) は削除済 (docs/730 §Low #41)。
+    // FE は Supabase Auth (supabase.auth.signInWithPassword / signOut) を直接使い、
+    // 他全エンドポイントは middleware 'supabase.auth' で JWT 検証する設計に統一されている。
 
     public function me(Request $request)
     {

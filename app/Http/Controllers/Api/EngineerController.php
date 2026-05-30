@@ -107,9 +107,14 @@ class EngineerController extends Controller
         }
 
         if ($source = $request->get('source')) {
+            // FE 区分: self (自社) / bp (BP登録) / mail (メール登録)。
+            // bp は engineer_mail_source_id が NULL、mail は engineer_mail_source_id が非 NULL
+            // で区別する。registerEngineer 側で engineer_mail_source_id を保存していなかった
+            // 問題は併せて修正済 (docs/730 §Medium #25, #26)。
             match ($source) {
                 'self' => $query->where('affiliation_type', 'self'),
                 'bp'   => $query->where('affiliation_type', '!=', 'self')->whereNull('engineer_mail_source_id'),
+                'mail' => $query->whereNotNull('engineer_mail_source_id'),
                 default => null,
             };
         }

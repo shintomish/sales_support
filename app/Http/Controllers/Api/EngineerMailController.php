@@ -240,10 +240,12 @@ class EngineerMailController extends Controller
 
         DB::transaction(function () use ($ems) {
             $engineer = Engineer::create([
-                'name'              => $ems->name ?? '（名前未取得）',
-                'affiliation_type'  => $ems->affiliation_type,
-                'nearest_station'   => $ems->nearest_station,
-                'affiliation_email' => $ems->email?->from_address,
+                'name'                    => $ems->name ?? '（名前未取得）',
+                'affiliation_type'        => $ems->affiliation_type,
+                'nearest_station'         => $ems->nearest_station,
+                'affiliation_email'       => $ems->email?->from_address,
+                // bp / mail 区別のため EMS への逆参照を保持 (docs/730 §Medium #26)。
+                'engineer_mail_source_id' => $ems->id,
             ]);
 
             // スキル名からSkillレコードを取得/作成してEngineerSkillに登録

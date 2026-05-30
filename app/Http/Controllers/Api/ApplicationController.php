@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Application;
 use App\Models\PublicProject;
 use App\Models\Message;
+use App\Support\TenantExistsRule;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -175,7 +176,7 @@ class ApplicationController extends Controller
         $senderId = auth()->id();
 
         $v = $request->validate([
-            'receiver_user_id' => 'required|integer|exists:users,id',
+            'receiver_user_id' => ['required', 'integer', TenantExistsRule::for('users')],
             'content'          => 'required_without:file_path|nullable|string',
             'file_path'        => 'nullable|string|max:500',
         ]);

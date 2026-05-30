@@ -281,6 +281,7 @@ class EngineerMailScoringService
 
     private function isExcluded(string $subject, string $from): bool
     {
+        $from = mb_strtolower($from);
         foreach (self::EXCLUDE_SUBJECT as $kw) {
             if (str_contains($subject, $kw)) return true;
         }
@@ -288,7 +289,9 @@ class EngineerMailScoringService
             if (str_contains(strtolower($from), $kw)) return true;
         }
         foreach (self::EXCLUDE_DOMAIN as $domain) {
-            if (str_contains(strtolower($from), $domain)) return true;
+            // 部分一致だと 'evil-aizen-sol.co.jp.attacker.tld' のような偽装で過剰除外される
+            // (docs/730 §Low #29)。`@domain` で末尾一致に揃える。
+            if (str_ends_with($from, '@' . $domain)) return true;
         }
         return false;
     }

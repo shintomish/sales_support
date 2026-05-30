@@ -73,7 +73,7 @@ class BusinessCardController extends Controller
                 mediaType: 'multipart/form-data',
                 schema: new OA\Schema(
                     properties: [
-                        new OA\Property(property: 'images[]', type: 'array', items: new OA\Items(type: 'string', format: 'binary'), description: 'JPEG/PNG画像（最大20枚・各10MB）'),
+                        new OA\Property(property: 'images[]', type: 'array', items: new OA\Items(type: 'string', format: 'binary'), description: 'JPEG/PNG画像（最大50枚・各10MB / 並列リクエスト推奨）'),
                     ]
                 )
             )

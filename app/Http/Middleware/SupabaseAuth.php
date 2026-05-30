@@ -59,7 +59,14 @@ class SupabaseAuth
             auth()->setUser($user);
 
         } catch (\Exception $e) {
-            return response()->json(["message" => "Token invalid: " . $e->getMessage()], 401);
+            // 内部例外メッセージ (Expired token / Signature verification failed / kid invalid 等) を
+            // 直接返すと JWT 偽造試行の助けになるため、外向きは固定文言、詳細は audit ログへ
+            // (docs/730 §Low #28)。
+            \Illuminate\Support\Facades\Log::channel('audit')->warning('JWT decode failed', [
+                'err' => $e->getMessage(),
+                'ip'  => request()->ip(),
+            ]);
+            return response()->json(["message" => "Unauthenticated."], 401);
         }
 
         return $next($request);

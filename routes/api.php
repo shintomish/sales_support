@@ -39,7 +39,7 @@ Route::prefix('v1')->group(function () {
     Route::get('health',      HealthController::class);
     Route::get('health/deep', [HealthController::class, 'deep']);
 
-    Route::post('login', [AuthController::class, 'login']);
+    // /login (Sanctum) は docs/730 §Low #41 で削除。FE は Supabase Auth を直接使う。
 
     // Gmail OAuth（コールバックのみ認証不要）
     Route::get('/gmail/callback', [GmailOAuthController::class, 'callback']);
@@ -48,7 +48,7 @@ Route::prefix('v1')->group(function () {
 
 // ── 認証必須 ────────────────────────────────────────
 Route::prefix('v1')->middleware(['supabase.auth'])->group(function () {
-    Route::post('logout', [AuthController::class, 'logout']);
+    // /logout (Sanctum) も docs/730 §Low #41 で削除済。FE 側 supabase.auth.signOut で完結。
     Route::get('me', [AuthController::class, 'me']);
     Route::get('users',                       [UserController::class, 'index']);
     Route::post('users',                      [UserController::class, 'store']);

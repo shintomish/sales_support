@@ -57,9 +57,11 @@ class PublicProjectController extends Controller
                 'is_required'          => $rs->is_required,
                 'min_experience_years' => $rs->min_experience_years,
             ])->values(),
-            'is_favorite' => $userId
-                ? $p->favoriteByUsers->where('user_id', $userId)->isNotEmpty()
-                : false,
+            // withExists で取得した bool を優先 (PublicProject::withExists が is_favorite を attr に注入)。
+            // show() など withExists を使わない経路では従来通り collection 走査にフォールバック。
+            'is_favorite' => isset($p->is_favorite)
+                ? (bool) $p->is_favorite
+                : ($userId ? $p->favoriteByUsers->where('user_id', $userId)->isNotEmpty() : false),
             'created_at' => $p->created_at,
             'updated_at' => $p->updated_at,
         ];
@@ -72,13 +74,16 @@ class PublicProjectController extends Controller
 
         // formatProject が projectMailSource->email->{from_address,from_name,body_text} と
         // projectMailSource->sales_contact を参照するため、eager-load 必須 (N+1 解消)。
-        $query = PublicProject::with([
+        // favoriteByUsers は全件 eager load していたが is_favorite 判定のみなので withExists 化
+        // (docs/730 §Low #30)。
+        $query = PublicProject::query()
+            ->with([
                 'requiredSkills.skill',
                 'postedByCustomer',
-                'favoriteByUsers',
                 'projectMailSource:id,email_id,sales_contact',
                 'projectMailSource.email:id,from_address,from_name,body_text',
             ])
+            ->withExists(['favoriteByUsers as is_favorite' => fn ($q) => $q->where('user_id', $userId)])
             ->where('tenant_id', $tenantId);
 
         if ($status = $request->get('status')) {
