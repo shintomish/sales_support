@@ -215,10 +215,23 @@ class EngineerMailScoringService
                     $score     = max(0, min(100, $score));
                     // rescoreAll では添付解析をスキップ（タイムアウト防止）
                     $extracted = $this->extract($email, false);
+                    // save() と同じ単価チェック (docs/730 §High #2)。
+                    // これが無いと日次バッチで本来除外されるべき技術者が 'new'/'review' に再浮上する。
+                    $priceMin = $extracted['unit_price_min'] ?? null;
+                    $priceMax = $extracted['unit_price_max'] ?? null;
+                    $price    = $priceMin ?? $priceMax;
+                    if ($price === null) {
+                        $reasons[] = 'no_unit_price';
+                        $reasons[] = 'excluded';
+                    } elseif ($price < self::PRICE_MIN_FLOOR) {
+                        $reasons[] = 'unit_price_too_low';
+                        $reasons[] = 'excluded';
+                    }
                     $status = match(true) {
-                        $score >= self::SCORE_OK     => 'new',
-                        $score >= self::SCORE_REVIEW => 'review',
-                        default                      => 'excluded',
+                        in_array('excluded', $reasons, true) => 'excluded',
+                        $score >= self::SCORE_OK             => 'new',
+                        $score >= self::SCORE_REVIEW         => 'review',
+                        default                              => 'excluded',
                     };
                     $ems->update(array_merge($extracted, [
                         'score'         => $score,

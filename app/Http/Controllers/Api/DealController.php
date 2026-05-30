@@ -35,12 +35,11 @@ class DealController extends Controller
         $deals = Deal::with(['customer', 'contact'])
             ->where('deal_type', 'general')
             ->when($userFilter,            fn($q, $id) => $q->where('user_id', $id))
-            ->when($request->search, fn($q, $s) =>
-                $q->where('title', 'ilike', "%{$s}%")
-                ->orWhereHas('customer', fn($q) =>
-                    $q->where('company_name', 'ilike', "%{$s}%")
-                )
-            )
+            // AND 条件をすり抜けないよう where(function(){...}) で括る (docs/730 §High #3)
+            ->when($request->search, fn($q, $s) => $q->where(function ($w) use ($s) {
+                $w->where('title', 'ilike', "%{$s}%")
+                  ->orWhereHas('customer', fn($cq) => $cq->where('company_name', 'ilike', "%{$s}%"));
+            }))
             ->when($request->status,      fn($q, $s) => $q->where('status', $s))
             ->when($request->customer_id, fn($q, $id) => $q->where('customer_id', $id))
             ->when($request->amount_min,  fn($q, $v) => $q->where('amount', '>=', $v))

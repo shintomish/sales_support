@@ -28,10 +28,11 @@ class CustomerController extends Controller
     public function index(Request $request)
     {
         $customers = Customer::query()
-            ->when($request->search, fn($q, $s) =>
-                $q->where('company_name', 'ilike', "%{$s}%")
-                ->orWhere('industry', 'ilike', "%{$s}%")
-            )
+            // AND 条件をすり抜けないよう where(function(){...}) で括る (docs/730 §High #3)
+            ->when($request->search, fn($q, $s) => $q->where(function ($w) use ($s) {
+                $w->where('company_name', 'ilike', "%{$s}%")
+                  ->orWhere('industry', 'ilike', "%{$s}%");
+            }))
             ->when($request->industry, fn($q, $i) =>
                 $q->where('industry', 'ilike', "%{$i}%")
             )

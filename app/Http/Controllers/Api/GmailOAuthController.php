@@ -20,50 +20,16 @@ class GmailOAuthController extends Controller
     }
 
     // Googleからのコールバック
+    //
+    // 2026-05-14 以降、Gmail 取込は Kagoya IMAP に一本化され、新規 Gmail OAuth 接続は廃止済。
+    // 旧実装は state パラメータを user_id 整数のまま信用しており、攻撃者が被害者の user_id を
+    // state に詰めて自分の Google アカウントを被害者テナントに紐づける IDOR が成立していた
+    // (docs/730_quality_review_2026_05_30.md §High #1)。
+    // 新規 OAuth フロー UI は撤去済 (`/emails` 画面の Gmail 接続ボタン削除済) のため、
+    // callback は何も受け付けず redirect で閉じることで攻撃面を消去する。
     public function callback(Request $request)
     {
-        $code  = $request->query('code');
-        $state = $request->query('state'); // user_idを受け取る
-
-        if (!$code || !$state) {
-            return redirect(config('app.frontend_url') . '/emails?error=no_code');
-        }
-
-        try {
-            $tokens = $this->gmailService->exchangeCode($code);
-
-            // userinfo取得
-            $userInfo = \Illuminate\Support\Facades\Http::withToken($tokens['access_token'])
-                ->get('https://www.googleapis.com/oauth2/v2/userinfo')
-                ->json();
-
-            $gmailAddress = $userInfo['email'];
-
-            // stateからユーザーを特定
-            $user = \App\Models\User::find((int) $state);
-            if (!$user) {
-                return redirect(config('app.frontend_url') . '/emails?error=oauth_failed');
-            }
-
-            GmailToken::updateOrCreate(
-                [
-                    'tenant_id'     => $user->tenant_id,
-                    'gmail_address' => $gmailAddress,
-                ],
-                [
-                    'user_id'          => $user->id,
-                    'access_token'     => $tokens['access_token'],
-                    'refresh_token'    => $tokens['refresh_token'] ?? null,
-                    'token_expires_at' => \Carbon\Carbon::now()->addSeconds(($tokens['expires_in'] ?? 3600) - 60),
-                ]
-            );
-
-            return redirect(config('app.frontend_url') . '/emails?connected=1');
-
-        } catch (\Exception $e) {
-            \Illuminate\Support\Facades\Log::error('Gmail OAuth callback error: ' . $e->getMessage());
-            return redirect(config('app.frontend_url') . '/emails?error=oauth_failed');
-        }
+        return redirect(config('app.frontend_url') . '/emails?error=oauth_disabled');
     }
 
     // 接続状態確認
