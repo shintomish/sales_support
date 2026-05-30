@@ -70,7 +70,15 @@ class PublicProjectController extends Controller
         $tenantId = auth()->user()->tenant_id;
         $userId   = auth()->id();
 
-        $query = PublicProject::with(['requiredSkills.skill', 'postedByCustomer', 'favoriteByUsers'])
+        // formatProject が projectMailSource->email->{from_address,from_name,body_text} と
+        // projectMailSource->sales_contact を参照するため、eager-load 必須 (N+1 解消)。
+        $query = PublicProject::with([
+                'requiredSkills.skill',
+                'postedByCustomer',
+                'favoriteByUsers',
+                'projectMailSource:id,email_id,sales_contact',
+                'projectMailSource.email:id,from_address,from_name,body_text',
+            ])
             ->where('tenant_id', $tenantId);
 
         if ($status = $request->get('status')) {
@@ -111,7 +119,7 @@ class PublicProjectController extends Controller
             'work_style'               => 'work_style',
             'posted_by_customer_name'  => 'customers.company_name',
             'start_date'               => 'start_date',
-        ], 'published_at', 'desc'))->paginate($request->get('per_page', 20));
+        ], 'published_at', 'desc'))->paginate(min(100, (int) $request->get('per_page', 20)));
 
         return response()->json([
             'data' => $paginated->map(fn(PublicProject $p) => $this->formatProject($p, $userId)),
