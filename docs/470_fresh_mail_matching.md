@@ -1,11 +1,13 @@
 # 鮮度マッチング機能（過去 N 日メールから候補抽出）
 
-**ステータス**: ✅ Phase 3 リリース済 (2026-05-18) / 2026-05-19 機能拡張完了
+**ステータス**: ✅ Phase 3 リリース済 (2026-05-18) / 2026-05-19 機能拡張完了 / **2026-05-26 表示閾値デフォルト変更**
 **起票日**: 2026-05-18
 **起票者**: 営業要望（事務経由）
-**関連**: docs/420_matching_requirements.md（基本マッチング）, docs/550_daily_report_flow.md
+**関連**: docs/420_matching_requirements.md（基本マッチング）, docs/550_daily_report_flow.md, [docs/560_score_calculation_for_sales.md §0.1](560_score_calculation_for_sales.md)
 
 > **🚀 営業担当者向け 使い方ガイドは §10 を参照してください。**
+
+> **2026-05-26 更新**: マッチスコア仕様の見直し（情報不足/不明 → 1点減点・年齢 +2 歳まで許容）に伴い、フロント 3 画面（鮮度マッチング・engineer-mails カード/リスト・project-mails カード）の **表示閾値デフォルトを「高(70+)」→「中(60+)」に変更**しました。1点化でスコアが下がり 70 だと候補が空になるためです。実測で 8〜20 件と健全。詳細は [560_score_calculation_for_sales §0.1](560_score_calculation_for_sales.md)。
 
 ---
 

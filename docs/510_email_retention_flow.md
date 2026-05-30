@@ -2,7 +2,17 @@
 
 > 対象読者：当社営業担当者
 > 元データ：2026-04-06 打合せ資料(案件マーケット連携フローについての補足説明)
-> 最終更新：2026-04-29(自動処理スケジュールを最新実装に同期)
+> 最終更新：2026-05-30
+
+---
+
+## 2026-05-25〜30 更新ノート
+
+- **received_at の Date ヘッダー優先化（2026-05-28）**: 従来は IMAP `INTERNALDATE` を `received_at` に採用していたが、Kagoya 環境では `INTERNALDATE` と `Date` ヘッダーに最大 9 時間のズレが発生していた。Date ヘッダー優先（fallback で INTERNALDATE）に変更し、受信時刻の精度を改善。これにより Kagoya 受信側でも平均 2.6 時間程度の配送遅延が常態化していることが可視化された。
+- **Kagoya IMAP UID ベース増分取得（2026-05-29）**: `KagoyaMailService::syncEmails` の取込窓を sequence ベースから **UID ベース**に切替。直近 24 時間で 220 UID gap、最大で 2,236 件 gap が発生していた構造欠陥を根治。15 分毎の自動同期で取りこぼしが発生しなくなった。
+- **bounce retention 7 → 3 日（2026-05-29）**: `Cleanup` ジョブの bounce メール保持期間を短縮 + 1 回 500 件のバッチ化（pg_trgm GIN index 保守による statement_timeout 回避）。
+- **全件既読の非同期化（2026-05-26）**: 同期 API は数千件 未読で 502（nginx タイムアウト）になっていたため、`mark-all-read` を Schedule 駆動の非同期ジョブ化（rescore-all と同パターン）。`mark-read-status` で進捗ポーリング。200 件ずつのバッチ + `SET LOCAL statement_timeout=5min` で安全に処理。
+- **添付ファイル名衝突（2026-05-27 修正）**: IMAP 取込で複数添付が同名（例: `unknown.bin`）で来た場合、Storage `storage_path` が衝突して後勝ち上書きされていたバグを解消（`KagoyaMailService` の attachment 処理に index suffix を付与）。
 
 ---
 
