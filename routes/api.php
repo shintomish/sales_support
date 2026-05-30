@@ -88,6 +88,10 @@ Route::prefix('v1')->middleware(['supabase.auth'])->group(function () {
     // Refinitiv (LSEG) 注文書 PDF 取込フロー
     Route::post('invoices/refinitiv/parse', [RefinitivInvoiceController::class, 'parse']);
     Route::post('invoices/refinitiv/issue', [RefinitivInvoiceController::class, 'issue']);
+    // 捺印スキャンPDF (承認後の紙→印鑑→スキャン PDF 取込)
+    Route::post('invoices/signed-scan/scan',    [InvoiceController::class, 'signedScanScan']);
+    Route::post('invoices/signed-scan/confirm', [InvoiceController::class, 'signedScanConfirm']);
+    Route::get('invoices/{invoice}/signed-scan/download', [InvoiceController::class, 'signedScanDownload']);
     Route::get('invoices/{invoice}',      [InvoiceController::class, 'show']);
     Route::put('invoices/{invoice}',      [InvoiceController::class, 'update']);
     Route::delete('invoices/{invoice}',   [InvoiceController::class, 'destroy']);

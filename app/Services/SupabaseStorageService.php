@@ -96,4 +96,53 @@ class SupabaseStorageService
             'Authorization' => "Bearer {$this->serviceRoleKey}",
         ])->delete($endpoint);
     }
+
+    /**
+     * 任意バケットへバイナリをアップロード (path をそのまま使う)。
+     * 既存パスは x-upsert: true で上書きされる。
+     */
+    public function uploadBinaryToBucket(string $binary, string $path, string $mimeType, string $bucket): void
+    {
+        $endpoint = "{$this->url}/storage/v1/object/{$bucket}/{$path}";
+
+        $response = \Http::withHeaders([
+            'Authorization' => "Bearer {$this->serviceRoleKey}",
+            'Content-Type'  => $mimeType,
+            'x-upsert'      => 'true',
+        ])->withBody($binary, $mimeType)->post($endpoint);
+
+        if ($response->failed()) {
+            throw new \Exception('Supabase Storage upload failed: ' . $response->body());
+        }
+    }
+
+    /**
+     * 任意バケットからファイルを削除。存在しない場合も成功扱い (404 を握りつぶす)。
+     */
+    public function deletePathFromBucket(string $path, string $bucket): void
+    {
+        $endpoint = "{$this->url}/storage/v1/object/{$bucket}/{$path}";
+
+        \Http::withHeaders([
+            'Authorization' => "Bearer {$this->serviceRoleKey}",
+        ])->delete($endpoint);
+    }
+
+    /**
+     * 任意バケットの private ファイルをバイナリ取得 (Laravel 経由のダウンロード proxy 用)。
+     */
+    public function downloadFromBucket(string $path, string $bucket): string
+    {
+        $endpoint = "{$this->url}/storage/v1/object/{$bucket}/{$path}";
+
+        $response = \Http::withHeaders([
+            'Authorization' => "Bearer {$this->serviceRoleKey}",
+        ])->get($endpoint);
+
+        if ($response->failed()) {
+            throw new \Exception('Supabase Storage download failed: ' . $response->body());
+        }
+
+        return $response->body();
+    }
 }

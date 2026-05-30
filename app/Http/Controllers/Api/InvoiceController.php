@@ -10,9 +10,12 @@ use App\Services\ClaudeService;
 use App\Services\InvoiceCreationService;
 use App\Services\InvoiceNumberService;
 use App\Services\InvoicePdfService;
+use App\Services\SignedScanUploadService;
 use App\Services\SupabaseStorageService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Response;
 use Illuminate\Validation\ValidationException;
 
 /**
@@ -28,6 +31,7 @@ class InvoiceController extends Controller
         private readonly InvoiceNumberService $numberService,
         private readonly SupabaseStorageService $storage,
         private readonly ClaudeService $claude,
+        private readonly SignedScanUploadService $signedScan,
     ) {}
 
     /**
@@ -1156,5 +1160,83 @@ class InvoiceController extends Controller
         $new->save();
 
         return response()->json($new->fresh()->load('lines'), 201);
+    }
+
+    // ───────────────────────────────────────────────
+    //  捺印スキャンPDFアップロード (承認後 紙→印鑑→スキャン後の PDF を取り込む)
+    // ───────────────────────────────────────────────
+
+    /**
+     * POST /api/v1/invoices/signed-scan/scan
+     *  1〜5 個の PDF を受け取り、各ファイルを OCR して invoice_number 候補を返す。
+     *  実ファイルは tmp_token と紐付けて Laravel storage に一時保存。
+     */
+    public function signedScanScan(Request $request): JsonResponse
+    {
+        $request->validate([
+            'files'   => ['required', 'array', 'min:1', 'max:5'],
+            'files.*' => ['file', 'mimes:pdf', 'max:20480'], // 20MB
+        ]);
+
+        $tenantId = (int) Auth::user()?->tenant_id;
+        if (!$tenantId) {
+            return response()->json(['error' => 'tenant unresolved'], 403);
+        }
+
+        $results = [];
+        foreach ($request->file('files') as $file) {
+            $results[] = $this->signedScan->scan($file, $tenantId);
+        }
+        return response()->json(['items' => $results]);
+    }
+
+    /**
+     * POST /api/v1/invoices/signed-scan/confirm
+     *  scan で得た tmp_token と invoice_id のペア配列を受け取り、確定アップロード。
+     */
+    public function signedScanConfirm(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'items'                => ['required', 'array', 'min:1', 'max:5'],
+            'items.*.tmp_token'    => ['required', 'string'],
+            'items.*.invoice_id'   => ['required', 'integer'],
+        ]);
+
+        $userId = (int) Auth::user()?->id;
+
+        $results = [];
+        foreach ($validated['items'] as $item) {
+            try {
+                $r = $this->signedScan->uploadAndAttach($item['tmp_token'], $item['invoice_id'], $userId);
+                $results[] = array_merge(['status' => 'ok'], $r);
+            } catch (\DomainException $e) {
+                $results[] = [
+                    'status'     => 'error',
+                    'tmp_token'  => $item['tmp_token'],
+                    'invoice_id' => $item['invoice_id'],
+                    'message'    => $e->getMessage(),
+                ];
+            }
+        }
+        return response()->json(['items' => $results]);
+    }
+
+    /**
+     * GET /api/v1/invoices/{invoice}/signed-scan/download
+     *  Invoice に紐付いた捺印スキャンPDFをバイナリで返却 (Laravel proxy)。
+     *  private バケットなので Supabase URL は直接見せない。
+     */
+    public function signedScanDownload(Invoice $invoice)
+    {
+        if (empty($invoice->signed_scan_pdf_path)) {
+            return response()->json(['error' => 'not_found'], 404);
+        }
+        $binary   = $this->storage->downloadFromBucket($invoice->signed_scan_pdf_path, SignedScanUploadService::BUCKET);
+        $filename = $this->signedScan->buildDownloadFilename($invoice);
+        // RFC 5987: filename*=UTF-8'' で日本語ファイル名を返す
+        return Response::make($binary, 200, [
+            'Content-Type'        => 'application/pdf',
+            'Content-Disposition' => "inline; filename=\"scan.pdf\"; filename*=UTF-8''" . rawurlencode($filename),
+        ]);
     }
 }

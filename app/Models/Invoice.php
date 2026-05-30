@@ -52,6 +52,9 @@ class Invoice extends Model
         'approval_comment',
         'pdf_path',
         'acknowledgement_pdf_path',
+        'signed_scan_pdf_path',
+        'signed_scan_uploaded_at',
+        'signed_scan_uploaded_by',
         'notes',
         'customer_name_snapshot',
         'customer_address_snapshot',
@@ -80,9 +83,10 @@ class Invoice extends Model
         'subtotal'        => 'decimal:2',
         'tax'             => 'decimal:2',
         'total'           => 'decimal:2',
-        'approved'        => 'boolean',
-        'approved_at'     => 'datetime',
-        'vendor_metadata' => 'array',
+        'approved'                => 'boolean',
+        'approved_at'             => 'datetime',
+        'vendor_metadata'         => 'array',
+        'signed_scan_uploaded_at' => 'datetime',
     ];
 
     public function deal(): BelongsTo
