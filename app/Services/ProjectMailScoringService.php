@@ -37,6 +37,9 @@ class ProjectMailScoringService
     // 自社ドメイン（自社・当社営業担当のメールは案件対象外）
     private const EXCLUDE_DOMAIN = ['aizen-sol.co.jp'];
 
+    // domain bonus 集計の対象外ドメイン（フォームサービス等・実送信者と無関係）
+    private const DOMAIN_BONUS_SKIP = ['smoothcontact.com', 'gmail.com', 'yahoo.co.jp', 'hotmail.com'];
+
     // ── ② スコア辞書（max 85点設計）────────────────────────
     //
     // [A] 案件確度A (+15): 明示的な案件紹介ワード
@@ -221,60 +224,72 @@ class ProjectMailScoringService
             ->whereNotNull('email_id');
         if ($tenantId !== null) $query->where('tenant_id', $tenantId);
 
+        // P1: ドメイン単位の集計を 1 SQL でまとめ取りして Cache::remember 先回り投入。
+        // これをやらないと per-pms ループから 326 ドメイン分の COUNT が直列で走り、
+        // 02:40 バッチで statement_timeout → DB::transaction 連鎖崩壊の根因になる。
+        // [[project_emails_disk_io_2026_05_25]]
+        $tenantsToWarm = $tenantId !== null
+            ? [$tenantId]
+            : ProjectMailSource::whereNotNull('email_id')
+                ->select('tenant_id')->distinct()->pluck('tenant_id')->all();
+        foreach ($tenantsToWarm as $tid) {
+            $this->prewarmDomainBonusCache((int) $tid);
+        }
+
         $changed = 0;
+        // catch/continue ループに DB::transaction wrap は不整合
+        // (1 timeout → 1900+ "transaction is aborted" 連鎖) のため per-row autocommit に。
         $applyBatch = function ($rows) use (&$changed) {
-            DB::transaction(function () use ($rows, &$changed) {
-                foreach ($rows as $pms) {
-                    if (!$pms->email) continue;
-                    $reasons = $pms->score_reasons ?? [];
-                    // isExcluded 由来の除外（subject/from ベース）は据え置き
-                    if ($reasons === ['excluded']) continue;
-                    try {
-                        $from = $pms->email->from_address ?? '';
+            foreach ($rows as $pms) {
+                if (!$pms->email) continue;
+                $reasons = $pms->score_reasons ?? [];
+                // isExcluded 由来の除外（subject/from ベース）は据え置き
+                if ($reasons === ['excluded']) continue;
+                try {
+                    $from = $pms->email->from_address ?? '';
 
-                        // 既存の domain 補正を score_reasons から読み取り、旧行は除去（後で貼り直す）
-                        $oldBonus = 0;
-                        $reasons  = array_values(array_filter($reasons, function ($r) use (&$oldBonus) {
-                            if (is_string($r) && preg_match('/^domain:.+:([+-]?\d+)\(/u', $r, $m)) {
-                                $oldBonus = (int) $m[1];
-                                return false;
-                            }
-                            return true;
-                        }));
-
-                        $domainData = $this->domainBonus($from, $pms->tenant_id);
-                        $newBonus   = $domainData['bonus'];
-                        if ($newBonus !== 0) {
-                            $sign      = $newBonus > 0 ? '+' : '';
-                            $pct       = round($domainData['rate'] * 100);
-                            $reasons[] = "domain:{$domainData['domain']}:{$sign}{$newBonus}({$pct}%/{$domainData['sample']}件)";
+                    // 既存の domain 補正を score_reasons から読み取り、旧行は除去（後で貼り直す）
+                    $oldBonus = 0;
+                    $reasons  = array_values(array_filter($reasons, function ($r) use (&$oldBonus) {
+                        if (is_string($r) && preg_match('/^domain:.+:([+-]?\d+)\(/u', $r, $m)) {
+                            $oldBonus = (int) $m[1];
+                            return false;
                         }
+                        return true;
+                    }));
 
-                        // base = 現スコア − 旧補正、新スコア = clamp(base + 新補正)
-                        $newScore  = max(0, min(100, ((int) $pms->score - $oldBonus) + $newBonus));
-                        $newStatus = match(true) {
-                            $newScore >= self::SCORE_OK     => 'new',
-                            $newScore >= self::SCORE_REVIEW => 'review',
-                            default                         => 'excluded',
-                        };
-
-                        // 変化なしは書かない（Disk IO 抑制）
-                        if ((int) $pms->score === $newScore
-                            && $pms->status === $newStatus
-                            && ($pms->score_reasons ?? []) === $reasons) {
-                            continue;
-                        }
-                        $pms->update([
-                            'score'         => $newScore,
-                            'score_reasons' => $reasons,
-                            'status'        => $newStatus,
-                        ]);
-                        $changed++;
-                    } catch (\Throwable $e) {
-                        Log::error("[RefreshDomainBonus] pms_id={$pms->id} 失敗: " . $e->getMessage());
+                    $domainData = $this->domainBonus($from, $pms->tenant_id);
+                    $newBonus   = $domainData['bonus'];
+                    if ($newBonus !== 0) {
+                        $sign      = $newBonus > 0 ? '+' : '';
+                        $pct       = round($domainData['rate'] * 100);
+                        $reasons[] = "domain:{$domainData['domain']}:{$sign}{$newBonus}({$pct}%/{$domainData['sample']}件)";
                     }
+
+                    // base = 現スコア − 旧補正、新スコア = clamp(base + 新補正)
+                    $newScore  = max(0, min(100, ((int) $pms->score - $oldBonus) + $newBonus));
+                    $newStatus = match(true) {
+                        $newScore >= self::SCORE_OK     => 'new',
+                        $newScore >= self::SCORE_REVIEW => 'review',
+                        default                         => 'excluded',
+                    };
+
+                    // 変化なしは書かない（Disk IO 抑制）
+                    if ((int) $pms->score === $newScore
+                        && $pms->status === $newStatus
+                        && ($pms->score_reasons ?? []) === $reasons) {
+                        continue;
+                    }
+                    $pms->update([
+                        'score'         => $newScore,
+                        'score_reasons' => $reasons,
+                        'status'        => $newStatus,
+                    ]);
+                    $changed++;
+                } catch (\Throwable $e) {
+                    Log::error("[RefreshDomainBonus] pms_id={$pms->id} 失敗: " . $e->getMessage());
                 }
-            });
+            }
         };
 
         if ($limit !== null) {
@@ -283,6 +298,52 @@ class ProjectMailScoringService
             $query->chunkById($chunkSize, $applyBatch);
         }
         return $changed;
+    }
+
+    /**
+     * domain_bonus_agg:* キャッシュをテナント単位で 1 SQL でまとめ取りして先回り投入する。
+     *
+     * domainBonus() の本来のクエリは emails × project_mail_sources の Seq Scan を
+     * ドメイン数だけ繰り返すため、cold cache 時 (02:40 nightly refresh) に
+     * statement_timeout を踏みやすい。集約 1 本なら全ドメイン 130ms 程度で済む。
+     *
+     * 既存の `domain_bonus_agg:{tenant}:{domain}` キーと同形の `[total, projectCount]`
+     * を Cache::put するので、その後 domainBonus() は Cache::remember でヒットする。
+     * skipDomains は domainBonus() が短絡するためキャッシュ不要。
+     */
+    private function prewarmDomainBonusCache(int $tenantId): void
+    {
+        try {
+            $rows = DB::table('project_mail_sources as pms')
+                ->join('emails as e', 'e.id', '=', 'pms.email_id')
+                ->where('pms.tenant_id', $tenantId)
+                ->where('pms.status', '<>', 'review')
+                ->whereNull('pms.deleted_at')
+                ->whereNotNull('e.from_address')
+                ->groupBy(DB::raw("lower(split_part(e.from_address::text, '@', 2))"))
+                ->selectRaw("
+                    lower(split_part(e.from_address::text, '@', 2)) AS domain,
+                    COUNT(*) AS total,
+                    SUM(CASE WHEN pms.status <> 'excluded' THEN 1 ELSE 0 END) AS project_count
+                ")
+                ->get();
+
+            $warmed = 0;
+            foreach ($rows as $r) {
+                $domain = (string) $r->domain;
+                if ($domain === '' || in_array($domain, self::DOMAIN_BONUS_SKIP, true)) continue;
+                Cache::put(
+                    "domain_bonus_agg:{$tenantId}:{$domain}",
+                    [(int) $r->total, (int) $r->project_count],
+                    now()->addHours(6),
+                );
+                $warmed++;
+            }
+            Log::info("[RefreshDomainBonus] prewarm tenant={$tenantId} domains={$warmed}");
+        } catch (\Throwable $e) {
+            // prewarm 失敗は致命的ではない (Cache::remember が fallback で個別集計するだけ)
+            Log::warning("[RefreshDomainBonus] prewarm tenant={$tenantId} 失敗: " . $e->getMessage());
+        }
     }
 
     /**
@@ -359,8 +420,7 @@ class ProjectMailScoringService
         $domain = strtolower($m[1]);
 
         // フォームサービス等は除外（実送信者と無関係なドメイン）
-        $skipDomains = ['smoothcontact.com', 'gmail.com', 'yahoo.co.jp', 'hotmail.com'];
-        if (in_array($domain, $skipDomains, true)) return $empty;
+        if (in_array($domain, self::DOMAIN_BONUS_SKIP, true)) return $empty;
 
         // ランタイムキャッシュ（同一プロセス内の同テナント×同ドメインは再集計しない）
         $cacheKey = "{$tenantId}:{$domain}";
