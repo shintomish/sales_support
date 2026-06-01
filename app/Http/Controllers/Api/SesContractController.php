@@ -441,19 +441,32 @@ class SesContractController extends Controller
     public function summary(): JsonResponse
     {
         $tenantId = auth()->user()->tenant_id;
-        $deals = Deal::with('sesContract')
-            ->where('tenant_id', $tenantId)->where('deal_type', 'ses')->whereNull('deleted_at')->get();
-        $totalIncome   = $deals->sum(fn($d) => $d->sesContract?->income_amount ?? 0);
-        $totalProfit   = $deals->sum(fn($d) => $d->sesContract?->profit ?? 0);
-        $activeCount   = $deals->where('status', '稼働中')->count();
-        $expiringCount = $deals->filter(fn($d) =>
-            $d->sesContract?->contract_period_end &&
-            now()->diffInDays($d->sesContract->contract_period_end, false) <= 30 &&
-            now()->diffInDays($d->sesContract->contract_period_end, false) >= 0
-        )->count();
+
+        // 旧実装は Deal::with('sesContract')->get() で全件 PHP 集計しており、
+        // 件数が伸びるほど Disk IO + メモリが線形悪化していた (docs/730 #20)。
+        // selectRaw で COUNT FILTER / SUM を 1 クエリに集約し DB 側で計算する。
+        $row = DB::table('deals')
+            ->leftJoin('ses_contracts', 'ses_contracts.deal_id', '=', 'deals.id')
+            ->where('deals.tenant_id', $tenantId)
+            ->where('deals.deal_type', 'ses')
+            ->whereNull('deals.deleted_at')
+            ->selectRaw("
+                COALESCE(SUM(ses_contracts.income_amount), 0) AS total_income,
+                COALESCE(SUM(ses_contracts.profit), 0)        AS total_profit,
+                COUNT(*) FILTER (WHERE deals.status = '稼働中') AS active_count,
+                COUNT(*) FILTER (
+                    WHERE ses_contracts.contract_period_end IS NOT NULL
+                      AND ses_contracts.contract_period_end >= CURRENT_DATE
+                      AND ses_contracts.contract_period_end <= CURRENT_DATE + INTERVAL '30 days'
+                ) AS expiring_count
+            ")
+            ->first();
+
         return response()->json([
-            'total_income' => $totalIncome, 'total_profit' => $totalProfit,
-            'active_count' => $activeCount, 'expiring_count' => $expiringCount,
+            'total_income'   => (float) ($row->total_income   ?? 0),
+            'total_profit'   => (float) ($row->total_profit   ?? 0),
+            'active_count'   => (int)   ($row->active_count   ?? 0),
+            'expiring_count' => (int)   ($row->expiring_count ?? 0),
         ]);
     }
 }

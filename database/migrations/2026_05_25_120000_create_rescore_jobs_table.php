@@ -42,7 +42,10 @@ return new class extends Migration
 
         // RLS / GRANT (CLAUDE.md ルール準拠)
         DB::statement('ALTER TABLE public.rescore_jobs ENABLE ROW LEVEL SECURITY');
-        DB::statement('GRANT SELECT, INSERT, UPDATE, DELETE ON public.rescore_jobs TO service_role');
+        // test-postgres は service_role を持たないためガード
+        if (DB::selectOne("SELECT 1 AS x FROM pg_roles WHERE rolname = 'service_role'")) {
+            DB::statement('GRANT SELECT, INSERT, UPDATE, DELETE ON public.rescore_jobs TO service_role');
+        }
     }
 
     public function down(): void

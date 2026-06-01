@@ -28,19 +28,27 @@ return new class extends Migration
 
     public function up(): void
     {
+        $hasAuth = $this->roleExists('authenticated');
+        $hasSvc  = $this->roleExists('service_role');
         foreach (self::REALTIME_TABLES as $table) {
-            // authenticated: Realtime クライアント (フロント) が JWT で接続するロール
-            DB::statement("GRANT SELECT ON public.{$table} TO authenticated");
-            // service_role: Laravel バックエンドが service_role キーで接続するロール
-            DB::statement("GRANT SELECT, INSERT, UPDATE, DELETE ON public.{$table} TO service_role");
+            if ($hasAuth) DB::statement("GRANT SELECT ON public.{$table} TO authenticated");
+            if ($hasSvc)  DB::statement("GRANT SELECT, INSERT, UPDATE, DELETE ON public.{$table} TO service_role");
         }
     }
 
     public function down(): void
     {
+        $hasAuth = $this->roleExists('authenticated');
+        $hasSvc  = $this->roleExists('service_role');
         foreach (self::REALTIME_TABLES as $table) {
-            DB::statement("REVOKE SELECT ON public.{$table} FROM authenticated");
-            DB::statement("REVOKE SELECT, INSERT, UPDATE, DELETE ON public.{$table} FROM service_role");
+            if ($hasAuth) DB::statement("REVOKE SELECT ON public.{$table} FROM authenticated");
+            if ($hasSvc)  DB::statement("REVOKE SELECT, INSERT, UPDATE, DELETE ON public.{$table} FROM service_role");
         }
+    }
+
+    /** test-postgres (素の Postgres) は Supabase ロールを持たないため存在チェック */
+    private function roleExists(string $role): bool
+    {
+        return (bool) DB::selectOne("SELECT 1 AS x FROM pg_roles WHERE rolname = ?", [$role]);
     }
 };

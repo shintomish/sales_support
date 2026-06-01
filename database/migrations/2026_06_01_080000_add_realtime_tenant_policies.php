@@ -37,6 +37,13 @@ return new class extends Migration {
             return; // sqlite (test) は対象外
         }
 
+        // auth.uid() (Supabase 標準関数) と authenticated ロールが両方揃っている時のみ実行
+        $hasAuthRole = (bool) DB::selectOne("SELECT 1 AS x FROM pg_roles WHERE rolname = 'authenticated'");
+        $hasAuthUid  = (bool) DB::selectOne("SELECT 1 AS x FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = 'auth' AND p.proname = 'uid'");
+        if (!$hasAuthRole || !$hasAuthUid) {
+            return; // test-postgres など Supabase 非搭載環境はスキップ
+        }
+
         // 1. tenant_id 解決関数 (SECURITY DEFINER で RLS をバイパスして users を引く)
         DB::statement(<<<'SQL'
             CREATE OR REPLACE FUNCTION public.current_user_tenant_id()
@@ -75,6 +82,11 @@ return new class extends Migration {
     public function down(): void
     {
         if (DB::connection()->getDriverName() !== 'pgsql') {
+            return;
+        }
+
+        $hasAuthRole = (bool) DB::selectOne("SELECT 1 AS x FROM pg_roles WHERE rolname = 'authenticated'");
+        if (!$hasAuthRole) {
             return;
         }
 

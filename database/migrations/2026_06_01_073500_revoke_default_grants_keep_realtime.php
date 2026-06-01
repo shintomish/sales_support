@@ -36,15 +36,21 @@ return new class extends Migration {
             return; // sqlite (test) は対象外
         }
 
+        $hasAnon = $this->roleExists('anon');
+        $hasAuth = $this->roleExists('authenticated');
+        if (!$hasAnon && !$hasAuth) {
+            return; // test-postgres など Supabase ロール非搭載環境はスキップ
+        }
+
         // 1. public 配下の全テーブルから anon / authenticated を一括 REVOKE
-        DB::statement('REVOKE ALL ON ALL TABLES IN SCHEMA public FROM anon');
-        DB::statement('REVOKE ALL ON ALL TABLES IN SCHEMA public FROM authenticated');
+        if ($hasAnon) DB::statement('REVOKE ALL ON ALL TABLES IN SCHEMA public FROM anon');
+        if ($hasAuth) DB::statement('REVOKE ALL ON ALL TABLES IN SCHEMA public FROM authenticated');
 
         // 2. Realtime publication 含まれる 5 テーブルのみ authenticated SELECT 再付与
-        //    (CLAUDE.md REALTIME_TABLES と一致 / pg_publication_tables で実測確認済)
-        $realtimeTables = ['activities', 'business_cards', 'deals', 'emails', 'tasks'];
-        foreach ($realtimeTables as $t) {
-            DB::statement("GRANT SELECT ON public.\"{$t}\" TO authenticated");
+        if ($hasAuth) {
+            foreach (['activities', 'business_cards', 'deals', 'emails', 'tasks'] as $t) {
+                DB::statement("GRANT SELECT ON public.\"{$t}\" TO authenticated");
+            }
         }
 
         // 3. service_role は触らない (Laravel が依存)
@@ -58,7 +64,13 @@ return new class extends Migration {
 
         // Supabase 初期状態へ戻す (anon / authenticated に ALL 再付与)
         // ※ rollback は permissive な状態に戻すので運用上はあえて呼ばない方が安全
-        DB::statement('GRANT ALL ON ALL TABLES IN SCHEMA public TO anon');
-        DB::statement('GRANT ALL ON ALL TABLES IN SCHEMA public TO authenticated');
+        if ($this->roleExists('anon'))          DB::statement('GRANT ALL ON ALL TABLES IN SCHEMA public TO anon');
+        if ($this->roleExists('authenticated')) DB::statement('GRANT ALL ON ALL TABLES IN SCHEMA public TO authenticated');
+    }
+
+    /** test-postgres (素の Postgres) は Supabase ロールを持たないため存在チェック */
+    private function roleExists(string $role): bool
+    {
+        return (bool) DB::selectOne('SELECT 1 AS x FROM pg_roles WHERE rolname = ?', [$role]);
     }
 };
