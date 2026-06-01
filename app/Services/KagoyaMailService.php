@@ -6,6 +6,7 @@ use App\Models\DeliveryCampaign;
 use App\Models\DeliverySendHistory;
 use App\Models\Email;
 use App\Models\EmailAttachment;
+use App\Models\RescoreJob;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Log;
 
@@ -212,6 +213,12 @@ class KagoyaMailService
         $cte = strtolower($headers['content-transfer-encoding'] ?? '7bit');
         [$bodyText, $bodyHtml, $attachments] = $this->parseBody($bodyRaw, $contentType, $cte);
 
+        // Kagoya 配送遅延への対処: 「全て既読」を押した後に取込された received_at が押下時点より
+        // 古いメール (= 押下時点で既に送信されていたが Kagoya 内で滞留していたメール) は、
+        // 既読として取り込む。これにより 12 時間前のメールが取込遅延で未読として残り続ける
+        // バグを解消する ([[project_kagoya_gmail_delivery]] の派生)。
+        $alreadyMarkedRead = $this->shouldImportAsRead($tenantId, $receivedAt);
+
         $email = Email::create([
             'tenant_id'        => $tenantId,
             'gmail_message_id' => $uid,
@@ -225,7 +232,8 @@ class KagoyaMailService
             'body_html'        => $bodyHtml,
             'received_at'      => $receivedAt,
             // self の場合は未読カウントを汚さず classifyPending(whereNull) にも拾わせない
-            'is_read'          => $forceSelf,
+            // forceSelf 以外でも、ユーザーが直近 markAllRead を実行済 (received_at < finished_at) なら既読扱い
+            'is_read'          => $forceSelf || $alreadyMarkedRead,
             'category'         => $forceSelf ? 'self' : null,
             'classified_at'    => $forceSelf ? $receivedAt : null,
         ]);
@@ -317,6 +325,36 @@ class KagoyaMailService
         }
 
         return true;
+    }
+
+    /**
+     * 直近完了した markAllRead ジョブの finished_at と received_at を比較し、
+     * 取込遅延メールを自動既読化すべきか判定する。
+     *
+     * Kagoya 配送遅延で 12 時間前送信のメールが今 (取込タイミング) に流れてくるが、
+     * ユーザーが既に「全て既読」を実行済 (= 過去の未読を消化済) なら、それより
+     * 古い received_at のメールは新着扱いせず既読として取り込む。
+     */
+    private function shouldImportAsRead(int $tenantId, ?Carbon $receivedAt): bool
+    {
+        if (!$receivedAt) return false;
+
+        // tenant の最新完了 markAllRead を取得 (キャッシュ 60s で吸収)
+        $finishedAt = \Illuminate\Support\Facades\Cache::remember(
+            "kagoya:last_mark_all_read:{$tenantId}",
+            60,
+            function () use ($tenantId) {
+                return RescoreJob::where('type', RescoreJob::TYPE_MARK_READ)
+                    ->where('tenant_id', $tenantId)
+                    ->where('status', RescoreJob::STATUS_COMPLETED)
+                    ->orderByDesc('finished_at')
+                    ->value('finished_at');
+            }
+        );
+
+        if (!$finishedAt) return false;
+
+        return $receivedAt->lt(Carbon::parse($finishedAt));
     }
 
     // ── パース系 ────────────────────────────────────────

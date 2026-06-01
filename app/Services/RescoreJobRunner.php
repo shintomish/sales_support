@@ -126,6 +126,9 @@ class RescoreJobRunner
                 $job->finished_at = now();
                 $job->save();
                 Cache::forget("emails:unread_count:tenant:{$job->tenant_id}");
+                // Kagoya 取込が「直近 markAllRead 後の取込遅延メール」を既読化する判定で
+                // 参照するキャッシュも合わせて invalidate (KagoyaMailService::shouldImportAsRead)
+                Cache::forget("kagoya:last_mark_all_read:{$job->tenant_id}");
                 Log::info('[RescoreJobRunner] mark_read 完了', [
                     'job_id'    => $job->id,
                     'tenant_id' => $job->tenant_id,
