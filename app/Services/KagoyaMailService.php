@@ -260,19 +260,24 @@ class KagoyaMailService
         }
 
         // 返信紐づけ
+        // 注意: スケジュールジョブから呼ばれるため Auth context が無く TenantScope が効かない。
+        // cross-tenant 誤紐付け (同じ ses_message_id が他テナントに存在した場合の誤発火) を
+        // 防ぐため明示的に tenant_id WHERE を付与する (docs/730 #32)。
         $inReplyTo = trim($headers['in-reply-to'] ?? '');
         $history = null;
 
         // ① In-Reply-To → ses_message_id 完全一致
         if ($inReplyTo) {
-            $history = DeliverySendHistory::where('ses_message_id', $inReplyTo)
+            $history = DeliverySendHistory::where('tenant_id', $tenantId)
+                ->where('ses_message_id', $inReplyTo)
                 ->whereNull('reply_email_id')
                 ->first();
 
             // ② < > 除去してのフォールバック
             if (!$history) {
                 $clean = trim($inReplyTo, '<>');
-                $history = DeliverySendHistory::where('ses_message_id', 'like', "%{$clean}%")
+                $history = DeliverySendHistory::where('tenant_id', $tenantId)
+                    ->where('ses_message_id', 'like', "%{$clean}%")
                     ->whereNull('reply_email_id')
                     ->first();
             }
@@ -285,7 +290,8 @@ class KagoyaMailService
         if (!$history && $fromAddress && !$isSelfFrom) {
             $originalSubject = trim(preg_replace('/^(Re:\s*|RE:\s*|Fwd:\s*|FW:\s*)*/iu', '', $subject));
             if ($originalSubject) {
-                $history = DeliverySendHistory::where('email', $fromAddress)
+                $history = DeliverySendHistory::where('tenant_id', $tenantId)
+                    ->where('email', $fromAddress)
                     ->whereNull('reply_email_id')
                     ->where('status', 'sent')
                     ->whereHas('campaign', fn($q) => $q->where('subject', 'like', '%' . $originalSubject . '%'))
