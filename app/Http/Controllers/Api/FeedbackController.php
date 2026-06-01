@@ -65,6 +65,7 @@ class FeedbackController extends Controller
 
         $status   = $request->query('status');
         $type     = $request->query('type');
+        $tenantId = $request->query('tenant_id');
         $perPage  = min(200, max(1, (int) $request->query('per_page', 50)));
 
         $q = FeedbackReport::withoutGlobalScope(TenantScope::class)
@@ -76,6 +77,9 @@ class FeedbackController extends Controller
         }
         if ($type && in_array($type, self::TYPES, true)) {
             $q->where('type', $type);
+        }
+        if ($tenantId !== null && $tenantId !== '' && ctype_digit((string) $tenantId)) {
+            $q->where('tenant_id', (int) $tenantId);
         }
 
         // フロント /admin/feedback は paginate 形式 (data/current_page/last_page/total) を期待。
