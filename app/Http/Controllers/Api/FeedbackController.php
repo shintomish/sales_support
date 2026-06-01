@@ -63,8 +63,9 @@ class FeedbackController extends Controller
     {
         $this->authorizeSuperAdmin();
 
-        $status = $request->query('status');
-        $type   = $request->query('type');
+        $status   = $request->query('status');
+        $type     = $request->query('type');
+        $perPage  = min(200, max(1, (int) $request->query('per_page', 50)));
 
         $q = FeedbackReport::withoutGlobalScope(TenantScope::class)
             ->with(['user:id,name,email,tenant_id', 'tenant:id,name'])
@@ -77,8 +78,17 @@ class FeedbackController extends Controller
             $q->where('type', $type);
         }
 
-        $items = $q->limit(500)->get();
-        return response()->json(['items' => $items]);
+        // フロント /admin/feedback は paginate 形式 (data/current_page/last_page/total) を期待。
+        // items キーは旧 API 互換のため残しておく (data と同じ参照)。
+        $paginated = $q->paginate($perPage);
+        return response()->json([
+            'items'        => $paginated->items(),
+            'data'         => $paginated->items(),
+            'current_page' => $paginated->currentPage(),
+            'last_page'    => $paginated->lastPage(),
+            'total'        => $paginated->total(),
+            'per_page'     => $paginated->perPage(),
+        ]);
     }
 
     /** PATCH /api/v1/admin/feedback/{id} */
