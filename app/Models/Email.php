@@ -4,11 +4,36 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\Cache;
 use App\Traits\BelongsToTenant;
 
 class Email extends Model
 {
     use BelongsToTenant, HasFactory;
+
+    /**
+     * is_read 変動時に未読カウントキャッシュを自動 invalidate。
+     *
+     * - 新規作成 (is_read=false で取込): unread+1 反映が必要
+     * - is_read を true/false に切替: 単一メール既読化や status 反転で反映
+     * - 削除: 未読メール削除なら unread-1 反映が必要
+     *
+     * 注: Query Builder の一括 update (例: RescoreJobRunner) は model 経由ではないため
+     * 別途明示的に Cache::forget を呼ぶ必要がある (既に対応済)。
+     */
+    protected static function booted(): void
+    {
+        static::saved(function (Email $email) {
+            if ($email->wasRecentlyCreated || $email->wasChanged('is_read')) {
+                Cache::forget("emails:unread_count:tenant:{$email->tenant_id}");
+            }
+        });
+        static::deleted(function (Email $email) {
+            if (!$email->is_read) {
+                Cache::forget("emails:unread_count:tenant:{$email->tenant_id}");
+            }
+        });
+    }
 
     protected $fillable = [
         'tenant_id',
