@@ -202,6 +202,7 @@ class EmailController extends Controller
     public function destroy(int $id)
     {
         $email = Email::findOrFail($id);
+        $this->ensureSameTenantForDestructive($email);
 
         DB::transaction(function () use ($email) {
             // 関連: スコアリング/ソース系

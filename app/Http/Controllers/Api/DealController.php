@@ -140,6 +140,7 @@ class DealController extends Controller
     )]
     public function update(Request $request, Deal $deal)
     {
+        $this->ensureSameTenantForDestructive($deal);
         $validated = $request->validate([
             'customer_id'         => ['required', TenantExistsRule::for('customers')],
             'contact_id'          => ['nullable', TenantExistsRule::for('contacts')],
@@ -172,6 +173,7 @@ class DealController extends Controller
     )]
     public function destroy(Deal $deal)
     {
+        $this->ensureSameTenantForDestructive($deal);
         $deal->delete();
         return response()->json(null, 204);
     }
