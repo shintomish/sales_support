@@ -185,6 +185,124 @@ class EngineerMailScoringService
      * @param int|null $limit  処理件数の上限
      * @param int      $offset 処理開始位置（バッチ処理用）
      */
+    /**
+     * Shadow rescore — UPDATE せずに score/status 変動だけ集計する pre-deploy 検証。
+     *
+     * 用途 (docs/730 #1 / 5/25 営業部決定の本番投入前):
+     *   - 「スコア0点化/年齢許容/表示閾値70+」変更後の status 遷移件数を事前可視化
+     *   - 35万/月未満除外などの単価ロジック変更影響範囲を定量化
+     *
+     * project と異なり engineer は単価チェックが status に効くため extract() を呼ぶ
+     * (添付解析はスキップ)。それでも UPDATE しないため Disk IO は限定。
+     *
+     * @return array{
+     *   total:int, unchanged:int, changed_score:int, changed_status:int,
+     *   crossed_review_threshold:int, crossed_ok_threshold:int,
+     *   transitions: array<string,int>,
+     *   sample_changes: array<int, array{ems_id:int, old_score:int, new_score:int, old_status:?string, new_status:string}>
+     * }
+     */
+    public function rescoreAllShadow(?int $limit = null, int $offset = 0, ?int $tenantId = null): array
+    {
+        ini_set('memory_limit', '512M');
+
+        $query = EngineerMailSource::with(['email.attachments'])
+            ->whereNotNull('email_id')
+            ->orderBy('id');
+        if ($tenantId !== null) $query->where('tenant_id', $tenantId);
+        if ($offset > 0)        $query->skip($offset);
+        if ($limit !== null)    $query->limit($limit);
+
+        $stats = [
+            'total' => 0, 'unchanged' => 0, 'changed_score' => 0, 'changed_status' => 0,
+            'crossed_review_threshold' => 0, 'crossed_ok_threshold' => 0,
+            'transitions' => [],
+            'sample_changes' => [],
+        ];
+
+        foreach ($query->cursor() as $ems) {
+            if (!$ems->email) continue;
+            try {
+                $email   = $ems->email;
+                $subject = $email->subject ?? '';
+                $from    = $email->from_address ?? '';
+
+                $oldScore  = (int) $ems->score;
+                $oldStatus = $ems->status;
+
+                if ($this->isExcluded($subject, $from)) {
+                    $newScore  = 0;
+                    $newStatus = 'excluded';
+                } else {
+                    $body = $email->body_text ?? strip_tags($email->body_html ?? '');
+                    $text = $subject . "\n" . $body;
+
+                    [$newScore, $reasons] = $this->calcScore($text, $email);
+                    $newScore = max(0, min(100, $newScore));
+                    $extracted = $this->extract($email, false);
+                    $priceMin = $extracted['unit_price_min'] ?? null;
+                    $priceMax = $extracted['unit_price_max'] ?? null;
+                    $price    = $priceMin ?? $priceMax;
+                    if ($price === null) {
+                        $reasons[] = 'no_unit_price';
+                        $reasons[] = 'excluded';
+                    } elseif ($price < self::PRICE_MIN_FLOOR) {
+                        $reasons[] = 'unit_price_too_low';
+                        $reasons[] = 'excluded';
+                    }
+                    $newStatus = match (true) {
+                        in_array('excluded', $reasons, true) => 'excluded',
+                        $newScore >= self::SCORE_OK          => 'new',
+                        $newScore >= self::SCORE_REVIEW      => 'review',
+                        default                              => 'excluded',
+                    };
+                }
+
+                $stats['total']++;
+                $scoreChanged  = $oldScore !== $newScore;
+                $statusChanged = $oldStatus !== $newStatus;
+
+                if (!$scoreChanged && !$statusChanged) {
+                    $stats['unchanged']++;
+                    gc_collect_cycles();
+                    continue;
+                }
+                if ($scoreChanged)  $stats['changed_score']++;
+                if ($statusChanged) {
+                    $stats['changed_status']++;
+                    $key = ($oldStatus ?? '(null)') . '->' . $newStatus;
+                    $stats['transitions'][$key] = ($stats['transitions'][$key] ?? 0) + 1;
+                }
+                if ($this->crossedThreshold($oldScore, $newScore, self::SCORE_REVIEW)) {
+                    $stats['crossed_review_threshold']++;
+                }
+                if ($this->crossedThreshold($oldScore, $newScore, self::SCORE_OK)) {
+                    $stats['crossed_ok_threshold']++;
+                }
+                if (count($stats['sample_changes']) < 20) {
+                    $stats['sample_changes'][] = [
+                        'ems_id'     => $ems->id,
+                        'old_score'  => $oldScore,
+                        'new_score'  => $newScore,
+                        'old_status' => $oldStatus,
+                        'new_status' => $newStatus,
+                    ];
+                }
+            } catch (\Throwable $e) {
+                Log::error("[EngineerMailRescoreShadow] ems_id={$ems->id} 失敗: " . $e->getMessage());
+            }
+            gc_collect_cycles();
+        }
+        return $stats;
+    }
+
+    /** old/new が threshold を跨いだか (どちらの方向でも true) */
+    private function crossedThreshold(int $oldScore, int $newScore, int $threshold): bool
+    {
+        return ($oldScore < $threshold && $newScore >= $threshold)
+            || ($oldScore >= $threshold && $newScore < $threshold);
+    }
+
     public function rescoreAll(?int $limit = null, int $offset = 0, ?int $tenantId = null): int
     {
         ini_set('memory_limit', '512M');

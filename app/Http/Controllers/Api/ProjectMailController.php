@@ -285,6 +285,37 @@ class ProjectMailController extends Controller
     }
 
     // 全件再スコアリングを非同期ジョブとして登録（Schedule tick が処理。docs #4）
+    /**
+     * Shadow rescore (UPDATE 無し・診断専用)。
+     *
+     * ルール変更ブランチで実行 → どれだけの行が status を変えるか定量化。
+     * 半日かかる本番 rescore 失敗からの後追い修正を避けるための pre-deploy 検証 (docs/730 #1)。
+     *
+     * パラメータ:
+     *   - limit (int, optional): 1 リクエストで処理する件数
+     *   - offset (int, optional): バッチ開始位置
+     *   - tenant_id (int, optional): 特定テナントのみ
+     */
+    public function rescoreAllShadow(Request $request): JsonResponse
+    {
+        $user = auth()->user();
+        if (!$user || !in_array($user->role, ['tenant_admin', 'super_admin'], true)) {
+            return response()->json(['message' => '管理者権限が必要です'], 403);
+        }
+        set_time_limit(300);
+        ini_set('memory_limit', '768M');
+
+        $limit    = $request->integer('limit') ?: null;
+        $offset   = $request->integer('offset', 0);
+        $tenantId = $request->integer('tenant_id') ?: $user->tenant_id;
+
+        $t0 = microtime(true);
+        $stats = $this->scoringService->rescoreAllShadow($limit, $offset, $tenantId);
+        $stats['elapsed_ms'] = (int) round((microtime(true) - $t0) * 1000);
+
+        return response()->json($stats);
+    }
+
     public function rescoreAll(Request $request): JsonResponse
     {
         // 既に未完了の同種ジョブがあればそれを返す（二重起動防止）

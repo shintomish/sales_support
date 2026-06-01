@@ -144,6 +144,118 @@ class ProjectMailScoringService
      * @param int|null $tenantId Schedule tick(Auth無し)から呼ぶ時に明示スコープ。
      *                           null の場合は GlobalScope(Auth)に委ねる。
      */
+    /**
+     * Shadow rescore — UPDATE せずに score/status 変動だけ集計する pre-deploy 検証。
+     *
+     * 用途 (docs/730 #1 / 5/25 営業部決定の本番投入前):
+     *   - ルール変更ブランチで実行 → どれだけの行が status を変えるか定量化
+     *   - 60点(SCORE_OK) / 40点(SCORE_REVIEW) 跨ぎ件数を可視化
+     *   - 半日かかる本番 rescore 失敗からの後追い修正を回避
+     *
+     * 性能: extract() を呼ばないため通常 rescore より大幅高速 (本文 TOAST 読まない)。
+     *
+     * @return array{
+     *   total:int, unchanged:int, changed_score:int, changed_status:int,
+     *   crossed_review_threshold:int, crossed_ok_threshold:int,
+     *   transitions: array<string,int>,
+     *   sample_changes: array<int, array{pms_id:int, old_score:int, new_score:int, old_status:?string, new_status:string}>
+     * }
+     */
+    public function rescoreAllShadow(?int $limit = null, int $offset = 0, ?int $tenantId = null): array
+    {
+        $query = ProjectMailSource::with(['email' => fn($q) => $q->select('id', 'subject', 'body_text', 'body_html', 'from_address')])
+            ->whereNotNull('email_id')
+            ->orderBy('id');
+        if ($tenantId !== null) $query->where('tenant_id', $tenantId);
+        if ($offset > 0)        $query->skip($offset);
+        if ($limit !== null)    $query->limit($limit);
+
+        $stats = [
+            'total' => 0, 'unchanged' => 0, 'changed_score' => 0, 'changed_status' => 0,
+            'crossed_review_threshold' => 0, 'crossed_ok_threshold' => 0,
+            'transitions' => [],
+            'sample_changes' => [],
+        ];
+
+        // 全テナントを横断するなら domain bonus prewarm (rescoreAll 同等)
+        $tenantsToWarm = $tenantId !== null
+            ? [$tenantId]
+            : ProjectMailSource::whereNotNull('email_id')
+                ->select('tenant_id')->distinct()->pluck('tenant_id')->all();
+        foreach ($tenantsToWarm as $tid) {
+            $this->prewarmDomainBonusCache((int) $tid);
+        }
+
+        foreach ($query->cursor() as $pms) {
+            if (!$pms->email) continue;
+            try {
+                $email   = $pms->email;
+                $subject = $email->subject ?? '';
+                $body    = $email->body_text ?? strip_tags($email->body_html ?? '');
+                $from    = $email->from_address ?? '';
+                $text    = $subject . "\n" . $body;
+
+                $oldScore  = (int) $pms->score;
+                $oldStatus = $pms->status;
+
+                if ($this->isExcluded($subject, $from)) {
+                    $newScore  = 0;
+                    $newStatus = 'excluded';
+                } else {
+                    [$newScore, $_] = $this->calcScore($text);
+                    $domainData = $this->domainBonus($from, $pms->tenant_id);
+                    $newScore  += $domainData['bonus'];
+                    $newScore   = max(0, min(100, $newScore));
+                    $newStatus  = match (true) {
+                        $newScore >= self::SCORE_OK     => 'new',
+                        $newScore >= self::SCORE_REVIEW => 'review',
+                        default                         => 'excluded',
+                    };
+                }
+
+                $stats['total']++;
+                $scoreChanged  = $oldScore !== $newScore;
+                $statusChanged = $oldStatus !== $newStatus;
+
+                if (!$scoreChanged && !$statusChanged) {
+                    $stats['unchanged']++;
+                    continue;
+                }
+                if ($scoreChanged)  $stats['changed_score']++;
+                if ($statusChanged) {
+                    $stats['changed_status']++;
+                    $key = ($oldStatus ?? '(null)') . '->' . $newStatus;
+                    $stats['transitions'][$key] = ($stats['transitions'][$key] ?? 0) + 1;
+                }
+                if ($this->crossedThreshold($oldScore, $newScore, self::SCORE_REVIEW)) {
+                    $stats['crossed_review_threshold']++;
+                }
+                if ($this->crossedThreshold($oldScore, $newScore, self::SCORE_OK)) {
+                    $stats['crossed_ok_threshold']++;
+                }
+                if (count($stats['sample_changes']) < 20) {
+                    $stats['sample_changes'][] = [
+                        'pms_id'     => $pms->id,
+                        'old_score'  => $oldScore,
+                        'new_score'  => $newScore,
+                        'old_status' => $oldStatus,
+                        'new_status' => $newStatus,
+                    ];
+                }
+            } catch (\Throwable $e) {
+                Log::error("[ProjectMailRescoreShadow] pms_id={$pms->id} 失敗: " . $e->getMessage());
+            }
+        }
+        return $stats;
+    }
+
+    /** old/new が threshold を跨いだか (どちらの方向でも true) */
+    private function crossedThreshold(int $oldScore, int $newScore, int $threshold): bool
+    {
+        return ($oldScore < $threshold && $newScore >= $threshold)
+            || ($oldScore >= $threshold && $newScore < $threshold);
+    }
+
     public function rescoreAll(?int $limit = null, int $offset = 0, ?int $tenantId = null): int
     {
         $query = ProjectMailSource::with('email')

@@ -217,9 +217,10 @@ Route::prefix('v1')->middleware(['supabase.auth'])->group(function () {
     Route::prefix('project-mails')->group(function () {
         Route::get('/',              [ProjectMailController::class, 'index']);
         Route::post('/manual',       [ProjectMailController::class, 'storeManual']); // E-3 手動登録
-        Route::post('/rescore-all',   [ProjectMailController::class, 'rescoreAll']);
-        Route::get('/rescore-status', [ProjectMailController::class, 'rescoreStatus']);
-        Route::post('/reextract-all', [ProjectMailController::class, 'reextractAll']);
+        Route::post('/rescore-all',         [ProjectMailController::class, 'rescoreAll']);
+        Route::post('/rescore-all-shadow',  [ProjectMailController::class, 'rescoreAllShadow']);
+        Route::get('/rescore-status',       [ProjectMailController::class, 'rescoreStatus']);
+        Route::post('/reextract-all',       [ProjectMailController::class, 'reextractAll']);
         Route::get('/{id}',          [ProjectMailController::class, 'show']);
         Route::patch('/{id}',        [ProjectMailController::class, 'update']);
         Route::patch('/{id}/status', [ProjectMailController::class, 'updateStatus']);
@@ -244,8 +245,9 @@ Route::prefix('v1')->middleware(['supabase.auth'])->group(function () {
     Route::prefix('engineer-mails')->group(function () {
         Route::get('/',              [EngineerMailController::class, 'index']);
         Route::post('/manual',       [EngineerMailController::class, 'storeManual']); // E-3 手動登録
-        Route::post('/rescore-all',  [EngineerMailController::class, 'rescoreAll']);
-        Route::get('/rescore-status', [EngineerMailController::class, 'rescoreStatus']);
+        Route::post('/rescore-all',         [EngineerMailController::class, 'rescoreAll']);
+        Route::post('/rescore-all-shadow',  [EngineerMailController::class, 'rescoreAllShadow']);
+        Route::get('/rescore-status',       [EngineerMailController::class, 'rescoreStatus']);
         Route::get('/{id}',                           [EngineerMailController::class, 'show']);
         Route::get('/{id}/attachment/{attachmentId}', [EngineerMailController::class, 'downloadAttachment']);
         Route::put('/{id}',                           [EngineerMailController::class, 'update']);
