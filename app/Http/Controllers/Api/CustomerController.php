@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Customer;
 use App\Http\Resources\CustomerResource;
+use App\Support\TenantExistsRule;
 use Illuminate\Http\Request;
 use OpenApi\Attributes as OA;
 
@@ -100,9 +101,9 @@ class CustomerController extends Controller
             'invoice_delivery_method' => 'nullable|in:mail,post,both',
             'quotation_language'  => 'nullable|boolean',
             'company_name_en'     => 'nullable|string|max:255',
-            'primary_contact_id'  => 'nullable|integer|exists:contacts,id',
+            'primary_contact_id'  => ['nullable', 'integer', TenantExistsRule::for('contacts')],
             'secondary_contact_ids' => 'nullable|array|max:4',
-            'secondary_contact_ids.*' => 'integer|exists:contacts,id',
+            'secondary_contact_ids.*' => ['integer', TenantExistsRule::for('contacts')],
         ], $this->messages());
 
         $customer = Customer::create($validated);
@@ -179,9 +180,9 @@ class CustomerController extends Controller
             'invoice_delivery_method' => 'nullable|in:mail,post,both',
             'quotation_language'  => 'nullable|boolean',
             'company_name_en'     => 'nullable|string|max:255',
-            'primary_contact_id'  => 'nullable|integer|exists:contacts,id',
+            'primary_contact_id'  => ['nullable', 'integer', TenantExistsRule::for('contacts')],
             'secondary_contact_ids' => 'nullable|array|max:4',
-            'secondary_contact_ids.*' => 'integer|exists:contacts,id',
+            'secondary_contact_ids.*' => ['integer', TenantExistsRule::for('contacts')],
         ], $this->messages());
 
         $customer->update($validated);

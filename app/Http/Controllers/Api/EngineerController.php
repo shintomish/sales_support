@@ -10,6 +10,7 @@ use App\Models\EngineerSkill;
 use App\Models\Skill;
 use App\Services\ClaudeService;
 use App\Services\SupabaseStorageService;
+use App\Support\TenantExistsRule;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -211,7 +212,7 @@ class EngineerController extends Controller
             'nationality'             => 'nullable|string|max:100',
             'nearest_station'         => 'nullable|string|max:100',
             'affiliation_type'        => 'nullable|in:self,first_sub,bp,bp_member,contract,freelance,joining,hiring',
-            'engineer_mail_source_id' => 'nullable|integer|exists:engineer_mail_sources,id',
+            'engineer_mail_source_id' => ['nullable', 'integer', TenantExistsRule::for('engineer_mail_sources')],
             // プロフィール
             'desired_unit_price_min'  => 'nullable|numeric|min:0',
             'desired_unit_price_max'  => 'nullable|numeric|min:0',

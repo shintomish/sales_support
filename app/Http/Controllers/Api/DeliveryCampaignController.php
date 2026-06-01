@@ -9,6 +9,7 @@ use App\Models\DeliverySendHistory;
 use App\Models\EngineerMailSource;
 use App\Models\ProjectMailSource;
 use App\Services\DeliveryCampaignService;
+use App\Support\TenantExistsRule;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
@@ -136,8 +137,8 @@ class DeliveryCampaignController extends Controller
     public function checkDuplicates(Request $request): JsonResponse
     {
         $validated = $request->validate([
-            'project_mail_id'         => 'nullable|exists:project_mail_sources,id',
-            'engineer_mail_source_id' => 'nullable|exists:engineer_mail_sources,id',
+            'project_mail_id'         => ['nullable', TenantExistsRule::for('project_mail_sources')],
+            'engineer_mail_source_id' => ['nullable', TenantExistsRule::for('engineer_mail_sources')],
             'source_email'            => 'nullable|email|max:255',
         ]);
 
@@ -196,8 +197,8 @@ class DeliveryCampaignController extends Controller
     public function store(Request $request): JsonResponse
     {
         $validated = $request->validate([
-            'project_mail_id'         => 'nullable|exists:project_mail_sources,id',
-            'engineer_mail_source_id' => 'nullable|exists:engineer_mail_sources,id',
+            'project_mail_id'         => ['nullable', TenantExistsRule::for('project_mail_sources')],
+            'engineer_mail_source_id' => ['nullable', TenantExistsRule::for('engineer_mail_sources')],
             // 紐づき案件/技術者がない場合のみ使用する入手元メールアドレス。
             // 再送信時の元請けドメイン警告に使う（紐づきありなら受信メール from_address を優先）。
             'source_email'            => 'nullable|email|max:255',
@@ -207,7 +208,7 @@ class DeliveryCampaignController extends Controller
             'attachments.*'           => 'file|max:10240',
             // 元請けドメイン警告モーダルで「今回除外する」と選択された delivery_address_id 一覧
             'exclude_address_ids'     => 'nullable|array',
-            'exclude_address_ids.*'   => 'integer|exists:delivery_addresses,id',
+            'exclude_address_ids.*'   => ['integer', TenantExistsRule::for('delivery_addresses')],
             // フォームで選択された配信種別 (project / engineer)。一斉配信履歴の分類表示に使う
             'delivery_type'           => 'nullable|in:project,engineer',
         ]);
