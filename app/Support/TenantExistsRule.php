@@ -2,9 +2,9 @@
 
 namespace App\Support;
 
-use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\Rules\Exists;
 
 /**
  * テナント分離を考慮した exists: バリデーション。
@@ -17,7 +17,7 @@ use Illuminate\Validation\Rule;
  */
 class TenantExistsRule
 {
-    public static function for(string $table, string $column = 'id'): ValidationRule|object
+    public static function for(string $table, string $column = 'id'): Exists
     {
         $tenantId = Auth::user()?->tenant_id;
         return Rule::exists($table, $column)
