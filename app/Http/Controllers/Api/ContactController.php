@@ -7,6 +7,8 @@ use App\Models\Contact;
 use App\Http\Resources\ContactResource;
 use App\Support\TenantExistsRule;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Validation\Rule;
 use OpenApi\Attributes as OA;
 
 class ContactController extends Controller
@@ -93,12 +95,14 @@ class ContactController extends Controller
     )]
     public function store(Request $request)
     {
+        $tenantId = Auth::user()->tenant_id;
         $validated = $request->validate([
             'customer_id' => ['required', TenantExistsRule::for('customers')],
             'name'        => 'required|string|max:255',
             'department'  => 'nullable|string|max:100',
             'position'    => 'nullable|string|max:100',
-            'email'       => 'nullable|email:rfc|max:255|unique:contacts,email',
+            'email'       => ['nullable', 'email:rfc', 'max:255',
+                Rule::unique('contacts', 'email')->where(fn ($q) => $q->where('tenant_id', $tenantId))],
             'phone'       => ['nullable', 'string', 'max:20', 'regex:/^[\d\-\+\(\)\s]+$/'],
             'notes'       => 'nullable|string|max:2000',
         ], $this->messages());
@@ -158,12 +162,14 @@ class ContactController extends Controller
     )]
     public function update(Request $request, Contact $contact)
     {
+        $tenantId = Auth::user()->tenant_id;
         $validated = $request->validate([
             'customer_id' => ['required', TenantExistsRule::for('customers')],
             'name'        => 'required|string|max:255',
             'department'  => 'nullable|string|max:100',
             'position'    => 'nullable|string|max:100',
-            'email'       => 'nullable|email:rfc|max:255|unique:contacts,email,' . $contact->id,
+            'email'       => ['nullable', 'email:rfc', 'max:255',
+                Rule::unique('contacts', 'email')->ignore($contact->id)->where(fn ($q) => $q->where('tenant_id', $tenantId))],
             'phone'       => ['nullable', 'string', 'max:20', 'regex:/^[\d\-\+\(\)\s]+$/'],
             'notes'       => 'nullable|string|max:2000',
         ], $this->messages());

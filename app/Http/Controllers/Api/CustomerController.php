@@ -7,6 +7,8 @@ use App\Models\Customer;
 use App\Http\Resources\CustomerResource;
 use App\Support\TenantExistsRule;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Validation\Rule;
 use OpenApi\Attributes as OA;
 
 class CustomerController extends Controller
@@ -82,8 +84,10 @@ class CustomerController extends Controller
     )]
     public function store(Request $request)
     {
+        $tenantId = Auth::user()->tenant_id;
         $validated = $request->validate([
-            'company_name'        => 'required|string|max:255|unique:customers,company_name',
+            'company_name'        => ['required', 'string', 'max:255',
+                Rule::unique('customers', 'company_name')->where(fn ($q) => $q->where('tenant_id', $tenantId))],
             'industry'            => 'nullable|string|max:100',
             'phone'               => ['nullable', 'string', 'max:20', 'regex:/^[\d\-\+\(\)\s]+$/'],
             'fax'                 => ['nullable', 'string', 'max:20', 'regex:/^[\d\-\+\(\)\s]+$/'],
@@ -161,8 +165,10 @@ class CustomerController extends Controller
     )]
     public function update(Request $request, Customer $customer)
     {
+        $tenantId = Auth::user()->tenant_id;
         $validated = $request->validate([
-            'company_name'        => 'required|string|max:255|unique:customers,company_name,' . $customer->id,
+            'company_name'        => ['required', 'string', 'max:255',
+                Rule::unique('customers', 'company_name')->ignore($customer->id)->where(fn ($q) => $q->where('tenant_id', $tenantId))],
             'industry'            => 'nullable|string|max:100',
             'phone'               => ['nullable', 'string', 'max:20', 'regex:/^[\d\-\+\(\)\s]+$/'],
             'fax'                 => ['nullable', 'string', 'max:20', 'regex:/^[\d\-\+\(\)\s]+$/'],
