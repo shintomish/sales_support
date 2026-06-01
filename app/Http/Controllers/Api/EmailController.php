@@ -72,8 +72,10 @@ class EmailController extends Controller
             $query->where('is_read', false);
         }
         // 自社/他社スコープ（営業打ち合わせ 2026-05-25 §要望1）。
-        // 自社 = to_address が当社 xxx@aizen-sol.co.jp（catch-all の outsource@ は除く＝その他扱い）。
-        // 他社(顧客) = それ以外（外部宛 or outsource宛）。担当者 = to のローカル部。
+        // 担当者タブ: to_address の aizen ローカル部 = 担当者、outsource@ は除外 (個別宛のみ)。
+        // 全自社タブ: category='self' (Kagoya 取込の isSelfFrom / isInternalTo で判定済) を採用。
+        //   これにより outsource@ → outsource@ の loop-back コピー (自社が配信した案件メールが
+        //   戻ってきたもの) も「全自社」で見える ([[project_self_loopback_visibility]] 2026-06-01)。
         $selfOwner = preg_replace('/[^A-Za-z0-9._\-]/', '', (string) $request->input('self_owner')); // 自社の特定担当者
         $mailScope = $request->input('mail_scope'); // 'self'(自社全担当者) | 'customer'(他社)
         if ($selfOwner !== '') {
@@ -82,8 +84,7 @@ class EmailController extends Controller
             $query->whereRaw("lower(substring(to_address from '([A-Za-z0-9._%+\\-]+)@aizen-sol\\.co\\.jp')) = ?", [mb_strtolower($selfOwner)])
                   ->where('to_address', 'not ilike', '%outsource@aizen-sol.co.jp%');
         } elseif ($mailScope === 'self') {
-            $query->where('to_address', 'ilike', '%@aizen-sol.co.jp%')
-                  ->where('to_address', 'not ilike', '%outsource@aizen-sol.co.jp%');
+            $query->where('category', 'self');
         }
         // 自社ビューでは spam（subject 前置 "[spam]"）を除外（営業打ち合わせ §要望1）
         if ($selfOwner !== '' || $mailScope === 'self') {
