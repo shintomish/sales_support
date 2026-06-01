@@ -40,6 +40,9 @@ return [
         // 2026-06-15 9AM PT に claude-sonnet-4-20250514 retire のため Sonnet 4.6 に移行。
         // .env CLAUDE_MODEL で上書き可能。
         'model'   => env('CLAUDE_MODEL', 'claude-sonnet-4-6'),
+        // 軽量タスク (汎用 ask / 提案メール下書き) 用の安価モデル。
+        // .env CLAUDE_HAIKU_MODEL で上書き可能 (docs/730 #14)。
+        'haiku_model' => env('CLAUDE_HAIKU_MODEL', 'claude-haiku-4-5-20251001'),
 
         // Refinitiv 注文書 PDF 抽出専用モデル。
         // 2026-05-29 に Opus 4.8 を試用したが、同一 PO で全14フィールド完全一致のため

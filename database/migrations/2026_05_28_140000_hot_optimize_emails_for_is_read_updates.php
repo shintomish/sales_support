@@ -27,6 +27,7 @@ return new class extends Migration
 
     public function up(): void
     {
+        if (DB::connection()->getDriverName() !== 'pgsql') return;
         // is_read を含む index を 3 本とも削除して HOT 更新可能化
         DB::statement('DROP INDEX IF EXISTS public.emails_is_read_idx');
         DB::statement('DROP INDEX IF EXISTS public.emails_tenant_id_is_read_index');
@@ -38,6 +39,7 @@ return new class extends Migration
 
     public function down(): void
     {
+        if (DB::connection()->getDriverName() !== 'pgsql') return;
         DB::statement('ALTER TABLE public.emails RESET (fillfactor)');
 
         // ロールバック時は元の 3 本を再作成 (CONCURRENTLY は migration 既定の transaction と非互換のため

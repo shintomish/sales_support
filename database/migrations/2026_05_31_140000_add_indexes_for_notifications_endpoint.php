@@ -18,6 +18,7 @@ return new class extends Migration {
 
     public function up(): void
     {
+        if (DB::connection()->getDriverName() !== 'pgsql') return;
         // 期限切れタスク (NotificationController::index の overdueTasks)
         DB::statement(
             'CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_tasks_tenant_status_due '
@@ -39,6 +40,7 @@ return new class extends Migration {
 
     public function down(): void
     {
+        if (DB::connection()->getDriverName() !== 'pgsql') return;
         DB::statement('DROP INDEX CONCURRENTLY IF EXISTS public.idx_tasks_tenant_status_due');
         DB::statement('DROP INDEX CONCURRENTLY IF EXISTS public.idx_invoices_tenant_approval_updated');
         DB::statement('DROP INDEX CONCURRENTLY IF EXISTS public.idx_invoices_tenant_submittedby_approvedat');

@@ -30,7 +30,9 @@ return new class extends Migration
             $table->index(['user_id', 'notification_type'], 'idx_inr_user_type');
         });
 
-        DB::statement('ALTER TABLE public.invoice_notification_reads ENABLE ROW LEVEL SECURITY');
+        if (DB::connection()->getDriverName() === 'pgsql') {
+            DB::statement('ALTER TABLE public.invoice_notification_reads ENABLE ROW LEVEL SECURITY');
+        }
     }
 
     public function down(): void

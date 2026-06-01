@@ -30,6 +30,7 @@ return new class extends Migration
 
     public function up(): void
     {
+        if (DB::connection()->getDriverName() !== 'pgsql') return;
         // 1. 重複削除 (各 email_id で最古 id を残す)
         DB::statement(<<<'SQL'
             DELETE FROM project_mail_sources
@@ -51,6 +52,7 @@ return new class extends Migration
 
     public function down(): void
     {
+        if (DB::connection()->getDriverName() !== 'pgsql') return;
         // 旧 non-unique index を復元
         DB::statement('CREATE INDEX CONCURRENTLY IF NOT EXISTS project_mail_sources_email_id_index ON public.project_mail_sources USING btree (email_id)');
         // UNIQUE index を削除

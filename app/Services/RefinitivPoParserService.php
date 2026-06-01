@@ -2,7 +2,6 @@
 
 namespace App\Services;
 
-use Illuminate\Support\Facades\Http;
 use RuntimeException;
 use Smalot\PdfParser\Parser as SmalotPdfParser;
 
@@ -18,13 +17,7 @@ use Smalot\PdfParser\Parser as SmalotPdfParser;
  */
 class RefinitivPoParserService
 {
-    private string $apiKey;
-    private string $apiUrl = 'https://api.anthropic.com/v1/messages';
-
-    public function __construct()
-    {
-        $this->apiKey = (string) config('services.anthropic.api_key');
-    }
+    public function __construct(private ClaudeService $claude) {}
 
     /**
      * @param  string $pdfPath  ローカルファイルパス（一時保存済み想定）
@@ -65,17 +58,13 @@ class RefinitivPoParserService
 
         // Refinitiv PDF 抽出モデルは config 経由で切替可 (デフォルト Sonnet 4.6)。
         // Opus 4.8 切替時の latency 増加を許容するため timeout は 120s 維持。
-        $response = Http::withHeaders([
-            'anthropic-version' => '2023-06-01',
-            'x-api-key'         => $this->apiKey,
-            'content-type'      => 'application/json',
-        ])->timeout(120)->post($this->apiUrl, [
+        $response = $this->claude->sendMessages([
             'model'      => config('services.anthropic.refinitiv_model'),
             'max_tokens' => 1024,
             'messages'   => [
                 ['role' => 'user', 'content' => $prompt],
             ],
-        ]);
+        ], ['timeout' => 120]);
 
         if ($response->failed()) {
             throw new RuntimeException('Claude API error: ' . $response->body());

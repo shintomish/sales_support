@@ -8,6 +8,7 @@ use App\Models\EngineerSkill;
 use App\Models\ProjectRequiredSkill;
 use App\Models\PublicProject;
 use App\Models\Skill;
+use App\Services\ClaudeService;
 use App\Services\MatchingService;
 use Tests\TestCase;
 
@@ -26,7 +27,7 @@ class MatchingServiceTest extends TestCase
     {
         parent::setUp();
         $this->actingAsUser();
-        $this->service = new MatchingService();
+        $this->service = new MatchingService(new ClaudeService());
     }
 
     // ─── スキルスコア ───
@@ -288,7 +289,7 @@ class MatchingServiceTest extends TestCase
         $project  = PublicProject::factory()->create();
         $engineer = $this->makeEngineer();
 
-        $this->service->calculate($project, $engineer);
+        $this->service->calculate($project, $engineer, persist: true);
 
         $this->assertDatabaseHas('matching_scores', [
             'project_id'  => $project->id,
@@ -301,8 +302,8 @@ class MatchingServiceTest extends TestCase
         $project  = PublicProject::factory()->create();
         $engineer = $this->makeEngineer();
 
-        $this->service->calculate($project, $engineer);
-        $this->service->calculate($project, $engineer);
+        $this->service->calculate($project, $engineer, persist: true);
+        $this->service->calculate($project, $engineer, persist: true);
 
         $count = \App\Models\MatchingScore::where([
             'project_id'  => $project->id,

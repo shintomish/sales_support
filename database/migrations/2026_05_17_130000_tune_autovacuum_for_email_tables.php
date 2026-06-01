@@ -23,6 +23,7 @@ use Illuminate\Support\Facades\DB;
 return new class extends Migration {
     public function up(): void
     {
+        if (DB::connection()->getDriverName() !== 'pgsql') return;
         DB::statement(
             'ALTER TABLE public.emails SET ('
             . 'autovacuum_vacuum_insert_scale_factor = 0.05, '
@@ -46,6 +47,7 @@ return new class extends Migration {
 
     public function down(): void
     {
+        if (DB::connection()->getDriverName() !== 'pgsql') return;
         DB::statement(
             'ALTER TABLE public.emails RESET ('
             . 'autovacuum_vacuum_insert_scale_factor, '

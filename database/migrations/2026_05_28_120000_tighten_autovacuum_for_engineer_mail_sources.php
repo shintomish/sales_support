@@ -22,6 +22,7 @@ use Illuminate\Support\Facades\DB;
 return new class extends Migration {
     public function up(): void
     {
+        if (DB::connection()->getDriverName() !== 'pgsql') return;
         DB::statement(
             'ALTER TABLE public.engineer_mail_sources SET ('
             . 'autovacuum_vacuum_insert_scale_factor = 0.02, '
@@ -32,6 +33,7 @@ return new class extends Migration {
 
     public function down(): void
     {
+        if (DB::connection()->getDriverName() !== 'pgsql') return;
         DB::statement(
             'ALTER TABLE public.engineer_mail_sources SET ('
             . 'autovacuum_vacuum_insert_scale_factor = 0.05, '

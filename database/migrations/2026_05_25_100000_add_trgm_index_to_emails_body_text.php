@@ -27,6 +27,7 @@ return new class extends Migration
 
     public function up(): void
     {
+        if (DB::connection()->getDriverName() !== 'pgsql') return;
         DB::statement('CREATE EXTENSION IF NOT EXISTS pg_trgm');
 
         // 既存 index が INVALID 状態 (前回 CONCURRENTLY 中断) ならリカバリ DROP。
@@ -57,6 +58,7 @@ return new class extends Migration
 
     public function down(): void
     {
+        if (DB::connection()->getDriverName() !== 'pgsql') return;
         DB::statement('DROP INDEX CONCURRENTLY IF EXISTS public.emails_body_text_trgm_idx');
     }
 };

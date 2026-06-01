@@ -35,7 +35,9 @@ return new class extends Migration
         });
 
         // 新規テーブルは RLS 有効化（Supabase 経由で外部公開されるのを防止）
-        DB::statement('ALTER TABLE public.invoice_send_histories ENABLE ROW LEVEL SECURITY');
+        if (DB::connection()->getDriverName() === 'pgsql') {
+            DB::statement('ALTER TABLE public.invoice_send_histories ENABLE ROW LEVEL SECURITY');
+        }
 
         Schema::table('tenants', function (Blueprint $table) {
             $table->string('invoice_email_subject_template', 500)->nullable()->after('invoice_issuer_url');

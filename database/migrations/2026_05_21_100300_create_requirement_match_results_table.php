@@ -45,6 +45,11 @@ return new class extends Migration
             $table->index(['tenant_id', 'engineer_id']);
         });
 
+        // 以下は Pgsql 固有 (partial index / CHECK / RLS / GRANT)。sqlite テストではスキップ
+        if (DB::connection()->getDriverName() !== 'pgsql') {
+            return;
+        }
+
         // engineer_mail_source_id / engineer_id のどちらかでユニーク制約 (片方は NULL のため部分 index)
         DB::statement('CREATE UNIQUE INDEX requirement_match_results_pms_ems_unique '
             . 'ON public.requirement_match_results (tenant_id, project_mail_source_id, engineer_mail_source_id) '

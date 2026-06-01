@@ -17,16 +17,12 @@ class ClaudeService
     }
 
     /**
-     * 汎用プロンプト送信（テキスト応答を返す）
+     * 汎用プロンプト送信（テキスト応答を返す）。軽量タスクなので haiku モデルを使う。
      */
     public function ask(string $prompt): string
     {
-        $response = Http::withHeaders([
-            'anthropic-version' => '2023-06-01',
-            'x-api-key'         => $this->apiKey,
-            'content-type'      => 'application/json',
-        ])->timeout(30)->post($this->apiUrl, [
-            'model'      => 'claude-haiku-4-5-20251001',
+        $response = $this->sendMessages([
+            'model'      => config('services.anthropic.haiku_model'),
             'max_tokens' => 1024,
             'messages'   => [['role' => 'user', 'content' => $prompt]],
         ]);
@@ -87,11 +83,11 @@ PROMPT;
     {
         $prompt = $this->buildProposalPrompt($mail, $engineer);
 
-        $response = $this->postWithRetry([
-            'model'      => 'claude-haiku-4-5-20251001',
+        $response = $this->sendMessages([
+            'model'      => config('services.anthropic.haiku_model'),
             'max_tokens' => 1024,
             'messages'   => [['role' => 'user', 'content' => $prompt]],
-        ]);
+        ], ['retry' => true]);
 
         $text = $response->json('content.0.text', '');
 
@@ -120,6 +116,42 @@ PROMPT;
     }
 
     /**
+     * Anthropic /v1/messages への POST を集約するファサード。
+     *
+     * すべての Service (ClaudeService 自身 + MatchingService + EmailExtractionService +
+     * RefinitivPoParserService) はこのメソッドを経由することで:
+     *   - anthropic-version / x-api-key / content-type ヘッダを一元管理
+     *   - timeout 設定の標準化 (デフォルト 30s)
+     *   - リトライ挙動 (overloaded / rate_limit) を一箇所に集約
+     *   - Http::fake によるテスト容易性
+     *
+     * @param array $payload  Anthropic API リクエストボディ (model / messages / system 等)
+     * @param array $options  ['timeout' => int(s), 'retry' => bool, 'max_attempts' => int]
+     * @return \Illuminate\Http\Client\Response
+     * @throws ClaudeOverloadedException retry=true で max_attempts 尽きた場合
+     */
+    public function sendMessages(array $payload, array $options = []): \Illuminate\Http\Client\Response
+    {
+        $timeout     = $options['timeout']      ?? 30;
+        $retry       = $options['retry']        ?? false;
+        $maxAttempts = $options['max_attempts'] ?? 3;
+
+        return $retry
+            ? $this->postWithRetry($payload, $timeout, $maxAttempts)
+            : $this->postOnce($payload, $timeout);
+    }
+
+    /** 単発 POST (リトライなし) */
+    private function postOnce(array $payload, int $timeout): \Illuminate\Http\Client\Response
+    {
+        return Http::withHeaders([
+            'anthropic-version' => '2023-06-01',
+            'x-api-key'         => $this->apiKey,
+            'content-type'      => 'application/json',
+        ])->timeout($timeout)->post($this->apiUrl, $payload);
+    }
+
+    /**
      * Claude API への POST を overloaded_error / 429 / 529 リトライ付きで実行。
      *
      * - Anthropic 側の一時的な過負荷 (overloaded_error) と Rate Limit (429) を判定
@@ -134,11 +166,7 @@ PROMPT;
 
         while (true) {
             $attempt++;
-            $response = Http::withHeaders([
-                'anthropic-version' => '2023-06-01',
-                'x-api-key'         => $this->apiKey,
-                'content-type'      => 'application/json',
-            ])->timeout($timeout)->post($this->apiUrl, $payload);
+            $response = $this->postOnce($payload, $timeout);
 
             if ($response->successful()) {
                 return $response;
@@ -238,19 +266,10 @@ PROMPT;
     {
         $prompt = $this->buildPrompt($ocrText);
 
-        $response = Http::withHeaders([
-            'anthropic-version' => '2023-06-01',
-            'x-api-key' => $this->apiKey,
-            'content-type' => 'application/json',
-        ])->post($this->apiUrl, [
-            'model' => config('services.anthropic.model'),
+        $response = $this->sendMessages([
+            'model'      => config('services.anthropic.model'),
             'max_tokens' => 1024,
-            'messages' => [
-                [
-                    'role' => 'user',
-                    'content' => $prompt,
-                ]
-            ],
+            'messages'   => [['role' => 'user', 'content' => $prompt]],
         ]);
 
         if ($response->failed()) {
@@ -358,15 +377,11 @@ PROMPT;
 JSONのみを返してください。説明文は不要です。
 PROMPT;
 
-        $response = Http::withHeaders([
-            'anthropic-version' => '2023-06-01',
-            'x-api-key'         => $this->apiKey,
-            'content-type'      => 'application/json',
-        ])->timeout(60)->post($this->apiUrl, [
+        $response = $this->sendMessages([
             'model'      => config('services.anthropic.model'),
             'max_tokens' => 2048,
             'messages'   => [['role' => 'user', 'content' => $prompt]],
-        ]);
+        ], ['timeout' => 60]);
 
         if ($response->failed()) {
             throw new \Exception('Claude API error: ' . $response->body());
@@ -445,12 +460,12 @@ PROMPT;
 
         $userPrompt = '案件名:' . $subject . "\n\n本文:\n" . $body;
 
-        $response = $this->postWithRetry([
+        $response = $this->sendMessages([
             'model'      => config('services.anthropic.model'),
             'max_tokens' => 3000, // 上位5件程度に絞るプロンプト指示済 (Stage1)
             'system'     => $systemPrompt,
             'messages'   => [['role' => 'user', 'content' => $userPrompt]],
-        ], timeout: 120);
+        ], ['retry' => true, 'timeout' => 120]);
 
         if ($response->failed()) {
             throw new \Exception('Claude requirement extraction failed: ' . $response->body());
@@ -540,7 +555,7 @@ PROMPT;
             $engineerBlock .= "\n【添付スキルシート】\n" . $skillSheetText;
         }
 
-        $response = $this->postWithRetry([
+        $response = $this->sendMessages([
             'model'      => config('services.anthropic.model'),
             'max_tokens' => 4000, // 要件 8 件 × evidence 80字 で十分
             'system'     => [
@@ -552,7 +567,7 @@ PROMPT;
                     ['type' => 'text', 'text' => $engineerBlock],
                 ]],
             ],
-        ], timeout: 120);
+        ], ['retry' => true, 'timeout' => 120]);
 
         if ($response->failed()) {
             throw new \Exception('Claude requirement match judgment failed: ' . $response->body());

@@ -19,6 +19,7 @@ return new class extends Migration {
 
     public function up(): void
     {
+        if (DB::connection()->getDriverName() !== 'pgsql') return;
         DB::statement(
             'CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_delivery_campaigns_tenant_sent_at '
             . 'ON public.delivery_campaigns (tenant_id, sent_at DESC)'
@@ -31,6 +32,7 @@ return new class extends Migration {
 
     public function down(): void
     {
+        if (DB::connection()->getDriverName() !== 'pgsql') return;
         DB::statement('DROP INDEX CONCURRENTLY IF EXISTS public.idx_delivery_campaigns_tenant_sent_at');
         DB::statement('DROP INDEX CONCURRENTLY IF EXISTS public.idx_delivery_campaigns_tenant_sendtype_sentat');
     }

@@ -40,6 +40,10 @@ return new class extends Migration
             $table->index(['tenant_id', 'type', 'status']);
         });
 
+        // 以下は Pgsql 固有 (RLS / GRANT)。sqlite テストではスキップ
+        if (DB::connection()->getDriverName() !== 'pgsql') {
+            return;
+        }
         // RLS / GRANT (CLAUDE.md ルール準拠)
         DB::statement('ALTER TABLE public.rescore_jobs ENABLE ROW LEVEL SECURITY');
         // test-postgres は service_role を持たないためガード

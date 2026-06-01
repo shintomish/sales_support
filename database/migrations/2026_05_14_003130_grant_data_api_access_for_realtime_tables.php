@@ -28,6 +28,7 @@ return new class extends Migration
 
     public function up(): void
     {
+        if (DB::connection()->getDriverName() !== 'pgsql') return;
         $hasAuth = $this->roleExists('authenticated');
         $hasSvc  = $this->roleExists('service_role');
         foreach (self::REALTIME_TABLES as $table) {
@@ -38,6 +39,7 @@ return new class extends Migration
 
     public function down(): void
     {
+        if (DB::connection()->getDriverName() !== 'pgsql') return;
         $hasAuth = $this->roleExists('authenticated');
         $hasSvc  = $this->roleExists('service_role');
         foreach (self::REALTIME_TABLES as $table) {

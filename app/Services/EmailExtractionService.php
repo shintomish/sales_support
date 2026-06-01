@@ -10,8 +10,6 @@ use App\Services\EmailMatchPreviewService;
 
 class EmailExtractionService
 {
-    private string $apiKey;
-    private string $apiUrl = 'https://api.anthropic.com/v1/messages';
 
     // ── URLフィルタ設定 ─────────────────────────────────────────
 
@@ -79,10 +77,7 @@ class EmailExtractionService
     // ── fetch時のUser-Agent ─────────────────────────────────────
     private const USER_AGENT = 'Mozilla/5.0 (compatible; SalesSupportBot/1.0)';
 
-    public function __construct()
-    {
-        $this->apiKey = config('services.anthropic.api_key');
-    }
+    public function __construct(private ClaudeService $claude) {}
 
     /**
      * 分類済み・未抽出のメールを一括処理
@@ -279,11 +274,7 @@ class EmailExtractionService
             ? $this->buildEngineerPrompt($content, $subject)
             : $this->buildProjectPrompt($content, $subject);
 
-        $response = Http::withHeaders([
-            'x-api-key'         => $this->apiKey,
-            'anthropic-version' => '2023-06-01',
-            'content-type'      => 'application/json',
-        ])->timeout(30)->post($this->apiUrl, [
+        $response = $this->claude->sendMessages([
             'model'      => config('services.anthropic.model'),
             'max_tokens' => 1024,
             'messages'   => [['role' => 'user', 'content' => $prompt]],

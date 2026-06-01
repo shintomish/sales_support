@@ -20,12 +20,14 @@ return new class extends Migration {
 
     public function up(): void
     {
+        if (DB::connection()->getDriverName() !== 'pgsql') return;
         DB::statement('CREATE INDEX CONCURRENTLY IF NOT EXISTS emails_category_received_at_idx ON public.emails (category, received_at DESC)');
         DB::statement('CREATE INDEX CONCURRENTLY IF NOT EXISTS emails_is_read_idx ON public.emails (is_read)');
     }
 
     public function down(): void
     {
+        if (DB::connection()->getDriverName() !== 'pgsql') return;
         DB::statement('DROP INDEX CONCURRENTLY IF EXISTS public.emails_category_received_at_idx');
         DB::statement('DROP INDEX CONCURRENTLY IF EXISTS public.emails_is_read_idx');
     }

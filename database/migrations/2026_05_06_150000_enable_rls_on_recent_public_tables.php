@@ -27,6 +27,7 @@ return new class extends Migration
 
     public function up(): void
     {
+        if (DB::connection()->getDriverName() !== 'pgsql') return;
         foreach ($this->tables as $t) {
             DB::statement("ALTER TABLE public.{$t} ENABLE ROW LEVEL SECURITY");
         }
@@ -34,6 +35,7 @@ return new class extends Migration
 
     public function down(): void
     {
+        if (DB::connection()->getDriverName() !== 'pgsql') return;
         foreach ($this->tables as $t) {
             DB::statement("ALTER TABLE public.{$t} DISABLE ROW LEVEL SECURITY");
         }

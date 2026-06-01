@@ -17,6 +17,7 @@ return new class extends Migration
 {
     public function up(): void
     {
+        if (DB::connection()->getDriverName() !== 'pgsql') return;
         DB::table('report_recipients')
             ->where('report_type', 'daily_sales')
             ->update(['report_type' => 'daily_delivery_report']);
@@ -27,6 +28,7 @@ return new class extends Migration
 
     public function down(): void
     {
+        if (DB::connection()->getDriverName() !== 'pgsql') return;
         DB::table('report_recipients')
             ->where('report_type', 'daily_delivery_report')
             ->update(['report_type' => 'daily_sales']);

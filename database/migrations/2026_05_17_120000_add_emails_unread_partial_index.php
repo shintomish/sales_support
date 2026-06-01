@@ -18,6 +18,7 @@ return new class extends Migration {
 
     public function up(): void
     {
+        if (DB::connection()->getDriverName() !== 'pgsql') return;
         DB::statement(
             'CREATE INDEX CONCURRENTLY IF NOT EXISTS emails_tenant_unread_partial_idx '
             . 'ON public.emails (tenant_id) WHERE is_read = false'
@@ -26,6 +27,7 @@ return new class extends Migration {
 
     public function down(): void
     {
+        if (DB::connection()->getDriverName() !== 'pgsql') return;
         DB::statement('DROP INDEX CONCURRENTLY IF EXISTS public.emails_tenant_unread_partial_idx');
     }
 };

@@ -5,13 +5,9 @@ namespace App\Services;
 use App\Models\Engineer;
 use App\Models\PublicProject;
 use App\Models\MatchingScore;
-use Illuminate\Support\Facades\Http;
 
 class MatchingService
 {
-    private string $apiKey;
-    private string $apiUrl = 'https://api.anthropic.com/v1/messages';
-
     // マッチングスコアの重み
     private array $weights = [
         'skill'        => 0.50,
@@ -20,10 +16,7 @@ class MatchingService
         'availability' => 0.10,
     ];
 
-    public function __construct()
-    {
-        $this->apiKey = config('services.anthropic.api_key');
-    }
+    public function __construct(private ClaudeService $claude) {}
 
     /** 単発スコアリング (in-memory). DB キャッシュ更新は `$persist=true` のときだけ. */
     public function calculate(PublicProject $project, Engineer $engineer, bool $persist = false): array
@@ -179,15 +172,11 @@ class MatchingService
 PROMPT;
 
         try {
-            $response = Http::withHeaders([
-                'anthropic-version' => '2023-06-01',
-                'x-api-key'         => $this->apiKey,
-                'content-type'      => 'application/json',
-            ])->post($this->apiUrl, [
+            $response = $this->claude->sendMessages([
                 'model'      => config('services.anthropic.model'),
                 'max_tokens' => 300,
                 'messages'   => [['role' => 'user', 'content' => $prompt]],
-            ]);
+            ], ['timeout' => 30]);
 
             if ($response->failed()) {
                 return '';

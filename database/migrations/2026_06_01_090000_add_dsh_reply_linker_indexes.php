@@ -28,6 +28,7 @@ return new class extends Migration {
 
     public function up(): void
     {
+        if (DB::connection()->getDriverName() !== 'pgsql') return;
         // 経路 1: ses_message_id 完全一致 (in-reply-to 取得時)
         DB::statement(
             'CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_dsh_tenant_ses_message_id_unlinked '
@@ -45,6 +46,7 @@ return new class extends Migration {
 
     public function down(): void
     {
+        if (DB::connection()->getDriverName() !== 'pgsql') return;
         DB::statement('DROP INDEX CONCURRENTLY IF EXISTS public.idx_dsh_tenant_ses_message_id_unlinked');
         DB::statement('DROP INDEX CONCURRENTLY IF EXISTS public.idx_dsh_tenant_email_status_unlinked');
     }

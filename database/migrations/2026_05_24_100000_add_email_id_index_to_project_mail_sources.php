@@ -23,11 +23,13 @@ return new class extends Migration
 
     public function up(): void
     {
+        if (DB::connection()->getDriverName() !== 'pgsql') return;
         DB::statement('CREATE INDEX CONCURRENTLY IF NOT EXISTS project_mail_sources_email_id_index ON public.project_mail_sources USING btree (email_id)');
     }
 
     public function down(): void
     {
+        if (DB::connection()->getDriverName() !== 'pgsql') return;
         DB::statement('DROP INDEX CONCURRENTLY IF EXISTS public.project_mail_sources_email_id_index');
     }
 };
