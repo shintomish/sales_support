@@ -803,6 +803,11 @@ class EngineerMailScoringService
         if (preg_match('/年齢[：:\s]*(\d{2,3})/u', $text, $m)) {
             return (int) $m[1];
         }
+        // 男性 38歳 / 女性 30歳（氏名行の性別＋年齢。Ksync 等の【名　前】：KS 男性 38歳 形式）。
+        // 性別を前置することで本文コメント中の「60歳で定年退職」等の誤検出を避ける。
+        if (preg_match('/(?:男性|女性)[\s　]*(\d{2,3})\s*歳/u', $text, $m)) {
+            return (int) $m[1];
+        }
         // NA(32歳) / S.N(28歳/男性) / MN(女性/51歳) などの括弧内
         if (preg_match('/[（(][^）)]*?(\d{2,3})歳/u', $text, $m)) {
             return (int) $m[1];
@@ -839,6 +844,19 @@ class EngineerMailScoringService
 
         // ■単価 / ■希望単価 形式（■終端・改行・次行どちらも対応）
         if (preg_match('/■(?:単[　\s]*価|希望単価)[■：:\s　]*\n?\s*(.*?)(?:\n|$)/u', $text, $m)) {
+            $line = $m[1];
+            if (preg_match('/(\d{2,3})[万Mm]?[〜～~\-－](\d{2,3})/u', $line, $r)) {
+                return [(int) $r[1], (int) $r[2]];
+            }
+            if (preg_match('/[〜～~]?(\d{2,3})[万Mm]/u', $line, $r)) {
+                $val = (int) $r[1];
+                return [$val, $val];
+            }
+        }
+
+        // 【単　価】：自動車領域160万円前後 形式（Ksync 等の全角スペース入りブラケットラベル）。
+        // 値行から範囲/単一を抽出。複数行ある場合は最初の値行のみ。
+        if (preg_match('/【\s*単[　\s]*価\s*】[：:　\s]*(.*?)(?:\n|$)/u', $text, $m)) {
             $line = $m[1];
             if (preg_match('/(\d{2,3})[万Mm]?[〜～~\-－](\d{2,3})/u', $line, $r)) {
                 return [(int) $r[1], (int) $r[2]];
@@ -941,6 +959,12 @@ class EngineerMailScoringService
             if ($val !== '') return $val;
         }
 
+        // 【稼　働】：7月 形式（Ksync 等の全角スペース入りブラケットラベル）
+        if (preg_match('/【\s*稼[　\s]*働\s*】[：:　\s]*([^\n]{1,20})/u', $text, $m)) {
+            $val = trim($m[1]);
+            if ($val !== '') return $val;
+        }
+
         $patterns = [
             '/(?:稼働開始|稼働可能日?|稼働予定|参画時期|参画可能|開始時期)[：:　\s]*([^■\n]{2,20})/u',
             '/(?:即日|即稼働|即対応)/u',
@@ -959,6 +983,13 @@ class EngineerMailScoringService
     {
         // 優先: ■最寄■ / ■最寄り■ / ■最寄駅■ 形式（次行に値）
         if (preg_match('/■最寄[り駅]?■\s*\n\s*([^\n]{1,20})/u', $text, $m)) {
+            $station = $this->cleanStation(trim($m[1]));
+            if ($station !== '') return $station;
+        }
+
+        // 【最　寄】：川崎大師駅（神奈川県） 形式（Ksync 等の全角スペース入りブラケットラベル）。
+        // 値は括弧/改行の手前まで。後続の貪欲な「xxx駅」フォールバックより先に拾う。
+        if (preg_match('/【\s*最[　\s]*寄[り駅]*\s*】[：:　\s]*([^\n（(]{2,20})/u', $text, $m)) {
             $station = $this->cleanStation(trim($m[1]));
             if ($station !== '') return $station;
         }
