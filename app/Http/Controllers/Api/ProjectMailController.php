@@ -68,9 +68,9 @@ class ProjectMailController extends Controller
 
         if ($search) {
             $searchBody = $request->boolean('search_body');
-            // 本文検索ガード: pg_trgm GIN index は trigram (3-char window) ベースのため、
-            // 3 文字未満では index が物理的に使えず Seq Scan で全件走査となる。
-            if ($searchBody && mb_strlen((string) $search) < 3) {
+            // 本文検索ガード (2026-06-02 GIN index 撤去後): body_text は Seq Scan フォールバック。
+            // 5 文字未満は全件走査で暴走するためここで弾く。
+            if ($searchBody && mb_strlen((string) $search) < 5) {
                 $searchBody = false;
             }
             $query->where(function ($q) use ($search, $searchBody) {

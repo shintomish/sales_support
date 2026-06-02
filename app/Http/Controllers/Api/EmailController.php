@@ -49,10 +49,11 @@ class EmailController extends Controller
         $searchBody = $request->boolean('search_body');
         $unread     = $request->boolean('unread');
         $category   = $request->input('category');   // engineer / project / null
-        // 本文検索ガード: pg_trgm GIN index は trigram (3-char window) ベースのため、
-        // 検索語が 3 文字未満だと index が物理的に使えず Seq Scan で全件走査となる
-        // (本案件で日本語 2 文字検索が 14-98 秒の暴走を観測)。subject/from 検索は維持。
-        if ($searchBody && mb_strlen((string) $search) < 3) {
+        // 本文検索ガード (2026-06-02 GIN index 撤去後):
+        // body_text の GIN は実利用が低かった (≒2件/日・直近7日 0件) ため drop 済。
+        // 残存する body_text ILIKE は Seq Scan フォールバックとなるため、検索語が短いと
+        // 全件走査で暴走する (旧 GIN 時代でも 14-98 秒を観測)。5 文字以上に絞り暴走防止。
+        if ($searchBody && mb_strlen((string) $search) < 5) {
             $searchBody = false;
         }
         $query = Email::query()
