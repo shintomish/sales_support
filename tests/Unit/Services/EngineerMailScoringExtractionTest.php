@@ -75,6 +75,8 @@ class EngineerMailScoringExtractionTest extends TestCase
             'multi station preserved'      => ["最寄駅：南草津駅/瀬田駅\n", '南草津駅/瀬田駅'],
             'line slash station kept'      => ["最寄駅：埼京線/板橋駅\n", '埼京線/板橋駅'],
             'line space station kept'      => ["最寄駅：田園都市線　宮崎台駅\n", '田園都市線　宮崎台駅'],
+            'station starts with company'  => ["最寄り駅：京王堀之内駅（京王相模原線／新宿・渋谷）\n", '京王堀之内駅'],
+            'company-name station kept'    => ["最寄駅：西武新宿駅\n", '西武新宿駅'],
         ];
     }
 
