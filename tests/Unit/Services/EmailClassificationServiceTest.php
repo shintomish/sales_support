@@ -54,6 +54,36 @@ class EmailClassificationServiceTest extends TestCase
         $this->assertSame('engineer', $email->fresh()->category);
     }
 
+    public function test_classifies_as_engineer_when_subject_has_chuuryoku_kojin(): void
+    {
+        // 【注力個人】型の個人事業主紹介 (株式会社Ksync 等)。本文にスキルシート URL を
+        // 含むため、対策前は step6 body_url で project に誤分類されていた (2026-06-02 報告・943件)。
+        $email = $this->makeEmail(
+            '【⭕️注力個人】JS/AWS歴10年超のシニアエンジニア',
+            "現在営業中の下記人材のご紹介をさせていただきます。\nhttps://docs.google.com/spreadsheets/d/abc",
+            'ses_send@k-sync.com'
+        );
+
+        $this->service->classify($email);
+
+        $this->assertSame('engineer', $email->fresh()->category);
+    }
+
+    public function test_classifies_as_engineer_when_body_has_eigyouchuu_jinzai(): void
+    {
+        // 件名に技術者キーワードが無くても、本文「営業中の下記人材のご紹介をさせて」で engineer。
+        // (URL を含み body_url 判定より前に engineer 本文キーワードが効くことを担保)
+        $email = $this->makeEmail(
+            'お世話になっております',
+            "現在営業中の下記人材のご紹介をさせていただきます。\nhttps://example.com/sheet",
+            'sender@external.example.com'
+        );
+
+        $this->service->classify($email);
+
+        $this->assertSame('engineer', $email->fresh()->category);
+    }
+
     public function test_classifies_as_project_when_only_body_text(): void
     {
         $email = $this->makeEmail('案件のご依頼', 'お疲れ様です。下記案件についてご検討ください。');
