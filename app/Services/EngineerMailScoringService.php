@@ -230,32 +230,24 @@ class EngineerMailScoringService
                 $oldScore  = (int) $ems->score;
                 $oldStatus = $ems->status;
 
+                $body = $email->body_text ?? strip_tags($email->body_html ?? '');
                 if ($this->isExcluded($subject, $from)) {
                     $newScore  = 0;
                     $newStatus = 'excluded';
+                } elseif (trim($body) === '') {
+                    // 本文が retention(30日 CleanupEmails) で purge 済み。件名のみの再スコアは
+                    // 破壊的なので保存値を温存する（差分なし=unchanged 扱い）。
+                    $newScore  = $oldScore;
+                    $newStatus = $oldStatus;
                 } else {
-                    $body = $email->body_text ?? strip_tags($email->body_html ?? '');
                     $text = $subject . "\n" . $body;
 
                     [$newScore, $reasons] = $this->calcScore($text, $email);
                     $newScore = max(0, min(100, $newScore));
                     $extracted = $this->extract($email, false);
-                    $priceMin = $extracted['unit_price_min'] ?? null;
-                    $priceMax = $extracted['unit_price_max'] ?? null;
-                    $price    = $priceMin ?? $priceMax;
-                    if ($price === null) {
-                        $reasons[] = 'no_unit_price';
-                        $reasons[] = 'excluded';
-                    } elseif ($price < self::PRICE_MIN_FLOOR) {
-                        $reasons[] = 'unit_price_too_low';
-                        $reasons[] = 'excluded';
-                    }
-                    $newStatus = match (true) {
-                        in_array('excluded', $reasons, true) => 'excluded',
-                        $newScore >= self::SCORE_OK          => 'new',
-                        $newScore >= self::SCORE_REVIEW      => 'review',
-                        default                              => 'excluded',
-                    };
+                    // [A] 本文に単価が無ければ抽出済みスキルシート本文から救済
+                    [$priceMin, $priceMax] = $this->resolveUnitPriceRange($extracted, $ems->parsed_skill_sheet_text);
+                    $newStatus = $this->priceAdjustedStatus($newScore, $reasons, $priceMin ?? $priceMax);
                 }
 
                 $stats['total']++;
@@ -323,10 +315,13 @@ class EngineerMailScoringService
                 $subject = $email->subject ?? '';
                 $from    = $email->from_address ?? '';
 
+                $body = $email->body_text ?? strip_tags($email->body_html ?? '');
                 if ($this->isExcluded($subject, $from)) {
                     $ems->update(['score' => 0, 'score_reasons' => ['excluded'], 'status' => 'excluded']);
+                } elseif (trim($body) === '') {
+                    // 本文が retention(30日 CleanupEmails) で purge 済み。件名のみの再スコアは
+                    // 破壊的なので保存値を温存する（update せずスキップ）。
                 } else {
-                    $body = $email->body_text ?? strip_tags($email->body_html ?? '');
                     $text = $subject . "\n" . $body;
 
                     [$score, $reasons] = $this->calcScore($text, $email);
@@ -334,23 +329,12 @@ class EngineerMailScoringService
                     // rescoreAll では添付解析をスキップ（タイムアウト防止）
                     $extracted = $this->extract($email, false);
                     // save() と同じ単価チェック (docs/730 §High #2)。
-                    // これが無いと日次バッチで本来除外されるべき技術者が 'new'/'review' に再浮上する。
-                    $priceMin = $extracted['unit_price_min'] ?? null;
-                    $priceMax = $extracted['unit_price_max'] ?? null;
-                    $price    = $priceMin ?? $priceMax;
-                    if ($price === null) {
-                        $reasons[] = 'no_unit_price';
-                        $reasons[] = 'excluded';
-                    } elseif ($price < self::PRICE_MIN_FLOOR) {
-                        $reasons[] = 'unit_price_too_low';
-                        $reasons[] = 'excluded';
-                    }
-                    $status = match(true) {
-                        in_array('excluded', $reasons, true) => 'excluded',
-                        $score >= self::SCORE_OK             => 'new',
-                        $score >= self::SCORE_REVIEW         => 'review',
-                        default                              => 'excluded',
-                    };
+                    // [A] 本文に単価が無ければ抽出済みスキルシート本文から救済し、
+                    //     [B] それでも無ければ除外せず review 止まりにする (priceAdjustedStatus 内)。
+                    [$priceMin, $priceMax]       = $this->resolveUnitPriceRange($extracted, $ems->parsed_skill_sheet_text);
+                    $extracted['unit_price_min'] = $priceMin;
+                    $extracted['unit_price_max'] = $priceMax;
+                    $status = $this->priceAdjustedStatus($score, $reasons, $priceMin ?? $priceMax);
                     $ems->update(array_merge($extracted, [
                         'score'         => $score,
                         'score_reasons' => $reasons,
@@ -1031,50 +1015,55 @@ class EngineerMailScoringService
         return (bool) preg_match('/(?<![a-zA-Z0-9\/\.])' . $escaped . '(?![a-zA-Z0-9\/\.])/iu', $text);
     }
 
-    private function save(Email $email, int $score, array $reasons, string $engine, array $extracted): EngineerMailSource
+    /**
+     * 単価レンジを解決する。本文抽出が空なら抽出済みスキルシート本文から救済する ([A])。
+     * @return array{0:?int,1:?int} [unit_price_min, unit_price_max]
+     */
+    private function resolveUnitPriceRange(array $extracted, ?string $skillSheetText): array
     {
-        // 単価チェック（記載なし・下限未満は除外）
-        $priceMin = $extracted['unit_price_min'] ?? null;
-        $priceMax = $extracted['unit_price_max'] ?? null;
-        $price    = $priceMin ?? $priceMax; // いずれか有効な値を使う
+        $min = $extracted['unit_price_min'] ?? null;
+        $max = $extracted['unit_price_max'] ?? null;
+        if ($min === null && $max === null && $skillSheetText !== null && $skillSheetText !== '') {
+            [$min, $max] = $this->extractUnitPrice($skillSheetText);
+        }
+        return [$min, $max];
+    }
 
+    /**
+     * 単価チェックを反映した status を返す。$reasons は参照で更新する。
+     * - 単価記載なし (no_unit_price): 除外せず review 止まり ([B]・手動トリアージ枠)
+     * - 下限未満 (unit_price_too_low): 従来どおり除外
+     */
+    private function priceAdjustedStatus(int $score, array &$reasons, ?int $price): string
+    {
         if ($price === null) {
             $reasons[] = 'no_unit_price';
-            $reasons[]  = 'excluded';
         } elseif ($price < self::PRICE_MIN_FLOOR) {
             $reasons[] = 'unit_price_too_low';
-            $reasons[]  = 'excluded';
+            $reasons[] = 'excluded';
         }
-
-        $status = match(true) {
-            in_array('excluded', $reasons) => 'excluded',
-            $score >= self::SCORE_OK       => 'new',
-            $score >= self::SCORE_REVIEW   => 'review',
-            default                        => 'excluded',
+        return match (true) {
+            in_array('excluded', $reasons, true)      => 'excluded',
+            in_array('no_unit_price', $reasons, true) => 'review',
+            $score >= self::SCORE_OK                  => 'new',
+            $score >= self::SCORE_REVIEW              => 'review',
+            default                                   => 'excluded',
         };
+    }
 
-        $ems = EngineerMailSource::updateOrCreate(
-            ['email_id' => $email->id, 'tenant_id' => $email->tenant_id],
-            array_merge($extracted, [
-                'score'         => $score,
-                'score_reasons' => $reasons,
-                'engine'        => $engine,
-                'status'        => $status,
-                'received_at'   => $email->received_at,
-            ])
-        );
-
-        // 添付スキルシートの本文抽出 (docs/480 §3.3)。未抽出なら 1 回だけ実行。
-        // 失敗しても EMS 保存自体は成功させる。
-        if ($ems->parsed_skill_sheet_text === null) {
+    private function save(Email $email, int $score, array $reasons, string $engine, array $extracted): EngineerMailSource
+    {
+        // 添付スキルシート本文を先に抽出 (docs/480 §3.3)。未抽出なら 1 回だけ実行。
+        // 単価救済 [A] に使うため price 判定より前に解決する。失敗しても保存は継続。
+        $existing       = EngineerMailSource::where('email_id', $email->id)
+            ->where('tenant_id', $email->tenant_id)->first();
+        $skillSheetText = $existing?->parsed_skill_sheet_text;
+        if ($skillSheetText === null) {
             try {
                 $email->loadMissing('attachments');
                 if ($email->attachments->isNotEmpty()) {
-                    $extractor = app(SkillSheetTextExtractor::class);
-                    $text = $extractor->extractFromAttachments($email->attachments);
-                    if ($text) {
-                        $ems->update(['parsed_skill_sheet_text' => $text]);
-                    }
+                    $extractor      = app(SkillSheetTextExtractor::class);
+                    $skillSheetText = $extractor->extractFromAttachments($email->attachments) ?: null;
                 }
             } catch (\Throwable $e) {
                 Log::warning('[EngineerMailScoring] skill sheet extract failed', [
@@ -1084,6 +1073,26 @@ class EngineerMailScoringService
             }
         }
 
-        return $ems;
+        // 単価チェック（本文 → スキルシート本文の順で解決。記載なし=review / 下限未満=除外）
+        [$priceMin, $priceMax]       = $this->resolveUnitPriceRange($extracted, $skillSheetText);
+        $extracted['unit_price_min'] = $priceMin;
+        $extracted['unit_price_max'] = $priceMax;
+        $status = $this->priceAdjustedStatus($score, $reasons, $priceMin ?? $priceMax);
+
+        $persist = array_merge($extracted, [
+            'score'         => $score,
+            'score_reasons' => $reasons,
+            'engine'        => $engine,
+            'status'        => $status,
+            'received_at'   => $email->received_at,
+        ]);
+        if ($skillSheetText !== null) {
+            $persist['parsed_skill_sheet_text'] = $skillSheetText;
+        }
+
+        return EngineerMailSource::updateOrCreate(
+            ['email_id' => $email->id, 'tenant_id' => $email->tenant_id],
+            $persist
+        );
     }
 }

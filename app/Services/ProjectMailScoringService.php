@@ -201,6 +201,11 @@ class ProjectMailScoringService
                 if ($this->isExcluded($subject, $from)) {
                     $newScore  = 0;
                     $newStatus = 'excluded';
+                } elseif (trim($body) === '') {
+                    // 本文が retention(30日 CleanupEmails) で purge 済み。件名のみの再スコアは
+                    // 破壊的なので保存値を温存する（差分なし=unchanged 扱い）。
+                    $newScore  = $oldScore;
+                    $newStatus = $oldStatus;
                 } else {
                     [$newScore, $_] = $this->calcScore($text);
                     $domainData = $this->domainBonus($from, $pms->tenant_id);
@@ -280,6 +285,9 @@ class ProjectMailScoringService
 
                     if ($this->isExcluded($subject, $from)) {
                         $pms->update(['score' => 0, 'score_reasons' => ['excluded'], 'status' => 'excluded']);
+                    } elseif (trim($body) === '') {
+                        // 本文が retention(30日 CleanupEmails) で purge 済み。件名のみの再スコアは
+                        // 破壊的なので保存値を温存する（update せずスキップ）。
                     } else {
                         [$score, $reasons] = $this->calcScore($text);
                         $domainData = $this->domainBonus($from, $pms->tenant_id);
