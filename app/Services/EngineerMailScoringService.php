@@ -999,8 +999,9 @@ class EngineerMailScoringService
             '/最寄[り]?駅?[：:　\s]+([^■\n]{2,20})/u',
             // 居住地：xxx / 在住：xxx
             '/(?:居住地|在住)[：:　\s]*([^■\n]{2,20})/u',
-            // xxx駅 (フォールバック：■を含まないもののみ)
-            '/([^■\s]{2,8}駅)/u',
+            // xxx駅 (フォールバック：■やラベル記号【】：を含まないもののみ。
+            //         ラベル「最寄駅」自体や "【最寄駅" を捕捉しないため記号を除外)
+            '/([^■\s【】：:]{2,8}駅)/u',
         ];
         foreach ($patterns as $pattern) {
             if (preg_match($pattern, $text, $m)) {
@@ -1016,10 +1017,18 @@ class EngineerMailScoringService
      */
     private function cleanStation(string $station): string
     {
-        // 路線名プレフィックスを除去（例: JR山手線渋谷駅 → 渋谷駅）
-        $station = preg_replace('/^(?:JR|東急|京急|小田急|東武|西武|京王|メトロ|地下鉄|都営)\S*\s*/u', '', $station) ?? $station;
-        // 「寄：」「り：」「駅：」などのゴミプレフィックスを除去
-        $station = preg_replace('/^[りり寄駅][：:]\s*/u', '', $station) ?? $station;
+        $station = trim($station);
+        // 先頭に残ったラベルブラケット断片を除去
+        // 例: 【最寄】中野駅 / 【最寄駅】：三鷹駅 / 寄】：成瀬駅 / 】横浜駅 → 駅名のみ
+        if (mb_strpos($station, '】') !== false) {
+            $station = preg_replace('/^.*?】\s*[：:]?\s*/u', '', $station) ?? $station;
+        }
+        // 「最寄駅：」「寄：」「り：」「駅：」などのゴミプレフィックスを除去
+        $station = preg_replace('/^(?:最寄り?駅?|り|寄|駅)\s*[：:]\s*/u', '', $station) ?? $station;
+        // 路線名（「線」で終わるもの）を除去（例: JR山手線渋谷駅 → 渋谷駅）
+        $station = preg_replace('/^(?:JR|東急|京急|小田急|東武|西武|京王|東京メトロ|メトロ|地下鉄|都営|京成|相鉄|阪急|阪神|近鉄|南海|名鉄)\S*?線[\s　]*/u', '', $station) ?? $station;
+        // 鉄道会社名プレフィックスのみ除去（駅名は残す。例: JR新宿駅 → 新宿駅）
+        $station = preg_replace('/^(?:JR|東急|京急|小田急|東武|西武|京王|東京メトロ|メトロ|都営|京成|相鉄|阪急|阪神|近鉄|南海|名鉄)[\s　]*/u', '', $station) ?? $station;
         // 括弧以降を除去（例: 渋谷駅（JR） → 渋谷駅）
         $station = preg_replace('/[（(].*/u', '', $station) ?? $station;
         return trim($station);

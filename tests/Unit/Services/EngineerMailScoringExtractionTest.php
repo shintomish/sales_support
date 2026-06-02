@@ -51,6 +51,28 @@ class EngineerMailScoringExtractionTest extends TestCase
         $this->assertSame('個人事業主', $r['affiliation_type']);
     }
 
+    #[\PHPUnit\Framework\Attributes\DataProvider('stationProvider')]
+    public function test_extracts_clean_nearest_station(string $body, string $expected): void
+    {
+        $svc = new EngineerMailScoringService();
+        $m = new ReflectionMethod($svc, 'extractNearestStation');
+        $m->setAccessible(true);
+
+        $this->assertSame($expected, $m->invoke($svc, $body));
+    }
+
+    public static function stationProvider(): array
+    {
+        return [
+            'bracket label 駅 included'    => ["【最寄駅】舎人ライナー　江北駅\n", '舎人ライナー　江北駅'],
+            'bracket label short'          => ["【最寄】北久里浜駅\n", '北久里浜駅'],
+            'bracket label with colon'     => ["【最寄駅】：三鷹駅\n", '三鷹駅'],
+            'fullwidth space label'        => ["【最　寄】：川崎大師駅（神奈川県）\n", '川崎大師駅'],
+            'company prefix no space'      => ["最寄駅：JR新宿駅\n", '新宿駅'],
+            'line name with 線'            => ["最寄駅：JR山手線渋谷駅\n", '渋谷駅'],
+        ];
+    }
+
     public function test_age_does_not_false_match_retirement_age_in_comment(): void
     {
         // 本文コメントの「60歳で定年退職」を現在年齢(64)と取り違えないこと。
