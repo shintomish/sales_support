@@ -352,7 +352,10 @@ class EmailController extends Controller
             try {
                 $imapUid = (int) str_replace('imap-', '', $email->gmail_message_id);
                 $kagoya  = app(\App\Services\KagoyaMailService::class);
-                $binary  = $kagoya->fetchAttachmentByUid($imapUid, $filename);
+                // part_index があれば優先 (同名添付の衝突を回避)。無ければ filename フォールバック。
+                $binary  = $attachment->part_index !== null
+                    ? $kagoya->fetchAttachmentByPartIndex($imapUid, (int) $attachment->part_index)
+                    : $kagoya->fetchAttachmentByUid($imapUid, $filename);
                 if ($binary) {
                     try {
                         $base        = preg_replace('/[^\w\-\.]/u', '_', pathinfo($filename, PATHINFO_FILENAME));

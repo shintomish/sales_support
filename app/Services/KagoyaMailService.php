@@ -238,9 +238,11 @@ class KagoyaMailService
             'classified_at'    => $forceSelf ? $receivedAt : null,
         ]);
 
-        foreach ($attachments as $att) {
+        foreach ($attachments as $i => $att) {
             // EmailAttachment を先に作成して id を取得し、path に埋め込んで
             // 同一メール内で同名添付 (unknown.bin / attachment.pdf 等) が衝突するのを防ぐ。
+            // part_index は parseBody の MIME walk 順 (深さ優先) を保存し、IMAP 再取得時の
+            // 安定キーとして使う。
             $record = EmailAttachment::create([
                 'email_id'            => $email->id,
                 'filename'            => $att['filename'],
@@ -248,6 +250,7 @@ class KagoyaMailService
                 'size'                => $att['size'],
                 'gmail_attachment_id' => null,
                 'storage_path'        => null,
+                'part_index'          => $i,
             ]);
 
             if (!empty($att['binary'])) {
@@ -731,8 +734,61 @@ class KagoyaMailService
 
     /**
      * IMAP UIDを指定して添付ファイルのバイナリを取得
+     *
+     * 注意: 同一メール内に同名添付が複数ある場合は最初の一致が返るだけで誤判定する。
+     * part_index を持つレコードは fetchAttachmentByPartIndex を使うべき。
+     * このメソッドは part_index が無い既存レコードのフォールバック用に残す。
      */
     public function fetchAttachmentByUid(int $uid, string $targetFilename): ?string
+    {
+        return $this->fetchAttachment($uid, function (array $attachments) use ($targetFilename): ?string {
+            foreach ($attachments as $att) {
+                if (!empty($att['binary']) && $att['filename'] === $targetFilename) {
+                    return $att['binary'];
+                }
+            }
+            return null;
+        });
+    }
+
+    /**
+     * IMAP UID + MIME part index で添付バイナリを取得（同名添付の衝突回避用）
+     */
+    public function fetchAttachmentByPartIndex(int $uid, int $partIndex): ?string
+    {
+        return $this->fetchAttachment($uid, function (array $attachments) use ($partIndex): ?string {
+            if (isset($attachments[$partIndex]) && !empty($attachments[$partIndex]['binary'])) {
+                return $attachments[$partIndex]['binary'];
+            }
+            return null;
+        });
+    }
+
+    /**
+     * バックフィル用: IMAP UID から添付メタ配列を返す
+     * 各要素は ['filename', 'mime_type', 'size', 'binary', 'part_index'] を含む
+     */
+    public function fetchAttachmentsByUid(int $uid): ?array
+    {
+        return $this->fetchAttachment($uid, function (array $attachments): array {
+            $out = [];
+            foreach ($attachments as $i => $att) {
+                $out[] = [
+                    'filename'   => $att['filename'],
+                    'mime_type'  => $att['mime_type'],
+                    'size'       => $att['size'],
+                    'binary'     => $att['binary'] ?? null,
+                    'part_index' => $i,
+                ];
+            }
+            return $out;
+        });
+    }
+
+    /**
+     * 共通: IMAP UID 取得 → parseBody → callback に添付配列を渡して結果を返す
+     */
+    private function fetchAttachment(int $uid, callable $picker)
     {
         if (!$this->connect()) {
             return null;
@@ -756,13 +812,7 @@ class KagoyaMailService
 
             [$text, $html, $attachments] = $this->parseBody($bodyRaw, $contentType, strtolower($headers['content-transfer-encoding'] ?? '7bit'));
 
-            foreach ($attachments as $att) {
-                if (!empty($att['binary']) && $att['filename'] === $targetFilename) {
-                    return $att['binary'];
-                }
-            }
-
-            return null;
+            return $picker($attachments);
         } finally {
             $this->disconnect();
         }

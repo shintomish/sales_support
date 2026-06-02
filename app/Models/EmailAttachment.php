@@ -13,6 +13,7 @@ class EmailAttachment extends Model
         'size',
         'gmail_attachment_id',
         'storage_path',
+        'part_index',
     ];
 
     public function email()

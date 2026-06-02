@@ -456,7 +456,10 @@ class EngineerMailController extends Controller
             try {
                 $imapUid = (int) str_replace('imap-', '', $ems->email->gmail_message_id);
                 $kagoya  = app(\App\Services\KagoyaMailService::class);
-                $binary  = $kagoya->fetchAttachmentByUid($imapUid, $att->filename);
+                // part_index があれば優先 (同名添付の衝突を回避)。無ければ filename フォールバック。
+                $binary  = $att->part_index !== null
+                    ? $kagoya->fetchAttachmentByPartIndex($imapUid, (int) $att->part_index)
+                    : $kagoya->fetchAttachmentByUid($imapUid, $att->filename);
                 if ($binary) {
                     // Storageに保存
                     try {
