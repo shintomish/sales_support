@@ -70,6 +70,7 @@ class EngineerMailScoringExtractionTest extends TestCase
             'fullwidth space label'        => ["【最　寄】：川崎大師駅（神奈川県）\n", '川崎大師駅'],
             'company prefix no space'      => ["最寄駅：JR新宿駅\n", '新宿駅'],
             'line name with 線'            => ["最寄駅：JR山手線渋谷駅\n", '渋谷駅'],
+            'trailing affiliation junk'    => ["最寄り：中野駅・所属：弊社フリーランス\n", '中野駅'],
         ];
     }
 

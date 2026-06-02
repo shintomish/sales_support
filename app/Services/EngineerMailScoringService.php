@@ -1031,6 +1031,9 @@ class EngineerMailScoringService
         $station = preg_replace('/^(?:JR|東急|京急|小田急|東武|西武|京王|東京メトロ|メトロ|都営|京成|相鉄|阪急|阪神|近鉄|南海|名鉄)[\s　]*/u', '', $station) ?? $station;
         // 括弧以降を除去（例: 渋谷駅（JR） → 渋谷駅）
         $station = preg_replace('/[（(].*/u', '', $station) ?? $station;
+        // 「駅」の後ろに区切り＋ゴミが続く場合は駅名までで切る
+        // 例: 中野駅・所属：弊社フリーランス → 中野駅 / 大宮駅　徒歩5分 → 大宮駅
+        $station = preg_replace('/(駅)[・,、:：\/／\s　].*$/u', '$1', $station) ?? $station;
         return trim($station);
     }
 
