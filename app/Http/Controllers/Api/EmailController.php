@@ -79,10 +79,10 @@ class EmailController extends Controller
         $selfOwner = preg_replace('/[^A-Za-z0-9._\-]/', '', (string) $request->input('self_owner')); // 自社の特定担当者
         $mailScope = $request->input('mail_scope'); // 'self'(自社全担当者) | 'customer'(他社)
         if ($selfOwner !== '') {
-            // selfOwners と同一定義に揃える: to の先頭 aizen ローカル部 = 担当者（outsource@ も含む）。
-            // 2026-06-02: 自社タブが category='self' ベースに変わり outsource@ loop-back が見えるように
-            // なったため、ドロップダウンでも outsource を選んで絞れるよう除外を撤回 ([[project_self_loopback_visibility]]).
-            $query->whereRaw("lower(substring(to_address from '([A-Za-z0-9._%+\\-]+)@aizen-sol\\.co\\.jp')) = ?", [mb_strtolower($selfOwner)]);
+            // selfOwners と同一定義に揃える: to の先頭 aizen ローカル部 = 担当者、かつ outsource を含まない
+            // （ILIKE 部分一致だと outsource 併記や複数宛を重複カウントし、ドロップダウン件数とズレる）
+            $query->whereRaw("lower(substring(to_address from '([A-Za-z0-9._%+\\-]+)@aizen-sol\\.co\\.jp')) = ?", [mb_strtolower($selfOwner)])
+                  ->where('to_address', 'not ilike', '%outsource@aizen-sol.co.jp%');
         } elseif ($mailScope === 'self') {
             $query->where('category', 'self');
         }
@@ -129,13 +129,13 @@ class EmailController extends Controller
     }
 
     // 自社メールの担当者(to のローカル部)一覧 + 件数。
-    // 自社 = to_address が当社 xxx@aizen-sol.co.jp（outsource@ catch-all も「担当者」の1つとして含める）。
-    // 2026-06-02: 自社タブが category='self' ベースに変わり outsource@ loop-back が一覧に乗る
-    // ようになったため、ドロップダウン側でも outsource を選んで絞れるよう除外を撤回。
-    // spam（subject 前置 "[spam]"）は除外。/emails の自社モード専用（営業打ち合わせ 2026-05-25 §要望1）。
+    // 自社 = to_address が当社 xxx@aizen-sol.co.jp（catch-all の outsource@ は除外＝その他扱い）。
+    // spam（subject 前置 "[spam]"）も除外。フロント「自社」タブの担当者ドロップダウン構築用。
+    // /emails の自社モード専用（営業打ち合わせ 2026-05-25 §要望1）。
     public function selfOwners()
     {
         $owners = Email::where('to_address', 'ilike', '%@aizen-sol.co.jp%')
+            ->where('to_address', 'not ilike', '%outsource@aizen-sol.co.jp%')
             ->where(function ($q) {
                 $q->where('subject', 'not ilike', '[spam]%')->orWhereNull('subject');
             })
