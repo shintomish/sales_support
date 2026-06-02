@@ -71,6 +71,8 @@ class EngineerMailScoringExtractionTest extends TestCase
             'company prefix no space'      => ["最寄駅：JR新宿駅\n", '新宿駅'],
             'line name with 線'            => ["最寄駅：JR山手線渋谷駅\n", '渋谷駅'],
             'trailing affiliation junk'    => ["最寄り：中野駅・所属：弊社フリーランス\n", '中野駅'],
+            'line+etc slash prefix'        => ["【最寄り駅】JR湘南新宿線等/浦和駅\n", '浦和駅'],
+            'multi station preserved'      => ["最寄駅：南草津駅/瀬田駅\n", '南草津駅/瀬田駅'],
         ];
     }
 
