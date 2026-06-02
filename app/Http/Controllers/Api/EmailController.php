@@ -78,7 +78,12 @@ class EmailController extends Controller
         //   戻ってきたもの) も「全自社」で見える ([[project_self_loopback_visibility]] 2026-06-01)。
         $selfOwner = preg_replace('/[^A-Za-z0-9._\-]/', '', (string) $request->input('self_owner')); // 自社の特定担当者
         $mailScope = $request->input('mail_scope'); // 'self'(自社全担当者) | 'customer'(他社)
-        if ($selfOwner !== '') {
+        if ($selfOwner === 'outsource') {
+            // outsource は特殊扱い: 宛先 outsource@ かつ category='self' (loop-back) のみ。
+            // BP→outsource@ の 10万件超 (案件/技術者カテゴリ) はここでは出さない。
+            $query->where('to_address', 'ilike', '%outsource@aizen-sol.co.jp%')
+                  ->where('category', 'self');
+        } elseif ($selfOwner !== '') {
             // selfOwners と同一定義に揃える: to の先頭 aizen ローカル部 = 担当者、かつ outsource を含まない
             // （ILIKE 部分一致だと outsource 併記や複数宛を重複カウントし、ドロップダウン件数とズレる）
             $query->whereRaw("lower(substring(to_address from '([A-Za-z0-9._%+\\-]+)@aizen-sol\\.co\\.jp')) = ?", [mb_strtolower($selfOwner)])
@@ -145,6 +150,20 @@ class EmailController extends Controller
             ->get()
             ->filter(fn ($r) => !empty($r->owner))
             ->values();
+
+        // outsource は別枠で集計: 宛先 outsource@ かつ category='self' (loop-back) のみ。
+        // BP→outsource@ の 10万件超 (案件/技術者カテゴリ) はここに含めない。
+        $outsourceCount = Email::where('to_address', 'ilike', '%outsource@aizen-sol.co.jp%')
+            ->where('category', 'self')
+            ->where(function ($q) {
+                $q->where('subject', 'not ilike', '[spam]%')->orWhereNull('subject');
+            })
+            ->count();
+        if ($outsourceCount > 0) {
+            $owners->push((object) ['owner' => 'outsource', 'count' => $outsourceCount]);
+            $owners = $owners->sortByDesc('count')->values();
+        }
+
         return response()->json(['owners' => $owners]);
     }
 
