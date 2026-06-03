@@ -117,6 +117,109 @@ class KagoyaMailService
     }
 
     /**
+     * outsource@ 宛の取込済みメールを Kagoya サーバーから削除する（容量/同期負荷対策）。
+     *
+     * 削除対象は DB 側で厳密に定義する:
+     *   gmail_message_id='imap-{UID}'(=取込済み) かつ to_address に $address を含み received_at < $before。
+     * その UID 集合のうち「サーバーに実在する古いメール」だけを \Deleted + EXPUNGE する。
+     * DB の emails 行は削除しない（表示・スコアは取込済みデータで維持）。
+     * 削除済み UID は < lastUid なので UID 増分同期には影響しない。冪等（再実行で残りを削除）。
+     *
+     * @return array{db_target:int,server_old:int,deletable:int,flagged:int,expunged:int,exists_before:?int,exists_after:?int,execute:bool}
+     */
+    public function purgeOutsourceMail(string $before, string $address, bool $execute, int $limit): array
+    {
+        $dbUids = Email::where('tenant_id', 1)
+            ->whereRaw("gmail_message_id ~ '^imap-[0-9]+$'")
+            ->where('to_address', 'like', '%' . $address . '%')
+            ->where('received_at', '<', $before)
+            ->selectRaw('CAST(SUBSTRING(gmail_message_id FROM 6) AS BIGINT) AS uid')
+            ->orderBy('uid')
+            ->pluck('uid')
+            ->map(fn ($u) => (int) $u)
+            ->all();
+
+        $stats = [
+            'db_target' => count($dbUids), 'server_old' => 0, 'deletable' => 0,
+            'flagged' => 0, 'expunged' => 0, 'exists_before' => null, 'exists_after' => null, 'execute' => $execute,
+        ];
+        if (empty($dbUids)) {
+            return $stats;
+        }
+
+        if (!$this->connect()) {
+            throw new \RuntimeException('Kagoya IMAP 接続失敗');
+        }
+        try {
+            $sel = $this->imapCommand('SELECT INBOX'); // read-write
+            if (!$sel['ok']) {
+                throw new \RuntimeException('SELECT INBOX 失敗: ' . $sel['line']);
+            }
+            $stats['exists_before'] = $this->parseExistsCount($sel['lines']);
+
+            $cap = $this->imapCommand('CAPABILITY');
+            $uidplus = false;
+            foreach ($cap['lines'] as $l) {
+                if (stripos($l, 'UIDPLUS') !== false) $uidplus = true;
+            }
+            $stats['uidplus'] = $uidplus;
+
+            // サーバー側の「before + 3日バッファ」より古い UID（INTERNALDATE vs Date ヘッダのズレ吸収。DB が日付の正）
+            $imapDate = Carbon::parse($before)->addDays(3)->format('d-M-Y');
+            $search = $this->imapCommand("UID SEARCH BEFORE {$imapDate}");
+            $serverUids = [];
+            foreach ($search['lines'] as $l) {
+                if (preg_match('/^\*\s+SEARCH\s+(.+)$/i', $l, $m)) {
+                    foreach (preg_split('/\s+/', trim($m[1])) as $n) {
+                        if ($n !== '') $serverUids[(int) $n] = true;
+                    }
+                }
+            }
+            $stats['server_old'] = count($serverUids);
+
+            $deletable = array_values(array_filter($dbUids, fn ($u) => isset($serverUids[$u])));
+            $stats['deletable'] = count($deletable);
+
+            if (!$execute) {
+                return $stats; // DRY-RUN
+            }
+
+            $toProcess = array_slice($deletable, 0, $limit);
+            foreach (array_chunk($toProcess, 500) as $chunk) {
+                $set = implode(',', $chunk);
+                $store = $this->imapCommand("UID STORE {$set} +FLAGS.SILENT (\\Deleted)");
+                if ($store['ok']) {
+                    $stats['flagged'] += count($chunk);
+                    if ($uidplus) {
+                        $exp = $this->imapCommand("UID EXPUNGE {$set}");
+                        if ($exp['ok']) $stats['expunged'] += count($chunk);
+                    }
+                }
+            }
+            if (!$uidplus && $stats['flagged'] > 0) {
+                // UIDPLUS 非対応: \Deleted 全体を一括 EXPUNGE（このメールボックスは取込専用で他に \Deleted を付けないため安全）
+                if ($this->imapCommand('EXPUNGE')['ok']) {
+                    $stats['expunged'] = $stats['flagged'];
+                }
+            }
+
+            $sel2 = $this->imapCommand('SELECT INBOX');
+            $stats['exists_after'] = $this->parseExistsCount($sel2['lines']);
+            return $stats;
+        } finally {
+            $this->disconnect();
+        }
+    }
+
+    private function parseExistsCount(array $lines): int
+    {
+        foreach ($lines as $l) {
+            if (preg_match('/\*\s+(\d+)\s+EXISTS/', $l, $m)) return (int) $m[1];
+        }
+        return 0;
+    }
+
+    /**
      * @return bool true=正常取込／false=バウンスstub保存(再処理スキップ用)
      */
     private function storeRawMessage(string $raw, int $tenantId, string $uid, ?string $internalDate = null): bool
