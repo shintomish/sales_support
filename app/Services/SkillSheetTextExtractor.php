@@ -205,10 +205,10 @@ class SkillSheetTextExtractor
             foreach ($phpWord->getSections() as $section) {
                 foreach ($section->getElements() as $el) {
                     if (method_exists($el, 'getText')) {
-                        $out[] = (string) $el->getText();
+                        $out[] = $this->elementText($el->getText());
                     } elseif (method_exists($el, 'getElements')) {
                         foreach ($el->getElements() as $inner) {
-                            if (method_exists($inner, 'getText')) $out[] = (string) $inner->getText();
+                            if (method_exists($inner, 'getText')) $out[] = $this->elementText($inner->getText());
                         }
                     }
                 }
@@ -217,6 +217,22 @@ class SkillSheetTextExtractor
         } finally {
             @unlink($tmp);
         }
+    }
+
+    /**
+     * PhpWord 要素の getText() を文字列化する。
+     * Title 等は配列や TextRun を返すことがあり、(string) キャストすると
+     * 「Array to string conversion」警告になるため、再帰的に連結する。
+     */
+    private function elementText(mixed $value): string
+    {
+        if (is_array($value)) {
+            return implode('', array_map(fn($v) => $this->elementText($v), $value));
+        }
+        if (is_object($value) && method_exists($value, 'getText')) {
+            return $this->elementText($value->getText());
+        }
+        return is_scalar($value) ? (string) $value : '';
     }
 
     /** 連続空白・タブを 1 個に / 連続改行を 2 個までに圧縮 (token 節約)。 */
