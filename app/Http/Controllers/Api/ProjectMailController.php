@@ -255,6 +255,19 @@ class ProjectMailController extends Controller
         return response()->json($pms->fresh());
     }
 
+    // 案件メール(ProjectMailSource)を論理削除する。
+    // SoftDeletes により一覧(global scope)から除外される。実メール(emails)・添付は
+    // 保持する（emails.email_id は onDelete cascade のため email 本体には触らない）。復元可能。
+    public function destroy(int $id)
+    {
+        $pms = ProjectMailSource::findOrFail($id);
+        $this->ensureSameTenantForDestructive($pms);
+
+        $pms->delete();
+
+        return response()->json(null, 204);
+    }
+
     // ステータス変更
     public function updateStatus(Request $request, int $id)
     {

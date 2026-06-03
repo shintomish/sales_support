@@ -22,6 +22,7 @@ use App\Services\FreshMailMatchingService;
 use App\Services\GmailService;
 use App\Services\ProposalStatusService;
 use App\Services\SupabaseStorageService;
+use App\Services\SkillSheetTextExtractor;
 use App\Models\ProjectMailSource;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -125,6 +126,10 @@ class EngineerMailController extends Controller
             'unit_price_max'   => 'nullable|integer|min:0|required_without:unit_price_min',
             'from_address'     => 'nullable|email|max:255',
             'body_text'        => 'nullable|string',
+            // スキルシート添付（PDF/Excel/Word・最大5件・各10MB）。
+            // extensions ルールで判定（mimes は xlsx/docx を zip 誤判定で弾くことがあるため）。
+            'attachments'      => 'nullable|array|max:5',
+            'attachments.*'    => 'file|extensions:pdf,xlsx,xls,xlsm,docx|max:10240',
         ]);
 
         $syntheticBody = $this->buildEngineerBody($v);
@@ -166,6 +171,52 @@ class EngineerMailController extends Controller
 
             return $created->fresh('email');
         });
+
+        // 添付（スキルシート）処理は外部呼び出し(Storage/パース)を含むため transaction 外で行う。
+        if ($request->hasFile('attachments')) {
+            $email   = $ems->email;
+            $storage = app(SupabaseStorageService::class);
+            $idx     = 0;
+            foreach ($request->file('attachments') as $file) {
+                try {
+                    $orig = $file->getClientOriginalName();
+                    $ext  = strtolower($file->getClientOriginalExtension());
+                    $mime = $file->getMimeType() ?: 'application/octet-stream';
+                    $base = preg_replace('/[^\w\-\.]/u', '_', pathinfo($orig, PATHINFO_FILENAME));
+                    $base = preg_replace('/[^\x00-\x7F]/u', '', $base) ?: substr(md5($orig), 0, 8);
+                    $path = "attachments/{$tenantId}/{$email->id}/{$idx}_{$base}.{$ext}";
+                    $url  = $storage->uploadBinary(file_get_contents($file->getRealPath()), $path, $mime);
+
+                    EmailAttachment::create([
+                        'email_id'            => $email->id,
+                        'filename'            => $orig,
+                        'mime_type'           => $mime,
+                        'size'                => $file->getSize(),
+                        'gmail_attachment_id' => 'manual-' . $email->id . '-' . $idx,
+                        'storage_path'        => $url,
+                        'part_index'          => $idx,
+                    ]);
+                    $idx++;
+                } catch (\Throwable $e) {
+                    Log::warning('[storeManual] 添付保存失敗: ' . $e->getMessage());
+                }
+            }
+
+            if ($idx > 0) {
+                $ems->update(['has_attachment' => true]);
+                // スキルシート本文を抽出（storage_path から取得・対応形式/1MB以内のみ）。失敗は無視。
+                try {
+                    $text = app(SkillSheetTextExtractor::class)
+                        ->extractFromAttachments($email->fresh()->attachments);
+                    if ($text) {
+                        $ems->update(['parsed_skill_sheet_text' => $text]);
+                    }
+                } catch (\Throwable $e) {
+                    Log::warning('[storeManual] スキルシート抽出失敗: ' . $e->getMessage());
+                }
+                $ems = $ems->fresh(['email.attachments']);
+            }
+        }
 
         return response()->json($ems, 201);
     }
@@ -212,6 +263,19 @@ class EngineerMailController extends Controller
         $ems->update($v);
 
         return response()->json($ems->fresh());
+    }
+
+    // 技術者メール(EngineerMailSource)を論理削除する。
+    // SoftDeletes により一覧(global scope)から除外される。実メール(emails)・添付は
+    // 保持する（emails.email_id は onDelete cascade のため email 本体には触らない）。復元可能。
+    public function destroy(int $id): JsonResponse
+    {
+        $ems = EngineerMailSource::findOrFail($id);
+        $this->ensureSameTenantForDestructive($ems);
+
+        $ems->delete();
+
+        return response()->json(null, 204);
     }
 
     // ステータス変更

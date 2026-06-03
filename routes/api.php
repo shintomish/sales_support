@@ -223,6 +223,7 @@ Route::prefix('v1')->middleware(['supabase.auth'])->group(function () {
         Route::post('/reextract-all',       [ProjectMailController::class, 'reextractAll']);
         Route::get('/{id}',          [ProjectMailController::class, 'show']);
         Route::patch('/{id}',        [ProjectMailController::class, 'update']);
+        Route::delete('/{id}',       [ProjectMailController::class, 'destroy']);
         Route::patch('/{id}/status', [ProjectMailController::class, 'updateStatus']);
         Route::post('/{id}/rescore',              [ProjectMailController::class, 'rescore']);
         Route::get('/{id}/thread',                [ProjectMailController::class, 'thread']);
@@ -251,6 +252,7 @@ Route::prefix('v1')->middleware(['supabase.auth'])->group(function () {
         Route::get('/{id}',                           [EngineerMailController::class, 'show']);
         Route::get('/{id}/attachment/{attachmentId}', [EngineerMailController::class, 'downloadAttachment']);
         Route::put('/{id}',                           [EngineerMailController::class, 'update']);
+        Route::delete('/{id}',                        [EngineerMailController::class, 'destroy']);
         Route::put('/{id}/status',                    [EngineerMailController::class, 'updateStatus']);
         Route::post('/{id}/register-engineer',        [EngineerMailController::class, 'registerEngineer']);
         Route::get('/{id}/thread',                    [EngineerMailController::class, 'thread']);
