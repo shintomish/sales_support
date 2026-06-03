@@ -89,19 +89,8 @@ docker exec sales_support_app php artisan config:clear
 - 本番固有設定（事前ビルド image / healthcheck / test-postgres 無効化）は本番 VPS の
   `docker-compose.override.yml` に配置。テンプレートは `docker-compose.override.yml.example`。
 
-### 本番初回セットアップ（または compose 構成変更時）
-```bash
-ssh root@v133-18-42-139.vir.kagoya.net
-cd /var/www/sales_support
-# 既存 docker-compose.yml が skip-worktree されている場合は解除
-git update-index --no-skip-worktree docker-compose.yml
-git pull origin main
-# 本番固有設定を override.yml として配置（git 管理外）
-cp docker-compose.override.yml.example docker-compose.override.yml
-# マージ結果を確認してから反映
-docker compose config | head
-docker compose up -d
-```
+### 本番初回セットアップ / compose 構成変更時
+→ 手順は `docs/ops-setup.md` 参照（skip-worktree 解除・override.yml 配置など）。
 
 ## 事業概要（確認省略のための固定知識）
 - **事業内容**: SES企業。IT技術者と発注企業（IT会社）をマッチング・提案
@@ -127,22 +116,8 @@ docker compose up -d
 - `storage/api-docs/` はgitignore済み（自動生成ファイル）
 
 ## 開発環境（職場・自宅 併用）
-- 職場・自宅ともに WSL2 + Docker 環境
-- コード共有: GitHub（git push/pull）
-- `.env` 共有: 手動同期（gitには含めない）
-- `memory.db` 共有: Dropbox経由でリアルタイム同期（職場・自宅ともにシンボリックリンク）
-  - 実体: `/mnt/c/Users/<user>/Dropbox/Public/Book/03_Aizen/990_Sales_Support/memory_engine/memory.db`
-  - 職場・自宅共通: `ln -s "/mnt/c/Users/<user>/Dropbox/.../memory_engine/memory.db" ~/memory_engine/memory.db`
-  - `<user>` は WSL2 Windows ユーザー名（自宅: `NAKA-MINI` / 職場は別）
-- Claude Code auto-memory 共有: 同じく Dropbox 経由で symlink 化
-  - 実体: `/mnt/c/Users/<user>/Dropbox/Public/Book/03_Aizen/990_Sales_Support/claude_memory/`
-  - 職場・自宅共通: `ln -s "/mnt/c/Users/<user>/Dropbox/.../claude_memory" ~/.claude/projects/-home-shintomi-sales-support/memory`
-  - 既存 memory ディレクトリがある場合は `mv ... memory.bak.YYYYMMDD` で退避してから symlink を貼る
-- Claude Code 設定 (`settings.json` / `statusline-command.sh`) 共有: Dropbox 経由 symlink (2026-05-23〜)
-  - 実体: `/mnt/c/Users/<user>/Dropbox/Public/Book/03_Aizen/990_Sales_Support/.claude/{settings.json,statusline-command.sh}`
-  - 職場・自宅共通: `ln -s "/mnt/c/Users/<user>/Dropbox/.../.claude/settings.json" ~/.claude/settings.json` （statusline-command.sh も同様）
-  - 既存ファイルは `mv ... .bak.YYYYMMDD` で退避してから symlink を貼る
-  - **注意**: 編集は即両環境に反映。環境別に分けたい場合は symlink を外す。Dropbox 同期遅延中の両環境同時編集はコンフリクトファイルを生むので片側編集に統一
+- 職場・自宅ともに WSL2 + Docker。コード=GitHub / `.env`=手動同期 / `memory.db`・auto-memory・`.claude` 設定=Dropbox 経由 symlink で共有。
+- symlink の実体パス・貼り直し手順・両環境同時編集の注意は `docs/ops-setup.md` 参照。
 
 ## 長期記憶の参照方法
 過去のセッションで議論した設計判断・トラブル対応は以下で検索できる:
