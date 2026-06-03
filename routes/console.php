@@ -182,6 +182,23 @@ Schedule::command('emails:cleanup')
         Log::error('[Schedule] メールクリーンアップ 失敗');
     });
 
+// ── Kagoya 古い outsource@ メールのサーバー削除（毎日 3:30 JST・本番限定）
+// outsource@ 宛メールは DB に取込済みなので、14日より古い分を Kagoya サーバーから削除して
+// メールボックス肥大/同期負荷を抑える。削除は取込済み(imap-UID)のみ・冪等・UID増分同期に影響なし。
+// 本番限定（Kagoya 認証 + ローカルからの本番メール誤操作回避。refresh-domain-bonus と同方針）。
+Schedule::command('kagoya:purge-outsource --older-than-days=14 --execute --force --limit=10000')
+    ->dailyAt('03:30')
+    ->timezone('Asia/Tokyo')
+    ->environments(['production'])
+    ->name('purge-outsource-kagoya')
+    ->withoutOverlapping()
+    ->onSuccess(function () {
+        Log::info('[Schedule] Kagoya outsource@ 削除 完了');
+    })
+    ->onFailure(function () {
+        Log::error('[Schedule] purge-outsource-kagoya 失敗');
+    });
+
 // ── 分類済みメールをGmailゴミ箱に移動（毎日 2:00 JST）
 // 2026-05-14: Gmail API 取込停止に伴い、ゴミ箱移動も停止
 // 復活させる場合はコメントを外すだけで OK

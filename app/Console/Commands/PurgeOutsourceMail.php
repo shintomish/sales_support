@@ -19,7 +19,8 @@ use Illuminate\Console\Command;
 class PurgeOutsourceMail extends Command
 {
     protected $signature = 'kagoya:purge-outsource
-        {--before= : この日付より前(received_at <)を対象 (例: 2026-05-20) 必須}
+        {--before= : この日付より前(received_at <)を対象 (例: 2026-05-20)}
+        {--older-than-days= : N日より古いを対象(--before の代わりに相対指定。スケジュール用)}
         {--address=outsource@aizen-sol.co.jp : to_address に含む宛先}
         {--limit=200000 : 1回の実行で削除する最大件数}
         {--execute : 実際に削除する(未指定は DRY-RUN)}
@@ -30,8 +31,12 @@ class PurgeOutsourceMail extends Command
     public function handle(KagoyaMailService $svc): int
     {
         $before = $this->option('before');
+        $olderThanDays = $this->option('older-than-days');
+        if (!$before && $olderThanDays !== null && $olderThanDays !== '') {
+            $before = now()->subDays((int) $olderThanDays)->format('Y-m-d');
+        }
         if (!$before) {
-            $this->error('--before は必須です (例: --before=2026-05-20)');
+            $this->error('--before か --older-than-days のいずれかが必須です (例: --before=2026-05-20 / --older-than-days=14)');
             return self::FAILURE;
         }
         $address = (string) $this->option('address');
