@@ -20,6 +20,23 @@
 - 案件紹介:   {{ $sections['inbox']['project'] }} 件
 - その他:     {{ $sections['inbox']['other'] }} 件
 @endif
+@if(isset($sections['contact_forms']))
+
+------------------------------------------------------------
+[📋 お問い合わせフォーム投稿（その他分類）{{ $sections['contact_forms']['count'] }} 件]
+@foreach($sections['contact_forms']['list'] as $c)
+- {{ $c['company'] ?: '（御社名なし）' }}{{ $c['department'] ? ' / '.$c['department'] : '' }}
+@if($c['contact_person'])  担当: {{ $c['contact_person'] }}
+@endif
+@if($c['email'] || $c['phone'])  {{ $c['email'] ? '✉ '.$c['email'] : '' }}{{ $c['phone'] ? ' ☎ '.$c['phone'] : '' }}
+@endif
+@if($c['address'])  📍 {{ $c['address'] }}
+@endif
+@if($c['inquiry_subject'])  件名: {{ $c['inquiry_subject'] }}
+@endif
+  受信: {{ $c['received_at'] }}
+@endforeach
+@endif
 @if(isset($sections['effective_project_mails']))
 
 ------------------------------------------------------------

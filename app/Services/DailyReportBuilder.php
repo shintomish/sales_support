@@ -41,6 +41,7 @@ class DailyReportBuilder
     public function __construct(
         private readonly ClaudeService $claude,
         private readonly FreshMailMatchingService $freshMailMatching,
+        private readonly ContactFormSubmissionParser $contactFormParser,
     ) {}
 
     /**
@@ -60,6 +61,7 @@ class DailyReportBuilder
         $sections = [];
 
         $sections['inbox']                    = $this->collectInbox($tenantId, $yesterday, $today);
+        $sections['contact_forms']            = $this->collectContactForms($tenantId, $yesterday, $today);
         $sections['effective_project_mails']  = $this->collectEffectiveProjectMails($tenantId, $yesterday, $today);
         $sections['effective_engineer_mails'] = $this->collectEffectiveEngineerMails($tenantId, $yesterday, $today);
         $sections['delivery']                 = $this->collectDeliveryStats($tenantId, $yesterday, $today);
@@ -108,6 +110,38 @@ class DailyReportBuilder
             'engineer' => (int) ($rows['engineer'] ?? 0),
             'project'  => (int) ($rows['project']  ?? 0),
             'other'    => (int) ($rows['other']    ?? 0),
+        ];
+    }
+
+    /**
+     * [1-2] お問い合わせフォーム投稿（SmoothContact 経由・category='other'）
+     *  - 対象日に受信した other メールのうち本文に「[ 御社名 ]」を持つフォーム投稿のみ
+     *    （プレーンな営業メールはラベルが無いので自然に除外される）
+     *  - ヘッダ項目を ContactFormSubmissionParser で構造化（お問い合わせ内容・URL は載せない）
+     *  - 受信情報＝FYI のため action_total / AI サマリには加算しない
+     */
+    private function collectContactForms(int $tenantId, Carbon $from, Carbon $to): array
+    {
+        $emails = Email::withoutGlobalScope(TenantScope::class)
+            ->where('tenant_id', $tenantId)
+            ->whereBetween('received_at', [$from, $to])
+            ->where('category', 'other')
+            ->where('body_text', 'like', '%[ 御社名 ]%')
+            ->orderByDesc('received_at')
+            ->take(50)
+            ->get(['id', 'body_text', 'received_at']);
+
+        $items = $emails->map(function (Email $e) {
+            $parsed = $this->contactFormParser->parse($e->body_text ?? '');
+            return array_merge($parsed, [
+                'email_id'    => $e->id,
+                'received_at' => optional($e->received_at)->format('n/j H:i'),
+            ]);
+        })->values()->toArray();
+
+        return [
+            'count' => count($items),
+            'list'  => $items,
         ];
     }
 

@@ -67,6 +67,30 @@ a { color: #2563eb; }
     </ul>
 @endif
 
+{{-- お問い合わせフォーム投稿（その他分類・SmoothContact） --}}
+@if(isset($sections['contact_forms']))
+    @php $s = $sections['contact_forms']; @endphp
+    <h2 class="h2-gray">📋 お問い合わせフォーム投稿（その他分類）{{ $s['count'] }} 件</h2>
+    @foreach($s['list'] as $c)
+        <div class="parent-card">
+            <div class="parent-head">
+                {{ $c['company'] ?: '（御社名なし）' }}
+                @if($c['department'])<span class="kv">　/　{{ $c['department'] }}</span>@endif
+            </div>
+            @if($c['contact_person'])<div class="kv">担当: {{ $c['contact_person'] }}</div>@endif
+            <div class="kv">
+                @if($c['email'])✉ {{ $c['email'] }}@endif
+                @if($c['phone'])　☎ {{ $c['phone'] }}@endif
+            </div>
+            @if($c['address'])<div class="kv">📍 {{ $c['address'] }}</div>@endif
+            @if($c['inquiry_subject'])<div style="margin-top:4px;">件名: <strong>{{ $c['inquiry_subject'] }}</strong></div>@endif
+            <div class="kv">受信: {{ $c['received_at'] }}
+                <a href="{{ $appUrl }}/emails">受信箱で見る →</a>
+            </div>
+        </div>
+    @endforeach
+@endif
+
 {{-- 有効と思われるメールリスト（案件） --}}
 @if(isset($sections['effective_project_mails']))
     @php $s = $sections['effective_project_mails']; @endphp
