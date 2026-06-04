@@ -367,9 +367,20 @@ class EngineerMailScoringService
             return $this->save($email, 0, ['excluded'], 'rule', []);
         }
 
+        // ①-2 本文 purge ガード: 本文(text/html)とも空なら件名のみの採点は誤検出を生むため
+        //     スコアせず excluded アンカーを作る。retention(30日 CleanupEmails)で本文 purge 済みの
+        //     メールが catch-up 等で初回スコアされると、本来高スコアの技術者が件名だけで誤った
+        //     score/status になり提案対象に混入する事故を防ぐ（rescoreAll は既存値を温存=skip するが、
+        //     初回は温存対象が無いため anchor 化して whereNotExists の再選択も止める）。
+        //     ガード式は下の calcScore が受け取る本文式と一致させる（件名のみになる時だけ発火）。
+        $body = $email->body_text ?? strip_tags($email->body_html ?? '');
+        if (trim($body) === '') {
+            return $this->save($email, 0, ['excluded', 'body_purged'], 'rule', []);
+        }
+
         // ② スコアリング
         [$score, $reasons] = $this->calcScore(
-            $subject . "\n" . ($email->body_text ?? strip_tags($email->body_html ?? '')),
+            $subject . "\n" . $body,
             $email
         );
 

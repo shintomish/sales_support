@@ -507,6 +507,14 @@ class ProjectMailScoringService
             return $this->save($email, 0, ['excluded'], 'rule', []);
         }
 
+        // ①-2 本文 purge ガード: 本文(text/html)とも空なら件名のみの採点は誤検出を生むため
+        //     スコアせず excluded アンカーを作る。retention(30日 CleanupEmails)で本文 purge 済みの
+        //     メールが catch-up 等で初回スコアされ、件名だけで誤った score/status になるのを防ぐ
+        //     （engineer 側の score() と対称。rescoreAll は既存値を温存=skip するが初回は anchor 化）。
+        if (trim($body) === '') {
+            return $this->save($email, 0, ['excluded', 'body_purged'], 'rule', []);
+        }
+
         // ② スコアリング（max 85点）
         [$score, $reasons] = $this->calcScore($text);
 
