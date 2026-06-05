@@ -38,6 +38,7 @@ class ProjectMailSource extends Model
         'status',
         'lost_reason',
         'received_at',
+        'arrived_at',
         'ai_requirements',
         'ai_requirements_generated_at',
     ];
@@ -52,6 +53,7 @@ class ProjectMailSource extends Model
         'unit_price_min'               => 'decimal:2',
         'unit_price_max'               => 'decimal:2',
         'received_at'                  => 'datetime',
+        'arrived_at'                   => 'datetime',
         'ai_requirements'              => 'array',
         'ai_requirements_generated_at' => 'datetime',
     ];

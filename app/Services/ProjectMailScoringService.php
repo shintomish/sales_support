@@ -1182,6 +1182,7 @@ class ProjectMailScoringService
                 'engine'       => $engine,
                 'status'       => $status,
                 'received_at'  => $email->received_at,
+                'arrived_at'   => $email->arrived_at,
             ], $this->sanitizeExtracted($extracted))
         );
     }

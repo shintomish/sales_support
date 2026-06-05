@@ -1147,6 +1147,7 @@ class EngineerMailScoringService
             'engine'        => $engine,
             'status'        => $status,
             'received_at'   => $email->received_at,
+            'arrived_at'    => $email->arrived_at,
         ]);
         if ($skillSheetText !== null) {
             $persist['parsed_skill_sheet_text'] = $skillSheetText;

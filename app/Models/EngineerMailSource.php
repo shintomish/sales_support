@@ -32,6 +32,7 @@ class EngineerMailSource extends Model
         'has_attachment',
         'status',
         'received_at',
+        'arrived_at',
     ];
 
     protected $casts = [
@@ -39,6 +40,7 @@ class EngineerMailSource extends Model
         'skills'         => 'array',
         'has_attachment' => 'boolean',
         'received_at'    => 'datetime',
+        'arrived_at'     => 'datetime',
     ];
 
     public function email(): BelongsTo

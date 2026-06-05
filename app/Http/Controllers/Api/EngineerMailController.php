@@ -55,10 +55,11 @@ class EngineerMailController extends Controller
         // 既定 'imap' (通常メール取込) で手動登録を除外。/engineer-mails/manual は 'manual' を渡す。
         $source   = $request->input('source', 'imap');
 
-        $query = EngineerMailSource::with(['email:id,subject,from_name,from_address,received_at'])
+        // 並び・表示は arrived_at (Kagoya 着信時刻) 基準。received_at (送信時刻) は送信表示用に併せて取得。
+        $query = EngineerMailSource::with(['email:id,subject,from_name,from_address,received_at,arrived_at'])
             ->whereBetween('score', [$scoreMin, $scoreMax])
             ->where('source', $source)
-            ->orderByDesc('received_at');
+            ->orderByDesc('arrived_at');
 
         if ($status) {
             $query->where('status', $status);
@@ -147,6 +148,7 @@ class EngineerMailController extends Controller
                 'to_address'       => $user->email,
                 'body_text'        => $syntheticBody,
                 'received_at'      => now(),
+                'arrived_at'       => now(),
                 'is_read'          => true,
                 'category'         => 'manual_engineer',
             ]);
@@ -387,7 +389,7 @@ class EngineerMailController extends Controller
                 ? ProjectMailSource::with('email')
                     ->whereIn('customer_name', $customerNames)
                     ->orderBy('customer_name')
-                    ->orderByDesc('received_at')
+                    ->orderByDesc('arrived_at')
                     ->get()
                     ->groupBy('customer_name')
                     ->map(fn ($coll) => $coll->first())
@@ -943,6 +945,7 @@ PROMPT;
                     'start_date'         => $pms->start_date,
                     'contract_type'      => $pms->contract_type,
                     'received_at'        => $pms->received_at?->toIso8601String(),
+                    'arrived_at'         => $pms->arrived_at?->toIso8601String(),
                     'email_from_address' => $pms->email?->from_address,
                     'email_subject'      => $pms->email?->subject,
                     'email_body'         => self::pickMailBody($pms->email),
