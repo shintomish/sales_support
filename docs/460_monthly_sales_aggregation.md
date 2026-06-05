@@ -1,14 +1,15 @@
 # 月別売上集計 機能設計メモ
 
-**ステータス**: バックエンド実装済み (2026-06-05) / フロント UI 未着手
+**ステータス**: バックエンド／フロント実装・本番デプロイ済み (2026-06-05)
 **起票日**: 2026-05-16
 **起票背景**: ダッシュボード「月別売上」が `deals.updated_at` 基準で不正確。半期決算会議の月別売上集計は SES台帳ベースで行うべき。
 
 ---
 
-## 実装サマリ (2026-06-05 / 論点1〜5 確定)
+## 実装サマリ (2026-06-05 / 論点1〜5 確定 + 年度ビュー)
 
 確定設計: **契約期間ベース / 月単位粗計上 / 売上＋利益＋仕入 / Deal と並行表示 / 明細テーブル**。
+表示は **会計年度（決算月で区切り）・期** 単位（テナント決算設定から算出）。
 
 | 論点 | 決定 |
 |---|---|
@@ -18,17 +19,36 @@
 | 4 テーブル | (B) 明細テーブル `monthly_sales_details` を真実のソース。サマリは SUM |
 | 5 切替 | (b) 並行表示 (Deal ベース=見込み / SES ベース=確定) |
 
-実装ファイル:
-- `database/migrations/2026_06_05_123438_create_monthly_sales_details_table.php`
-- `app/Models/MonthlySalesDetail.php`
-- `app/Services/MonthlySalesAggregationService.php` — `aggregateMonth(year, month, ?tenantId)` / `aggregatePreviousMonth()`
-- `app/Http/Controllers/Api/MonthlySalesController.php` — index / details / recompute
-- ルート: `GET /api/v1/monthly-sales`, `GET /api/v1/monthly-sales/{year}/{month}/details`, `POST /api/v1/monthly-sales/recompute`
-- ダッシュボード `/api/v1/dashboard` に `monthly_sales` (SES確定売上6ヶ月) を追加
-- 月初バッチ: `routes/console.php` `aggregate-monthly-sales` (毎月1日 01:00 JST・全テナント前月再集計)
-- テスト: `tests/Pgsql/Feature/MonthlySalesAggregationTest.php` (重なり判定/月粗計上/cross-tenant/冪等性)
+### 会計年度・期 (テナント決算設定)
+- `tenants.fiscal_year_end_month` (決算月) と `tenants.first_period_fiscal_year` (第1期の年度) を保持。
+- **年度** = 決算月で終わる会計年度を、その終了月の暦年で表記 (9月決算 → 2025/10〜2026/9 = **2026年度**)。
+- **期** = 年度 − 第1期年度 + 1 (第1期=2011年度 なら 2026年度=16期)。
+- 自社テナント(aizen)は 9月決算・第1期2011年度 で初期化済み。他テナントは未設定(=暦年フォールバック)。
+- 設定は **請求書発行元設定 (/settings/invoice-issuer)** の「決算情報」で編集 (tenant_admin/super_admin)。
+- Tenant ヘルパー: `currentFiscalYear()` / `fiscalYearMonths()` / `periodFor()`。
 
-**残**: フロント UI (月別売上ページ・手動再集計ボタン・ダッシュボード並行グラフ)。論点2(契約期間ベース)が既存 Excel 集計と一致するかは業務側ヒアリング推奨 (不一致なら work_month カラム新設 = 論点2(c) へ切替余地)。
+### バックエンド実装ファイル
+- migration: `2026_06_05_123438_create_monthly_sales_details_table.php` (RLS + service_role GRANT)
+- migration: `2026_06_05_131904_add_fiscal_settings_to_tenants.php`
+- `app/Models/MonthlySalesDetail.php` / `app/Models/Tenant.php`(決算ヘルパー)
+- `app/Services/MonthlySalesAggregationService.php` — `aggregateMonth(year,month,?tenantId)` / `aggregatePreviousMonth()` (全テナント横断・冪等 delete→insert)
+- `app/Http/Controllers/Api/MonthlySalesController.php` — index(年度ビュー: fiscal_year・12ヶ月+合計+期) / details / recompute(年度まとめて or 単月)
+- `app/Http/Controllers/Api/InvoiceIssuerController.php` — 決算情報の show/update
+- ルート: `GET /api/v1/monthly-sales?fiscal_year=YYYY`, `GET /api/v1/monthly-sales/{year}/{month}/details`, `POST /api/v1/monthly-sales/recompute`
+- ダッシュボード `/api/v1/dashboard` に `monthly_sales` (SES確定売上6ヶ月・見込みと並行) を追加
+- 月初バッチ: `routes/console.php` `aggregate-monthly-sales` (毎月1日 01:00 JST・全テナント前月再集計)
+- テスト: `tests/Pgsql/Feature/MonthlySalesAggregationTest.php` (重なり判定/月粗計上/cross-tenant/年度・期算出/冪等性 = 5 passed)
+
+### フロント実装 (sales_support_next)
+- `src/app/monthly-sales/page.tsx` — 年度ビュー (←→年度切替・12ヶ月+合計行・明細ドリルダウン・「この年度を再集計」)。SES台帳と同じフルハイト+sticky スクロール
+- `src/app/dashboard/page.tsx` — 「確定(SES台帳)」棒グラフを「見込み(商談)」と並行表示
+- `src/app/settings/invoice-issuer/page.tsx` — 「決算情報」セクション (決算月・第1期の年度・年度/期プレビュー)
+- `src/components/Sidebar.tsx` — 販売管理に「月別売上」追加 (sesOnly)
+- `src/lib/supabase.ts` — クライアントを遅延初期化 (Vercel Preview の env 未設定でも `next build` が落ちないよう堅牢化)
+
+### 運用上の注意
+- 本番 `monthly_sales_details` は初期空。月初バッチか「この年度を再集計」で投入される。
+- **論点2(契約期間ベース)が既存 Excel 集計と一致するかは業務側ヒアリング推奨**。本番でバックフィル(過去年度の一括再集計)する前に確認。不一致なら `work_month` カラム新設 = 論点2(c) へ切替余地。
 
 ---
 
