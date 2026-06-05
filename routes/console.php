@@ -23,9 +23,11 @@ Artisan::command('inspire', function () {
 //         \Illuminate\Support\Facades\Log::error('[Schedule] SyncEmailsJob 失敗');
 //     });
 
-// ── メール自動同期（15分毎）— KAGOYA POP3 直接受信
+// ── メール自動同期（10分毎・:00,:10,…）— KAGOYA POP3 直接受信
 // KAGOYA_POP3_HOST 未設定の環境では silent skip。
 // EXAMINE INBOX (read-only) で本番に影響しないため、env がある環境は全て取込可能。
+// 2026-06-05: 取込→分類+採点 のパイプライン整列のため 10分毎(:X0)に固定。
+// その 5分後(:X5)に classify/score-* を回し、取込済みメールを確実に拾わせる。
 Schedule::call(function () {
     if (!config('services.kagoya_pop3.host')) {
         return;
@@ -35,35 +37,43 @@ Schedule::call(function () {
         Log::info("[Schedule] KagoyaPOP3 同期完了: {$count}件");
     }
 })
-    ->everyFiveMinutes()
+    ->everyTenMinutes()
     ->name('sync-kagoya-pop3')
     ->withoutOverlapping()
     ->onFailure(function () {
         Log::error('[Schedule] KagoyaPOP3 同期失敗');
     });
 
-// ── メール自動分類（15分毎）
+// ── メール自動分類（10分毎・:05,:15,…＝取込の5分後）
+// 2026-06-05: 一覧反映ラグ短縮のため 15分→10分に短縮。取込(:X0)の 5分後(:X5)に回し、
+// 取込直後のメールを確実に分類対象へ含める。
+// 分類はキーワード/正規表現のみ（Claude API 不使用・1 SQL 一括 UPDATE）なので頻度増の負荷は軽微。
+// 採点(score-*)の前提条件なので採点と同一 schedule:run(:X5) で先に実行される（定義順）。
 Schedule::call(function () {
     $count = app(\App\Services\EmailClassificationService::class)->classifyPending();
     if ($count > 0) {
         \Illuminate\Support\Facades\Log::info("[Schedule] メール分類完了: {$count}件");
     }
 })
-    ->everyFifteenMinutes()
+    ->cron('5-59/10 * * * *')
     ->name('classify-emails')
     ->withoutOverlapping()
     ->onFailure(function () {
         \Illuminate\Support\Facades\Log::error('[Schedule] classify-emails 失敗');
     });
 
-// ── 技術者メール新着取込（15分毎・100件バッチ）
+// ── 技術者メール新着取込（10分毎・:05,:15,…＝取込の5分後・100件バッチ）
+// 2026-06-05: 一覧鮮度のボトルネックは採点(EMS生成)だったため 15分→10分に短縮。取込(:X0)の
+// 5分後(:X5)に回し、分類(同一run・定義順で先)→採点 が取込直後のメールを拾う。
+// scorePending(100) は withAttachment=false（既定）で Claude API 不使用。増えるのは DB 採点負荷のみ。
+// anti-join は index 済で per-run は新着分のみ（連続実行で件数は小さく保たれる）。
 Schedule::call(function () {
     $count = app(\App\Services\EngineerMailScoringService::class)->scorePending(100);
     if ($count > 0) {
         Log::info("[Schedule] 技術者メール新着取込完了: {$count}件");
     }
 })
-    ->everyFifteenMinutes()
+    ->cron('5-59/10 * * * *')
     ->name('score-engineer-mails')
     ->withoutOverlapping()
     ->onFailure(function () {
@@ -87,14 +97,16 @@ Schedule::call(function () {
         Log::error('[Schedule] score-engineer-mails-catchup 失敗');
     });
 
-// ── 案件メールスコアリング（15分毎）
+// ── 案件メールスコアリング（10分毎・:05,:15,…＝取込の5分後）
+// 2026-06-05: 一覧鮮度のボトルネックは採点(PMS生成)だったため 15分→10分に短縮。取込(:X0)の
+// 5分後(:X5)に回す。案件採点は全て正規表現抽出で Claude API 不使用。増えるのは DB 採点負荷のみ。
 Schedule::call(function () {
     $count = app(\App\Services\ProjectMailScoringService::class)->scorePending();
     if ($count > 0) {
         Log::info("[Schedule] 案件スコアリング完了: {$count}件");
     }
 })
-    ->everyFifteenMinutes()
+    ->cron('5-59/10 * * * *')
     ->name('score-project-mails')
     ->withoutOverlapping()
     ->onFailure(function () {
@@ -255,13 +267,14 @@ Schedule::command('vision:rotate-key')
         Log::error('[Schedule] Vision API キーローテーション失敗');
     });
 
-// ── 朝の日次配信レポート（毎日 8:40 JST）前日の配信・提案実績をメール送信
-// 8:30 は :30 の 15分ジョブ群（classify / score-* = Claude API）と同一 schedule:run 内で
-// 逐次実行され、レポートの番が回るのが ~8:34 になり朝の Session Pooler 飽和に巻き込まれて
-// ECHECKOUTTIMEOUT で落ちていた（2026-05-26）。15分境界(:30/:45)を外し、:30 バッチが
-// 捌けた後の 8:40 に移動して競合を回避する。
+// ── 朝の日次配信レポート（毎日 8:48 JST）前日の配信・提案実績をメール送信
+// 8:30 は 15分ジョブ群（classify / score-*）と同一 schedule:run 内で逐次実行され、レポートの
+// 番が回るのが ~8:34 になり朝の Session Pooler 飽和に巻き込まれて ECHECKOUTTIMEOUT で落ちて
+// いた（2026-05-26）。当初は :40 に逃がしていたが、2026-06-05 に取込を :X0 / classify・score-* を
+// :X5 の 10分毎へ再編したため、朝の採点バッチは 8:45 に来る。そのバッチが捌けた後の 8:48 に置き、
+// レポートを単独の schedule:run で実行して Pooler 競合を回避する（次の取込 :50 とも非同一run）。
 Schedule::command("report:daily-delivery-report")
-    ->dailyAt("08:40")
+    ->dailyAt("08:48")
     ->timezone("Asia/Tokyo")
     ->name("daily-delivery-report")
     ->withoutOverlapping()
