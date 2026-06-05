@@ -56,8 +56,11 @@ class EmailController extends Controller
         if ($searchBody && mb_strlen((string) $search) < 5) {
             $searchBody = false;
         }
+        // 並びは created_at(取込≒到着時刻) 降順。Kagoya の配送遅延で received_at(送信時刻)が
+        // 実際の到着より古くなり、一覧が webmail より古く見える問題への対処 (2026-06-05)。
+        // received_at の意味 (スコア/既読/スレッド基準) は不変。created_at index で高速化済。
         $query = Email::query()
-            ->orderBy('received_at', 'desc');
+            ->orderBy('created_at', 'desc');
         if ($search) {
             $query->where(function ($q) use ($search, $searchBody) {
                 // PostgreSQL では ilike で大文字小文字を区別しない部分一致（他コントローラと統一）
