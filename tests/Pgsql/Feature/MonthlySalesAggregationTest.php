@@ -118,6 +118,24 @@ class MonthlySalesAggregationTest extends PgsqlTestCase
         $this->assertSame(800000.0, $all['total_revenue']);
     }
 
+    public function test_fiscal_year_helpers(): void
+    {
+        $this->actingAsUser(['role' => 'tenant_admin']);
+        $tenant = $this->authUser->tenant;
+        $tenant->update(['fiscal_year_end_month' => 9, 'first_period_fiscal_year' => 2011]);
+        $tenant->refresh();
+
+        // 9月決算: 2025-10〜2026-09 = 2026年度 = 16期
+        $this->assertSame(2026, $tenant->currentFiscalYear(\Carbon\Carbon::parse('2026-06-05')));
+        $this->assertSame(2027, $tenant->currentFiscalYear(\Carbon\Carbon::parse('2026-11-01'))); // 10月超で翌年度
+        $this->assertSame(16, $tenant->periodFor(2026));
+
+        $months = $tenant->fiscalYearMonths(2026);
+        $this->assertCount(12, $months);
+        $this->assertSame(['year' => 2025, 'month' => 10], $months[0]);
+        $this->assertSame(['year' => 2026, 'month' => 9], $months[11]);
+    }
+
     public function test_recompute_is_idempotent(): void
     {
         $this->actingAsUser(['role' => 'tenant_admin']);

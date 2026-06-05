@@ -48,6 +48,9 @@ class InvoiceIssuerController extends Controller
         'invoice_issuer_bank_account_type',
         'invoice_issuer_bank_account_number',
         'invoice_issuer_bank_account_holder',
+        // 決算情報 (月別売上の年度・期算出に使用・docs/460)
+        'fiscal_year_end_month',
+        'first_period_fiscal_year',
     ];
 
     /** seal type → tenants カラム名 / Storage プレフィックス */
@@ -95,6 +98,9 @@ class InvoiceIssuerController extends Controller
             'invoice_issuer_bank_account_type'   => ['nullable', 'string', 'max:20'],
             'invoice_issuer_bank_account_number' => ['nullable', 'string', 'max:30'],
             'invoice_issuer_bank_account_holder' => ['nullable', 'string', 'max:100'],
+            // 決算情報 (docs/460)
+            'fiscal_year_end_month'    => ['nullable', 'integer', 'min:1', 'max:12'],
+            'first_period_fiscal_year' => ['nullable', 'integer', 'min:1900', 'max:2100'],
         ]);
 
         $tenant = Tenant::query()->findOrFail($user->tenant_id);
