@@ -215,9 +215,10 @@ Schedule::command('kagoya:purge-outsource --older-than-days=14 --execute --force
 //     });
 
 // ── Kagoya 配送遅延アラート（毎時・本番限定）
-// 直近1hの平均配送遅延(到着-送信)が閾値(120分)超なら日次レポート配信先に通知。
+// 直近1hの平均配送遅延(到着-送信)が閾値(360分=6h)超なら日次レポート配信先に通知。
+// 配送遅延は常態的に ~3.7h あるため、平常では鳴らさず「さらに悪化(6h超)」のみ検知する閾値。
 // Kagoya のキュー滞留悪化を早期検知する (project_kagoya_gmail_delivery)。
-Schedule::command('emails:check-delivery-delay')
+Schedule::command('emails:check-delivery-delay --threshold=360')
     ->hourly()
     ->timezone('Asia/Tokyo')
     ->environments(['production'])
