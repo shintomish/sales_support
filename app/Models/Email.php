@@ -47,6 +47,7 @@ class Email extends Model
         'body_text',
         'body_html',
         'received_at',
+        'arrived_at',
         'is_read',
         'contact_id',
         'deal_id',
@@ -64,6 +65,7 @@ class Email extends Model
 
     protected $casts = [
         'received_at'    => 'datetime',
+        'arrived_at'     => 'datetime',
         'is_read'        => 'boolean',
         'extracted_data' => 'array',
         'classified_at'   => 'datetime',

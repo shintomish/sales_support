@@ -253,6 +253,13 @@ class KagoyaMailService
                 ? Carbon::parse($internalDate)->utc()
                 : Carbon::now()->utc());
 
+        // 到着時刻 = INTERNALDATE (Kagoya メールボックス着信時刻 = webmail 表示と一致)。
+        // 一覧の並び/「受信」表示に使う。Kagoya 配送遅延があっても webmail と同じ鮮度になる。
+        // INTERNALDATE が取れない場合は received_at(送信時刻)で代替。
+        $arrivedAt = $internalDate
+            ? Carbon::parse($internalDate)->utc()
+            : $receivedAt;
+
         // バウンスメール（不達通知）/ 上流スパム判定済みメールは category='bounce' の
         // 最小 stub だけ保存し、本文/添付処理はスキップ。
         // 旧実装は何も保存しなかったため、毎回 IMAP から同じ UID が「新着」として返り
@@ -288,6 +295,7 @@ class KagoyaMailService
                 'body_text'        => null,
                 'body_html'        => null,
                 'received_at'      => $receivedAt,
+                'arrived_at'       => $arrivedAt,
                 'is_read'          => true,    // 未読カウントを汚さない
                 'category'         => 'bounce', // classifyPending(whereNull) に拾わせない
                 'classified_at'    => $receivedAt,
@@ -334,6 +342,7 @@ class KagoyaMailService
             'body_text'        => $bodyText,
             'body_html'        => $bodyHtml,
             'received_at'      => $receivedAt,
+            'arrived_at'       => $arrivedAt,
             // self の場合は未読カウントを汚さず classifyPending(whereNull) にも拾わせない
             // forceSelf 以外でも、ユーザーが直近 markAllRead を実行済 (received_at < finished_at) なら既読扱い
             'is_read'          => $forceSelf || $alreadyMarkedRead,
