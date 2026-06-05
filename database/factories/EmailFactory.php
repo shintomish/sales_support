@@ -18,7 +18,8 @@ class EmailFactory extends Factory
             'from_name'        => fake()->name(),
             'to_address'       => fake()->safeEmail(),
             'body_text'        => fake()->paragraph(),
-            'received_at'      => fake()->dateTimeBetween('-30 days', 'now'),
+            'received_at'      => $received = fake()->dateTimeBetween('-30 days', 'now'),
+            'arrived_at'       => $received,
             'is_read'          => false,
         ];
     }

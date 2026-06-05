@@ -35,7 +35,7 @@ Schedule::call(function () {
         Log::info("[Schedule] KagoyaPOP3 同期完了: {$count}件");
     }
 })
-    ->everyFifteenMinutes()
+    ->everyFiveMinutes()
     ->name('sync-kagoya-pop3')
     ->withoutOverlapping()
     ->onFailure(function () {
