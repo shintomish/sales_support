@@ -6,6 +6,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Customer;
 use App\Models\Deal;
+use App\Models\MonthlySalesDetail;
 use App\Models\Task;
 use App\Models\Activity;
 use Illuminate\Support\Carbon;
@@ -134,10 +135,31 @@ class DashboardController extends Controller
                     : null,
             ]);
 
+        // 月別売上（過去6ヶ月）— SES台帳ベースの確定売上 (docs/460)。
+        // monthly_revenue (Deal ベース = 見込み) と並行表示する。集計済み明細を SUM するだけ。
+        $startKey  = $startOfWindow->year * 100 + $startOfWindow->month;
+        $salesRows = MonthlySalesDetail::query()
+            ->selectRaw('year, month, SUM(revenue) AS revenue, SUM(profit) AS profit')
+            ->whereRaw('(year * 100 + month) >= ?', [$startKey])
+            ->groupBy('year', 'month')
+            ->get()
+            ->keyBy(fn($r) => $r->year * 100 + $r->month);
+
+        $monthlySales = collect(range(5, 0))->map(function ($i) use ($now, $salesRows) {
+            $m   = $now->copy()->subMonths($i);
+            $row = $salesRows->get($m->year * 100 + $m->month);
+            return [
+                'month'   => $m->format('n月'),
+                'revenue' => (int) ($row->revenue ?? 0),
+                'profit'  => (int) ($row->profit ?? 0),
+            ];
+        })->values();
+
         return response()->json([
             'kpi'               => $kpi,
             'pipeline'          => $pipeline,
             'monthly_revenue'   => $monthlyRevenue,
+            'monthly_sales'     => $monthlySales,
             'upcoming_tasks'    => $upcomingTasks,
             'recent_activities' => $recentActivities,
             'won_deals'         => $wonDeals,

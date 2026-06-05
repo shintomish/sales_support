@@ -9,6 +9,7 @@ use App\Http\Controllers\Api\ActivityController;
 use App\Http\Controllers\Api\TaskController;
 use App\Http\Controllers\Api\BusinessCardController;
 use App\Http\Controllers\Api\DashboardController;
+use App\Http\Controllers\Api\MonthlySalesController;
 use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\GmailOAuthController;
 use App\Http\Controllers\Api\EmailController;
@@ -123,6 +124,11 @@ Route::prefix('v1')->middleware(['supabase.auth'])->group(function () {
     Route::get('email-body-templates/me',  [EmailBodyTemplateController::class, 'show']);
     Route::put('email-body-templates/me',  [EmailBodyTemplateController::class, 'upsert']);
     Route::get('dashboard', [DashboardController::class, 'index']);
+    // 月別売上集計 (SES台帳ベース・docs/460)
+    Route::get('monthly-sales',                          [MonthlySalesController::class, 'index']);
+    Route::get('monthly-sales/{year}/{month}/details',   [MonthlySalesController::class, 'details'])
+        ->whereNumber('year')->whereNumber('month');
+    Route::post('monthly-sales/recompute',               [MonthlySalesController::class, 'recompute']);
     Route::get('notifications', [NotificationController::class, 'index']);
     Route::post('notifications/mark-read', [NotificationController::class, 'markRead']);
 

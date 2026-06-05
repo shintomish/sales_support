@@ -1,8 +1,34 @@
-# 月別売上集計 機能設計メモ（将来実装）
+# 月別売上集計 機能設計メモ
 
-**ステータス**: 未着手 / 設計検討フェーズ
+**ステータス**: バックエンド実装済み (2026-06-05) / フロント UI 未着手
 **起票日**: 2026-05-16
 **起票背景**: ダッシュボード「月別売上」が `deals.updated_at` 基準で不正確。半期決算会議の月別売上集計は SES台帳ベースで行うべき。
+
+---
+
+## 実装サマリ (2026-06-05 / 論点1〜5 確定)
+
+確定設計: **契約期間ベース / 月単位粗計上 / 売上＋利益＋仕入 / Deal と並行表示 / 明細テーブル**。
+
+| 論点 | 決定 |
+|---|---|
+| 1 集計粒度 | (b) 売上(income_amount)+利益(profit)+仕入(billing_plus_29) |
+| 2 月の判定 | (a) 契約期間ベース: start<=月末 AND (end>=月初 OR end NULL) |
+| 3 月またぎ | (b) 月単位粗計上 (按分なし・各月に全額) |
+| 4 テーブル | (B) 明細テーブル `monthly_sales_details` を真実のソース。サマリは SUM |
+| 5 切替 | (b) 並行表示 (Deal ベース=見込み / SES ベース=確定) |
+
+実装ファイル:
+- `database/migrations/2026_06_05_123438_create_monthly_sales_details_table.php`
+- `app/Models/MonthlySalesDetail.php`
+- `app/Services/MonthlySalesAggregationService.php` — `aggregateMonth(year, month, ?tenantId)` / `aggregatePreviousMonth()`
+- `app/Http/Controllers/Api/MonthlySalesController.php` — index / details / recompute
+- ルート: `GET /api/v1/monthly-sales`, `GET /api/v1/monthly-sales/{year}/{month}/details`, `POST /api/v1/monthly-sales/recompute`
+- ダッシュボード `/api/v1/dashboard` に `monthly_sales` (SES確定売上6ヶ月) を追加
+- 月初バッチ: `routes/console.php` `aggregate-monthly-sales` (毎月1日 01:00 JST・全テナント前月再集計)
+- テスト: `tests/Pgsql/Feature/MonthlySalesAggregationTest.php` (重なり判定/月粗計上/cross-tenant/冪等性)
+
+**残**: フロント UI (月別売上ページ・手動再集計ボタン・ダッシュボード並行グラフ)。論点2(契約期間ベース)が既存 Excel 集計と一致するかは業務側ヒアリング推奨 (不一致なら work_month カラム新設 = 論点2(c) へ切替余地)。
 
 ---
 

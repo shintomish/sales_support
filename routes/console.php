@@ -214,6 +214,21 @@ Schedule::command('kagoya:purge-outsource --older-than-days=14 --execute --force
 //         Log::error('[Schedule] 分類済みメールのゴミ箱移動 失敗');
 //     });
 
+// ── 月別売上集計：前月分を全テナント再集計（毎月1日 1:00 JST・docs/460）
+// SES台帳(ses_contracts)を契約期間ベース・月単位粗計上で monthly_sales_details に確定。
+// 月初に前月が確定するため、当月 1 日に前月を一括集計する。Auth コンテキスト無し=全テナント横断。
+Schedule::call(function () {
+    $result = app(\App\Services\MonthlySalesAggregationService::class)->aggregatePreviousMonth();
+    Log::info('[Schedule] 月別売上集計 完了', $result);
+})
+    ->monthlyOn(1, '01:00')
+    ->timezone('Asia/Tokyo')
+    ->name('aggregate-monthly-sales')
+    ->withoutOverlapping()
+    ->onFailure(function () {
+        Log::error('[Schedule] aggregate-monthly-sales 失敗');
+    });
+
 // ── Vision API キーローテーション（90日毎 / 毎月1日 0:00）
 Schedule::command('vision:rotate-key')
     ->monthly()
