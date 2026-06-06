@@ -7,9 +7,9 @@ use App\Services\BounceSuppressionService;
 use Tests\TestCase;
 
 /**
- * ハードバウンス自動抑制のテスト。
- *  - parse(): DSN 解析が hard(5.x.x)/soft(4.x.x)/複数宛先/非DSN を正しく分類する
- *  - suppressHardBounces(): enforce/log-only・リスト外・別テナント・既停止 のガード
+ * バウンス自動抑制のテスト。
+ *  - parse(): hard(5.x.x) / expired(4.x.x give-up) / delayed(再試行中) / 非DSN の分類
+ *  - suppressBounces(): hard 即時停止 / expired 累積閾値 / log-only / リスト外 / 別テナント / 既停止
  */
 class BounceSuppressionServiceTest extends TestCase
 {
@@ -26,176 +26,195 @@ class BounceSuppressionServiceTest extends TestCase
     {
         return <<<EOT
         From: MAILER-DAEMON@ap-northeast-1.amazonses.com
-        To: outsource@aizen-sol.co.jp
         Subject: Delivery Status Notification (Failure)
-        Content-Type: multipart/report; report-type=delivery-status; boundary="b"
-
-        --b
-        Content-Type: text/plain
-
-        An error occurred while trying to deliver your message.
-
-        --b
         Content-Type: message/delivery-status
-
-        Reporting-MTA: dns; a8-12.smtp-out.amazonses.com
 
         Final-Recipient: rfc822; {$recipient}
         Action: failed
         Status: 5.1.1
         Diagnostic-Code: smtp; 550 5.1.1 user unknown
-        --b--
         EOT;
     }
 
-    private function softDsn(string $recipient = 'busy@example.com'): string
+    /** SES が 14時間試行して諦めた 4.4.7(Message expired)。実バウンスの大半がこれ。 */
+    private function expiredDsn(string $recipient = 'gone@example.com'): string
     {
         return <<<EOT
-        From: MAILER-DAEMON@mss-g2-140.kagoya.net
-        Subject: Undelivered Mail Returned to Sender
+        From: MAILER-DAEMON@ap-northeast-1.amazonses.com
+        Subject: Delivery Status Notification (Failure)
         Content-Type: message/delivery-status
 
         Final-Recipient: rfc822; {$recipient}
         Action: failed
-        Status: 4.2.2
-        Diagnostic-Code: smtp; 452 4.2.2 mailbox full
+        Status: 4.4.7
+        Diagnostic-Code: smtp; 550 4.4.7 Message expired: unable to deliver in 840 minutes.<421 4.4.0 Unable to lookup DNS>
+        EOT;
+    }
+
+    /** まだ再試行中(最終通知でない)。停止対象にしない。 */
+    private function delayedDsn(string $recipient = 'slow@example.com'): string
+    {
+        return <<<EOT
+        From: MAILER-DAEMON@ap-northeast-1.amazonses.com
+        Subject: Delivery Status Notification (Delay)
+        Content-Type: message/delivery-status
+
+        Final-Recipient: rfc822; {$recipient}
+        Action: delayed
+        Status: 4.4.7
         EOT;
     }
 
     // ---- parse() ----
 
-    public function test_parse_extracts_hard_bounce(): void
+    public function test_parse_classifies_hard(): void
     {
-        $rows = $this->service->parse($this->hardDsn('dead@example.com'));
-        $this->assertCount(1, $rows);
-        $this->assertSame('dead@example.com', $rows[0]['email']);
-        $this->assertSame('5.1.1', $rows[0]['status']);
-        $this->assertTrue($rows[0]['hard']);
+        $r = $this->service->parse($this->hardDsn())[0];
+        $this->assertTrue($r['hard']);
+        $this->assertFalse($r['expired']);
     }
 
-    public function test_parse_marks_soft_bounce_as_not_hard(): void
+    public function test_parse_classifies_expired(): void
     {
-        $rows = $this->service->parse($this->softDsn('busy@example.com'));
-        $this->assertCount(1, $rows);
-        $this->assertSame('4.2.2', $rows[0]['status']);
-        $this->assertFalse($rows[0]['hard']);
+        $r = $this->service->parse($this->expiredDsn())[0];
+        $this->assertFalse($r['hard']);
+        $this->assertTrue($r['expired']);
+        $this->assertSame('4.4.7', $r['status']);
     }
 
-    public function test_parse_handles_multi_recipient_mixed(): void
+    public function test_parse_delayed_is_neither(): void
     {
-        $raw = <<<EOT
-        Content-Type: message/delivery-status
-
-        Final-Recipient: rfc822; dead@example.com
-        Action: failed
-        Status: 5.1.1
-
-        Final-Recipient: rfc822; ok@example.com
-        Action: delivered
-        Status: 2.0.0
-        EOT;
-        $rows = collect($this->service->parse($raw))->keyBy('email');
-        $this->assertTrue($rows['dead@example.com']['hard']);
-        $this->assertFalse($rows['ok@example.com']['hard']);
+        $r = $this->service->parse($this->delayedDsn())[0];
+        $this->assertFalse($r['hard']);
+        $this->assertFalse($r['expired']);
     }
 
     public function test_parse_non_dsn_returns_empty(): void
     {
-        $raw = "From: promo@shop.example\nSubject: [spam] 90%OFF セール\n\n本文です";
-        $this->assertSame([], $this->service->parse($raw));
+        $this->assertSame([], $this->service->parse("From: x@y.z\nSubject: [spam] sale\n\nhi"));
     }
 
-    // ---- suppressHardBounces() ----
+    // ---- hard ----
 
-    public function test_enforce_disables_hard_bounced_address(): void
+    public function test_hard_disables_immediately_when_enforce(): void
     {
         config(['services.bounce_suppression.enforce' => true]);
         $addr = $this->makeAddress('dead@example.com');
 
-        $suppressed = $this->service->suppressHardBounces($this->hardDsn('dead@example.com'), $this->authUser->tenant_id);
+        $out = $this->service->suppressBounces($this->hardDsn('dead@example.com'), $this->authUser->tenant_id);
 
-        $this->assertSame(['dead@example.com'], $suppressed);
+        $this->assertSame(['dead@example.com'], $out);
         $addr->refresh();
         $this->assertFalse($addr->is_active);
         $this->assertSame('hard_bounce', $addr->unsubscribe_reason);
-        $this->assertNotNull($addr->unsubscribed_at);
     }
 
-    public function test_log_only_detects_but_does_not_mutate(): void
+    public function test_log_only_does_not_disable_hard(): void
     {
         config(['services.bounce_suppression.enforce' => false]);
         $addr = $this->makeAddress('dead@example.com');
 
-        $suppressed = $this->service->suppressHardBounces($this->hardDsn('dead@example.com'), $this->authUser->tenant_id);
+        $out = $this->service->suppressBounces($this->hardDsn('dead@example.com'), $this->authUser->tenant_id);
 
-        $this->assertSame(['dead@example.com'], $suppressed); // 検出はする
+        $this->assertSame(['dead@example.com'], $out); // 検出はする
         $addr->refresh();
-        $this->assertTrue($addr->is_active); // が、無効化はしない
+        $this->assertTrue($addr->is_active); // 無効化はしない
+        $this->assertNotNull($addr->last_bounce_at); // メタは記録
     }
 
-    public function test_soft_bounce_is_not_suppressed(): void
+    // ---- expired (累積閾値) ----
+
+    public function test_expired_single_below_threshold_does_not_disable(): void
     {
-        config(['services.bounce_suppression.enforce' => true]);
-        $addr = $this->makeAddress('busy@example.com');
+        config(['services.bounce_suppression.enforce' => true, 'services.bounce_suppression.expired_threshold' => 2]);
+        $addr = $this->makeAddress('gone@example.com');
 
-        $suppressed = $this->service->suppressHardBounces($this->softDsn('busy@example.com'), $this->authUser->tenant_id);
+        $out = $this->service->suppressBounces($this->expiredDsn('gone@example.com'), $this->authUser->tenant_id);
 
-        $this->assertSame([], $suppressed);
+        $this->assertSame([], $out); // 閾値未満
         $addr->refresh();
         $this->assertTrue($addr->is_active);
+        $this->assertSame(1, $addr->soft_bounce_count);
     }
+
+    public function test_expired_reaching_threshold_disables(): void
+    {
+        config(['services.bounce_suppression.enforce' => true, 'services.bounce_suppression.expired_threshold' => 2]);
+        $addr = $this->makeAddress('gone@example.com');
+        $addr->update(['soft_bounce_count' => 1]); // 既に1回期限切れ済み
+
+        $out = $this->service->suppressBounces($this->expiredDsn('gone@example.com'), $this->authUser->tenant_id);
+
+        $this->assertSame(['gone@example.com'], $out);
+        $addr->refresh();
+        $this->assertFalse($addr->is_active);
+        $this->assertSame('expired_bounce', $addr->unsubscribe_reason);
+        $this->assertSame(2, $addr->soft_bounce_count);
+    }
+
+    public function test_expired_threshold_one_disables_on_first(): void
+    {
+        config(['services.bounce_suppression.enforce' => true, 'services.bounce_suppression.expired_threshold' => 1]);
+        $addr = $this->makeAddress('gone@example.com');
+
+        $out = $this->service->suppressBounces($this->expiredDsn('gone@example.com'), $this->authUser->tenant_id);
+
+        $this->assertSame(['gone@example.com'], $out);
+        $addr->refresh();
+        $this->assertFalse($addr->is_active);
+    }
+
+    public function test_log_only_increments_count_but_does_not_disable_at_threshold(): void
+    {
+        config(['services.bounce_suppression.enforce' => false, 'services.bounce_suppression.expired_threshold' => 1]);
+        $addr = $this->makeAddress('gone@example.com');
+
+        $out = $this->service->suppressBounces($this->expiredDsn('gone@example.com'), $this->authUser->tenant_id);
+
+        $this->assertSame(['gone@example.com'], $out); // 閾値到達を検出
+        $addr->refresh();
+        $this->assertTrue($addr->is_active);       // が、無効化しない
+        $this->assertSame(1, $addr->soft_bounce_count); // カウントは進む
+    }
+
+    // ---- ガード ----
 
     public function test_address_not_in_list_is_ignored(): void
     {
         config(['services.bounce_suppression.enforce' => true]);
-        $suppressed = $this->service->suppressHardBounces($this->hardDsn('unknown@nowhere.example'), $this->authUser->tenant_id);
-        $this->assertSame([], $suppressed);
+        $this->assertSame([], $this->service->suppressBounces($this->hardDsn('x@nowhere.example'), $this->authUser->tenant_id));
     }
 
-    public function test_other_tenant_address_is_not_touched(): void
+    public function test_other_tenant_is_not_touched(): void
     {
         config(['services.bounce_suppression.enforce' => true]);
         $other = $this->createUserInAnotherTenant();
-        $addr = DeliveryAddress::create([
-            'tenant_id' => $other->tenant_id,
-            'email'     => 'dead@example.com',
-            'is_active' => true,
-        ]);
+        $addr = DeliveryAddress::create(['tenant_id' => $other->tenant_id, 'email' => 'dead@example.com', 'is_active' => true]);
 
-        // 自テナント宛に処理しても別テナントのアドレスは触らない
-        $suppressed = $this->service->suppressHardBounces($this->hardDsn('dead@example.com'), $this->authUser->tenant_id);
-
-        $this->assertSame([], $suppressed);
+        $this->assertSame([], $this->service->suppressBounces($this->hardDsn('dead@example.com'), $this->authUser->tenant_id));
         $addr->refresh();
         $this->assertTrue($addr->is_active);
     }
 
-    public function test_already_inactive_address_is_skipped(): void
+    public function test_already_inactive_is_skipped(): void
     {
         config(['services.bounce_suppression.enforce' => true]);
         $addr = DeliveryAddress::create([
-            'tenant_id'          => $this->authUser->tenant_id,
-            'email'              => 'dead@example.com',
-            'is_active'          => false,
-            'unsubscribe_reason' => 'operator_disabled',
+            'tenant_id' => $this->authUser->tenant_id, 'email' => 'dead@example.com',
+            'is_active' => false, 'unsubscribe_reason' => 'operator_disabled',
         ]);
 
-        $suppressed = $this->service->suppressHardBounces($this->hardDsn('dead@example.com'), $this->authUser->tenant_id);
-
-        $this->assertSame([], $suppressed);
+        $this->assertSame([], $this->service->suppressBounces($this->hardDsn('dead@example.com'), $this->authUser->tenant_id));
         $addr->refresh();
-        // 既存の停止理由を上書きしない
         $this->assertSame('operator_disabled', $addr->unsubscribe_reason);
     }
 
-    public function test_email_match_is_case_insensitive(): void
+    public function test_case_insensitive_match(): void
     {
         config(['services.bounce_suppression.enforce' => true]);
         $addr = $this->makeAddress('Dead@Example.com');
-
-        $suppressed = $this->service->suppressHardBounces($this->hardDsn('dead@example.com'), $this->authUser->tenant_id);
-
-        $this->assertCount(1, $suppressed);
+        $out = $this->service->suppressBounces($this->hardDsn('dead@example.com'), $this->authUser->tenant_id);
+        $this->assertCount(1, $out);
         $addr->refresh();
         $this->assertFalse($addr->is_active);
     }

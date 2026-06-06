@@ -165,6 +165,8 @@ class DeliveryAddressController extends Controller
                     $validated['unsubscribe_reason'] = null;
                 }
                 $validated['unsubscribed_at'] = null;
+                // 再有効化時はバウンス累積をリセット(担当者が有効と判断したので再度チャンスを与える)
+                $validated['soft_bounce_count'] = 0;
             }
         }
 
@@ -206,6 +208,7 @@ class DeliveryAddressController extends Controller
         } else {
             $payload['unsubscribe_reason'] = null;
             $payload['unsubscribed_at']    = null;
+            $payload['soft_bounce_count']  = 0;
         }
 
         $updated = DeliveryAddress::where('tenant_id', $tenantId)

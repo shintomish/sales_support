@@ -162,7 +162,7 @@ class KagoyaMailService
                         continue; // 既に purge 済み等
                     }
                     $stats['fetched']++;
-                    $hits = $svc->suppressHardBounces($res['body'], $tenantId, $b->id);
+                    $hits = $svc->suppressBounces($res['body'], $tenantId, $b->id);
                     foreach ($hits as $email) {
                         $stats['detected'][] = $email;
                         if ($execute) {
@@ -433,7 +433,7 @@ class KagoyaMailService
             // delivery_addresses を無効化する(config で log-only/enforce 切替)。
             // 解析失敗が取込全体を壊さないよう try/catch で握りつぶす。
             try {
-                app(BounceSuppressionService::class)->suppressHardBounces($raw, $tenantId, $bounceEmail->id);
+                app(BounceSuppressionService::class)->suppressBounces($raw, $tenantId, $bounceEmail->id);
             } catch (\Throwable $e) {
                 Log::warning('[BounceSuppression] 解析失敗', ['uid' => $uid, 'error' => $e->getMessage()]);
             }

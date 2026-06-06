@@ -92,5 +92,8 @@ return [
     // 本番で対象が妥当と確認できたら BOUNCE_SUPPRESSION_ENFORCE=true に切替えて実際に無効化する。
     'bounce_suppression' => [
         'enforce' => env('BOUNCE_SUPPRESSION_ENFORCE', false),
+        // 4.4.7「Message expired」等のソフトバウンスは、同一宛先がこの回数に達したら自動停止する。
+        // 1回の期限切れは相手の一時ダウンの可能性があるため既定 2。1 にすれば初回で停止(積極的)。
+        'expired_threshold' => (int) env('BOUNCE_SUPPRESSION_EXPIRED_THRESHOLD', 2),
     ],
 ];

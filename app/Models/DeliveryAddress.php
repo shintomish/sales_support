@@ -23,6 +23,8 @@ class DeliveryAddress extends Model
         'unsubscribe_token',
         'unsubscribe_reason',
         'unsubscribed_at',
+        'soft_bounce_count',
+        'last_bounce_at',
     ];
 
     protected static function boot(): void
@@ -36,8 +38,10 @@ class DeliveryAddress extends Model
     }
 
     protected $casts = [
-        'is_active'        => 'boolean',
-        'unsubscribed_at'  => 'datetime',
+        'is_active'         => 'boolean',
+        'unsubscribed_at'   => 'datetime',
+        'soft_bounce_count' => 'integer',
+        'last_bounce_at'    => 'datetime',
     ];
 
     public function sendHistories(): HasMany
