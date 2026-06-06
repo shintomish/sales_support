@@ -21,7 +21,8 @@ class SuppressRecentBounces extends Command
     protected $signature = 'bounce:suppress-recent
                             {--days=2 : 何日前までのバウンスを対象にするか}
                             {--limit= : 走査するバウンス stub の上限(任意)}
-                            {--execute : 実際に無効化する(未指定は dry-run)}';
+                            {--execute : 実際に無効化する(未指定は dry-run)}
+                            {--debug : 取り直したバウンスの from/解析結果/該当状況を表示(無効化しない)}';
 
     protected $description = '過去のバウンスを Kagoya から取り直し、ハードバウンス宛先を delivery_addresses で無効化する(既定 dry-run)';
 
@@ -30,6 +31,17 @@ class SuppressRecentBounces extends Command
         $days    = (int) $this->option('days');
         $execute = (bool) $this->option('execute');
         $limit   = $this->option('limit') !== null ? (int) $this->option('limit') : null;
+
+        if ($this->option('debug')) {
+            $rows = $service->inspectRecentBounces($days, $limit ?? 30);
+            foreach ($rows as $r) {
+                $this->line("UID {$r['uid']} from={$r['from']}");
+                foreach ($r['recipients'] as $rec) {
+                    $this->line('    ' . $rec);
+                }
+            }
+            return self::SUCCESS;
+        }
 
         $this->info(($execute ? '[EXECUTE]' : '[DRY-RUN]') . " 直近 {$days} 日のバウンスを走査します...");
 

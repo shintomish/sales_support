@@ -183,6 +183,68 @@ class KagoyaMailService
     }
 
     /**
+     * 診断用: 直近バウンスを取り直し、from / 解析結果(Final-Recipient/Status/hard) と
+     * delivery_addresses 該当状況を返す（無効化はしない）。パーサ検証用。
+     *
+     * @return array<int, array{uid:int, from:string, subject:string, recipients:array}>
+     */
+    public function inspectRecentBounces(int $days, int $limit): array
+    {
+        $tenantId = 1;
+        $bounces = Email::where('tenant_id', $tenantId)
+            ->where('category', 'bounce')
+            ->whereRaw("gmail_message_id ~ '^imap-[0-9]+$'")
+            ->where('created_at', '>=', now()->subDays($days))
+            ->orderByDesc('created_at')
+            ->limit($limit)
+            ->get(['id', 'gmail_message_id', 'from_address', 'subject']);
+
+        $svc = app(BounceSuppressionService::class);
+        $out = [];
+
+        if (!$this->connect()) {
+            throw new \RuntimeException('Kagoya IMAP 接続失敗');
+        }
+        try {
+            $this->imapCommand('EXAMINE INBOX');
+            foreach ($bounces as $b) {
+                $uid = (int) substr($b->gmail_message_id, 5);
+                $row = ['uid' => $uid, 'from' => (string) $b->from_address, 'subject' => (string) $b->subject, 'recipients' => []];
+                try {
+                    $res = $this->fetchMessageByUid($uid);
+                    if (empty($res['body'])) {
+                        $row['recipients'] = ['__no_body__'];
+                    } else {
+                        foreach ($svc->parse($res['body']) as $rec) {
+                            $addr = \App\Models\DeliveryAddress::withoutGlobalScope(\App\Scopes\TenantScope::class)
+                                ->where('tenant_id', $tenantId)
+                                ->whereRaw('lower(email) = ?', [$rec['email']])
+                                ->first(['is_active']);
+                            $row['recipients'][] = sprintf(
+                                '%s [status=%s hard=%s in_list=%s active=%s]',
+                                $rec['email'],
+                                $rec['status'] ?? '-',
+                                $rec['hard'] ? 'Y' : 'N',
+                                $addr ? 'Y' : 'N',
+                                $addr ? ($addr->is_active ? 'Y' : 'N') : '-'
+                            );
+                        }
+                        if (empty($row['recipients'])) {
+                            $row['recipients'] = ['__no_final_recipient__'];
+                        }
+                    }
+                } catch (\Throwable $e) {
+                    $row['recipients'] = ['__error__ ' . $e->getMessage()];
+                }
+                $out[] = $row;
+            }
+        } finally {
+            $this->disconnect();
+        }
+        return $out;
+    }
+
+    /**
      * outsource@ 宛の取込済みメールを Kagoya サーバーから削除する（容量/同期負荷対策）。
      *
      * 削除対象は DB 側で厳密に定義する:
