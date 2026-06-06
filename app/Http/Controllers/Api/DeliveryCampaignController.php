@@ -361,6 +361,8 @@ class DeliveryCampaignController extends Controller
         $search  = $request->input('search');
         $type    = $request->input('type'); // 'project' | 'engineer'
         $userId  = $request->input('user_id');
+        $dateFrom = $request->input('date_from');
+        $dateTo   = $request->input('date_to');
         $perPage = $request->integer('per_page', 20);
 
         // ── スレッド単位の集計サブクエリ ──
@@ -391,6 +393,15 @@ class DeliveryCampaignController extends Controller
             $threadsQuery->whereNotNull('project_mail_id')->whereNull('engineer_mail_source_id');
         } elseif ($type === 'engineer') {
             $threadsQuery->whereNotNull('engineer_mail_source_id');
+        }
+
+        // 送信日フィルタ（一斉配信履歴と同流儀）: 期間内に送信があったスレッドのみ。
+        // group 前に campaign の sent_at で絞るため、latest_sent_at も期間内の最新になる。
+        if ($dateFrom) {
+            $threadsQuery->where('sent_at', '>=', $dateFrom . ' 00:00:00');
+        }
+        if ($dateTo) {
+            $threadsQuery->where('sent_at', '<=', $dateTo . ' 23:59:59');
         }
 
         // スレッドサブクエリをベースに完全なクエリを組み立て
