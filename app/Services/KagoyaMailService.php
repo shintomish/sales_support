@@ -117,6 +117,72 @@ class KagoyaMailService
     }
 
     /**
+     * 取込済みのバウンス stub を Kagoya から本文ごと取り直し、ハードバウンス宛先を抑制する backfill。
+     *
+     * 取込時にバウンス本文を破棄しているため、過去に届いたバウンスは DB から失敗宛先を復元できない。
+     * バウンス stub は gmail_message_id='imap-{UID}' で UID を保持しており、本体は purge(14日)前なら
+     * まだ Kagoya サーバーに残っているため、UID で BODY.PEEK[] を取り直して BounceSuppressionService に
+     * かける。EXAMINE INBOX(read-only) なので通常 sync と並行しても安全。
+     *
+     * @return array{scanned:int, fetched:int, detected:array<int,string>, suppressed:array<int,string>, execute:bool}
+     */
+    public function suppressRecentBounces(int $days, bool $execute, ?int $limit = null): array
+    {
+        $tenantId = 1;
+
+        $query = Email::where('tenant_id', $tenantId)
+            ->where('category', 'bounce')
+            ->whereRaw("gmail_message_id ~ '^imap-[0-9]+$'")
+            ->where('created_at', '>=', now()->subDays($days))
+            ->orderByDesc('created_at');
+        if ($limit) {
+            $query->limit($limit);
+        }
+        $bounces = $query->get(['id', 'gmail_message_id']);
+
+        $stats = ['scanned' => $bounces->count(), 'fetched' => 0, 'detected' => [], 'suppressed' => [], 'execute' => $execute];
+        if ($bounces->isEmpty()) {
+            return $stats;
+        }
+
+        // execute=true のときだけ実無効化(enforce)。dry-run は log-only でプレビューのみ。
+        config(['services.bounce_suppression.enforce' => $execute]);
+        $svc = app(BounceSuppressionService::class);
+
+        if (!$this->connect()) {
+            throw new \RuntimeException('Kagoya IMAP 接続失敗');
+        }
+        try {
+            $this->imapCommand('EXAMINE INBOX'); // read-only
+            foreach ($bounces as $b) {
+                $uid = (int) substr($b->gmail_message_id, 5);
+                try {
+                    $res = $this->fetchMessageByUid($uid);
+                    if (empty($res['body'])) {
+                        continue; // 既に purge 済み等
+                    }
+                    $stats['fetched']++;
+                    $hits = $svc->suppressHardBounces($res['body'], $tenantId, $b->id);
+                    foreach ($hits as $email) {
+                        $stats['detected'][] = $email;
+                        if ($execute) {
+                            $stats['suppressed'][] = $email;
+                        }
+                    }
+                } catch (\Throwable $e) {
+                    Log::warning("[BounceBackfill] UID {$uid} 失敗: " . $e->getMessage());
+                }
+            }
+        } finally {
+            $this->disconnect();
+        }
+
+        $stats['detected'] = array_values(array_unique($stats['detected']));
+        $stats['suppressed'] = array_values(array_unique($stats['suppressed']));
+        return $stats;
+    }
+
+    /**
      * outsource@ 宛の取込済みメールを Kagoya サーバーから削除する（容量/同期負荷対策）。
      *
      * 削除対象は DB 側で厳密に定義する:
