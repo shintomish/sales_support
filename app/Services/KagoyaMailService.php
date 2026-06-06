@@ -283,7 +283,7 @@ class KagoyaMailService
             || str_contains($lcSubject, 'mail delivery failed')
             || str_contains($lcSubject, 'quota exceeded');
         if ($isBounceFrom || $isBounceSubject) {
-            Email::create([
+            $bounceEmail = Email::create([
                 'tenant_id'        => $tenantId,
                 'gmail_message_id' => $uid,
                 'rfc_message_id'   => $rfcMessageId,
@@ -300,6 +300,16 @@ class KagoyaMailService
                 'category'         => 'bounce', // classifyPending(whereNull) に拾わせない
                 'classified_at'    => $receivedAt,
             ]);
+
+            // ハードバウンス自動抑制: DSN 本文から 5.x.x の失敗宛先を抽出して
+            // delivery_addresses を無効化する(config で log-only/enforce 切替)。
+            // 解析失敗が取込全体を壊さないよう try/catch で握りつぶす。
+            try {
+                app(BounceSuppressionService::class)->suppressHardBounces($raw, $tenantId, $bounceEmail->id);
+            } catch (\Throwable $e) {
+                Log::warning('[BounceSuppression] 解析失敗', ['uid' => $uid, 'error' => $e->getMessage()]);
+            }
+
             return false;
         }
 

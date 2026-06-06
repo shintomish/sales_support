@@ -86,4 +86,11 @@ return [
         'username' => env('KAGOYA_POP3_USERNAME'),
         'password' => env('KAGOYA_POP3_PASSWORD'),
     ],
+
+    // ハードバウンス自動抑制（バウンス DSN の 5.x.x 宛先を delivery_addresses で自動無効化）。
+    // enforce=false（既定）は log-only: 抑制対象をログ出力するだけで is_active は変更しない（段階導入の観察用）。
+    // 本番で対象が妥当と確認できたら BOUNCE_SUPPRESSION_ENFORCE=true に切替えて実際に無効化する。
+    'bounce_suppression' => [
+        'enforce' => env('BOUNCE_SUPPRESSION_ENFORCE', false),
+    ],
 ];
