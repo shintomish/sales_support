@@ -62,10 +62,8 @@ class ProjectMailController extends Controller
 
         if ($status) {
             $query->where('status', $status);
-        } else {
-            // デフォルト: excluded は除外
-            $query->whereNotIn('status', ['excluded']);
         }
+        // status 未指定（「全て」タブ）は excluded も含む全件表示（2026-06-06 仕様変更）。
 
         if ($search) {
             $searchBody = $request->boolean('search_body');
