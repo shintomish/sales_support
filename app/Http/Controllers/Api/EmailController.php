@@ -543,11 +543,11 @@ class EmailController extends Controller
             }
         }
 
-        // send_type='delivery'（単発送信）: 提案スレッドには載せない、自社返信の証跡として記録。
-        // project_mail_id / engineer_mail_source_id は紐づかないため null のまま。
+        // send_type='self_reply'（/emails からの個別返信）: 一斉配信履歴にも提案スレッドにも載せず、
+        // 専用「返信履歴」タブに表示する証跡。project_mail_id / engineer_mail_source_id は紐づかず null。
         $campaign = DeliveryCampaign::create([
             'tenant_id'     => $tenantId,
-            'send_type'     => 'delivery',
+            'send_type'     => 'self_reply',
             'user_id'       => $userId,
             'subject'       => $v['subject'],
             'body'          => $v['body'],

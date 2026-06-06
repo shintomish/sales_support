@@ -45,7 +45,9 @@ class DeliveryCampaignController extends Controller
         }
 
         if ($request->boolean('exclude_proposals')) {
-            $query->whereNotIn('send_type', ['proposal', 'matching_proposal', 'engineer_proposal', 'engineer_proposal_bulk', 'bulk']);
+            // 一斉配信履歴タブ: 提案スレッド系に加え self_reply(/emails 個別返信)も除外。
+            // self_reply は専用「返信履歴」タブ(send_type=self_reply 指定)で表示する。
+            $query->whereNotIn('send_type', ['proposal', 'matching_proposal', 'engineer_proposal', 'engineer_proposal_bulk', 'bulk', 'self_reply']);
         }
 
         if ($userId) {

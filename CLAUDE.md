@@ -109,8 +109,10 @@ docker exec sales_support_app php artisan config:clear
     - `engineer_proposal` — 技術者メールから個別提案 (EngineerMailController::sendProposal / sendProposalFromPms)
     - `bulk` — 案件メールから「まとめて提案」(matching/[id]・1宛先で複数技術者を packing)
     - `engineer_proposal_bulk` — 技術者メールから「まとめて提案」(engineer-mails/[id]・1 BP に複数案件 packing)
+    - `self_reply` — /emails からの個別返信 (EmailController::reply)。2026-06-06 に `delivery` から分離。専用「返信履歴」タブ (deliveries `tab=replies`・index に `send_type=self_reply` 指定) で表示
   - 提案スレッド系の whereIn を増減する時は以下 4 箇所を必ず同期する: `DeliveryCampaignController::index`(exclude_proposals) / `DeliveryCampaignController::proposalThreads`(本体+campaignsByThread) / `ProjectMailController::thread` / `EngineerMailController::thread`
   - `'delivery'` (一斉配信) は提案スレッド系の whereIn には **含めない** (1対多なのでスレッド概念に合わない・一斉配信履歴タブのみで表示)
+  - `'self_reply'` (/emails 個別返信) は `exclude_proposals` の whereNotIn に **含める** (一斉配信履歴から除外し「返信履歴」タブにのみ表示)。提案スレッド系ではないので上記4箇所の同期対象外
 - メール送信: AWS SES（東京リージョン・本番承認済み）50,000件/日・14件/秒（2026-04-17承認）
 - 全件再スコア: 添付解析スキップ・上限なし・600秒タイムアウト
 - `storage/api-docs/` はgitignore済み（自動生成ファイル）

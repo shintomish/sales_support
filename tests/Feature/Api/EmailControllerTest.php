@@ -11,6 +11,7 @@ use App\Models\GmailToken;
 use App\Models\ProjectMailSource;
 use App\Models\Tenant;
 use App\Services\GmailService;
+use Illuminate\Support\Facades\Mail;
 use Mockery\MockInterface;
 use Tests\TestCase;
 
@@ -287,5 +288,32 @@ class EmailControllerTest extends TestCase
         $res = $this->postJson('/api/v1/emails/sync');
 
         $res->assertOk()->assertJson(['count' => 5]);
+    }
+
+    // ─── reply ───
+
+    public function test_reply_records_campaign_as_self_reply(): void
+    {
+        Mail::fake();
+        $this->actingAsUser();
+        $email = Email::factory()->create(['tenant_id' => $this->authUser->tenant_id]);
+
+        $res = $this->postJson("/api/v1/emails/{$email->id}/reply", [
+            'to'      => 'bp@example.com',
+            'subject' => 'Re: テスト案件',
+            'body'    => '本文です',
+        ]);
+
+        $res->assertOk();
+        // /emails 返信は send_type='self_reply'（一斉配信履歴でなく返信履歴に分類）
+        $this->assertDatabaseHas('delivery_campaigns', [
+            'tenant_id' => $this->authUser->tenant_id,
+            'send_type' => 'self_reply',
+            'subject'   => 'Re: テスト案件',
+        ]);
+        $this->assertDatabaseMissing('delivery_campaigns', [
+            'subject'   => 'Re: テスト案件',
+            'send_type' => 'delivery',
+        ]);
     }
 }
