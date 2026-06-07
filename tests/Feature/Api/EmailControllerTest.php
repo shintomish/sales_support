@@ -30,6 +30,7 @@ class EmailControllerTest extends TestCase
         $this->assertCount(3, $res->json('data'));
     }
 
+
     public function test_index_requires_authentication(): void
     {
         $this->getJson('/api/v1/emails')->assertUnauthorized();

@@ -49,11 +49,10 @@ class EmailController extends Controller
         $searchBody = $request->boolean('search_body');
         $unread     = $request->boolean('unread');
         $category   = $request->input('category');   // engineer / project / null
-        // 本文検索ガード (2026-06-02 GIN index 撤去後):
-        // body_text の GIN は実利用が低かった (≒2件/日・直近7日 0件) ため drop 済。
-        // 残存する body_text ILIKE は Seq Scan フォールバックとなるため、検索語が短いと
-        // 全件走査で暴走する (旧 GIN 時代でも 14-98 秒を観測)。5 文字以上に絞り暴走防止。
-        if ($searchBody && mb_strlen((string) $search) < 5) {
+        // 本文検索は pgroonga 全文索引 (emails_pgroonga_fts_idx) で高速化 (2026-06-07)。
+        // 旧 trgm GIN 撤去後は body_text ILIKE が Seq Scan で最大 20 秒だったため pgroonga を導入。
+        // bigram トークナイザのため 1 文字では索引が効かず/ノイズ過多なので body 検索を無効化する。
+        if ($searchBody && mb_strlen((string) $search) < 2) {
             $searchBody = false;
         }
         // 並びは arrived_at(IMAP INTERNALDATE=Kagoya 着信時刻=webmail 表示と一致) 降順。
@@ -62,15 +61,26 @@ class EmailController extends Controller
         $query = Email::query()
             ->orderBy('arrived_at', 'desc');
         if ($search) {
-            $query->where(function ($q) use ($search, $searchBody) {
-                // PostgreSQL では ilike で大文字小文字を区別しない部分一致（他コントローラと統一）
-                $q->where('subject', 'ilike', "%{$search}%")
-                  ->orWhere('from_address', 'ilike', "%{$search}%")
-                  ->orWhere('from_name', 'ilike', "%{$search}%");
-                if ($searchBody) {
-                    $q->orWhere('body_text', 'ilike', "%{$search}%");
-                }
-            });
+            // 「本文も検索」は pgroonga 全文索引 (emails_pgroonga_fts_idx) で高速化。
+            // pgroonga 非対応環境 (テスト DB 等) は config で無効化し ILIKE にフォールバックする。
+            if ($searchBody && config('services.pgroonga.enabled', true)) {
+                // subject/from/from_name/body_text を連結した式を pgroonga &@~ で一括全文検索。
+                // 連結式は emails_pgroonga_fts_idx の定義と完全一致させること (不一致で index 不使用)。
+                $query->whereRaw(
+                    "(COALESCE(subject,'') || ' ' || COALESCE(from_address,'') || ' ' || COALESCE(from_name,'') || ' ' || COALESCE(body_text,'')) &@~ ?",
+                    [$search]
+                );
+            } else {
+                // 件名・差出人 (+本文) を ILIKE 部分一致。pgroonga 無効時 / 本文OFF時の経路。
+                $query->where(function ($q) use ($search, $searchBody) {
+                    $q->where('subject', 'ilike', "%{$search}%")
+                      ->orWhere('from_address', 'ilike', "%{$search}%")
+                      ->orWhere('from_name', 'ilike', "%{$search}%");
+                    if ($searchBody) {
+                        $q->orWhere('body_text', 'ilike', "%{$search}%");
+                    }
+                });
+            }
         }
         if ($unread) {
             $query->where('is_read', false);

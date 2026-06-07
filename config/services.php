@@ -96,4 +96,10 @@ return [
         // 1回の期限切れは相手の一時ダウンの可能性があるため既定 2。1 にすれば初回で停止(積極的)。
         'expired_threshold' => (int) env('BOUNCE_SUPPRESSION_EXPIRED_THRESHOLD', 2),
     ],
+
+    // pgroonga 全文索引による本文検索の高速化 (emails_pgroonga_fts_idx)。
+    // pgroonga 非対応の環境 (テスト用 postgres:17-alpine 等) では false にして ILIKE フォールバックさせる。
+    'pgroonga' => [
+        'enabled' => env('PGROONGA_ENABLED', true),
+    ],
 ];
