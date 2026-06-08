@@ -5,6 +5,7 @@ output/
 .env.backup
 .env.production
 .env.bak.*
+.env.bak-*
 .phpactor.json
 .phpunit.result.cache
 /.fleet
