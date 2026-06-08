@@ -58,6 +58,53 @@ class DeliveryAddressController extends Controller
         ]);
     }
 
+    /**
+     * 配信先一覧を CSV でエクスポート（正規フォーマット・フルカラム / UTF-8 BOM）。
+     * 列: e-mail, Name, ZipCode, Prefecture, Address, Tel, Occupation, IsActive
+     * index と同じ search / is_active フィルタを尊重する。
+     */
+    public function export(Request $request): \Symfony\Component\HttpFoundation\StreamedResponse
+    {
+        $query = DeliveryAddress::query();
+
+        if ($request->filled('search')) {
+            $search = $request->input('search');
+            $query->where(function ($q) use ($search) {
+                $q->where('email', 'ilike', "%{$search}%")
+                  ->orWhere('name', 'ilike', "%{$search}%");
+            });
+        }
+        if ($request->has('is_active')) {
+            $query->where('is_active', filter_var($request->input('is_active'), FILTER_VALIDATE_BOOLEAN));
+        }
+
+        $filename = 'DeliveryAddress_' . now()->format('Ymd') . '.csv';
+
+        return response()->streamDownload(function () use ($query) {
+            $out = fopen('php://output', 'w');
+            // Excel 互換のため UTF-8 BOM を付与
+            fwrite($out, "\xEF\xBB\xBF");
+            fputcsv($out, ['e-mail', 'Name', 'ZipCode', 'Prefecture', 'Address', 'Tel', 'Occupation', 'IsActive']);
+            $query->orderBy('email')->chunk(500, function ($rows) use ($out) {
+                foreach ($rows as $a) {
+                    fputcsv($out, [
+                        $a->email,
+                        $a->name,
+                        $a->zip_code,
+                        $a->prefecture,
+                        $a->address,
+                        $a->tel,
+                        $a->occupation,
+                        $a->is_active ? 'true' : 'false',
+                    ]);
+                }
+            });
+            fclose($out);
+        }, $filename, [
+            'Content-Type' => 'text/csv; charset=UTF-8',
+        ]);
+    }
+
     public function import(Request $request): JsonResponse
     {
         $request->validate([
