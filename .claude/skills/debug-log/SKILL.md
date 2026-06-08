@@ -16,15 +16,18 @@ description: Laravelのエラーログを確認してバグを診断・修正す
 
 ### ローカル
 ```bash
-docker compose exec app tail -f storage/logs/laravel.log
+# ログ名は laravel.log ではなく日付ローテーション sales_sup-YYYY-MM-DD.log
+docker compose exec app tail -f storage/logs/sales_sup-$(date +%Y-%m-%d).log
 # または直近100行
-docker compose exec app tail -n 100 storage/logs/laravel.log
+docker compose exec app tail -n 100 storage/logs/sales_sup-$(date +%Y-%m-%d).log
+# 監査ログ（USER_ACTIVITY）は別チャネル
+docker compose exec app tail -n 100 storage/logs/audit.log
 ```
 
 ### 本番
 ```bash
 ssh root@v133-18-42-139.vir.kagoya.net
-docker exec sales_support_app tail -n 100 storage/logs/laravel.log
+docker exec sales_support_app tail -n 100 storage/logs/sales_sup-$(date +%Y-%m-%d).log
 ```
 
 ## Step 2: エラーの種類を特定する
@@ -53,3 +56,10 @@ grep -r "クラス名" app/ --include="*.php" -l
 - `tenant_id` がnullになるエラー → `SetTenantContext` ミドルウェアが適用されているか確認
 - DB接続エラー → Session Pooler設定（.envのDB_HOSTがpooler.supabase.comか確認）
 - メール抽出系のエラー → `ClaudeService` のレスポンスがnullでないか確認
+
+## Gotchas（このプロジェクト固有のハマりどころ）
+- **本番でログ書き込みを伴う `php artisan` / `tinker` を叩く時は `--user www-data`**（root実行でログが root 所有化→以降 PHP-FPM から `Permission denied`）。詳細は deploy スキル参照。
+- **`UnexpectedValueException: Permission denied`（ログ書込）を見たら**、storage/logs 配下に root 所有ファイルが混じっていないか確認 → `docker exec sales_support_app chown -R www-data:www-data /var/www/storage/`。
+- **`statement timeout` 系**: `emails` への一括 UPDATE/DELETE は index 約10本の保守で 2min タイムアウト（trgm GIN 等）。LIMIT 200〜1000 のバッチループ必須。bounce 大量削除は FK cascade(project_mail_sources) で別途 timeout → 同じくバッチ。
+- **`JWT iat prior to` / 「Enterで401・リロードで通る」**: コードより先にサーバー時計を疑う（`date -u`）。leeway=60秒。
+- **スコアが急に崩れた/件名だけで採点された疑い**: `CleanupEmails` が30日超の body を NULL化 → rescore で件名のみ採点される構造的罠。現在は本文空ガードで保存値温存済（崩れていたら回帰を疑う）。

@@ -73,3 +73,10 @@ docker compose exec app php artisan tinker
 ## 注意事項
 - 無効なUTF-8バイト列はDB insertでエラーになる → `cleanUtf8()` を通す
 - `extract*` 系はnullを返す場合があるので呼び出し側でnullチェック必須
+
+## Gotchas（採点・再採点の破壊的な罠）
+- **`rescoreAll` / `score()` は本文 purge 済みメールに破壊的**。`CleanupEmails` が classified_at 30日超の body_text/body_html を NULL化するため、本文が消えた古いメールを件名のみで再採点すると保存スコアが崩落する。`rescoreAll`/`rescoreAllShadow`/`score()` には「本文(text/html)とも空なら保存値を温存（再スコアしない）」ガードが入っている。**採点ロジックを触る時はこのガードを壊さないこと**（isExcluded は本文不要なので従来どおり先に判定）。
+- **engineer の `no_unit_price` 除外は過剰になりやすい**。本文正規表現で単価が取れないと excluded になるが成功率が低い。是正済の方針: 本文に無ければ `parsed_skill_sheet_text` から救済 → それでも不明なら excluded ではなく **review（手動トリアージ）** に留める。`unit_price_too_low` のみ excluded。save / rescoreAll / rescoreAllShadow の **3箇所をヘルパー共通化**して divergence を防ぐ。
+- **project 側に no_unit_price ロジックは無い**（status は score 基準のみ、domainBonus は -20..+20）。単価チェックが status に効くのは engineer のみ。
+- **並び・鮮度は `received_at`(送信時刻) ではなく `arrived_at`(Kagoya 着信=INTERNALDATE)**。Kagoya 配送遅延が常態化（~数h）しているため、`save()` で EMS/PMS に `arrived_at = $email->arrived_at` をコピーし、一覧 `index()` は `orderByDesc('arrived_at')`。新規に並び・表示を足す時は arrived_at 基準に揃える。
+- **全件再分類 `reclassifyAll()` / 全件 rescore は事故リスク大**。ピンポイント救済（ilike 絞り込み→対象のみ再処理）を優先。emails への一括 UPDATE/DELETE は statement timeout を避けるため LIMIT 200〜1000 のバッチループ必須。
