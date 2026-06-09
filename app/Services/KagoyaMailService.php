@@ -370,6 +370,33 @@ class KagoyaMailService
             }
         }
 
+        // ── rfc_message_id ベースの重複排除（IMAP / SES 二経路 + Kagoya 二重配送対策）──
+        // 従来 dedup は gmail_message_id='imap-{UID}' のみで、Kagoya が同一メールを別 UID で
+        // 再配送すると重複行ができていた（実測 482 グループ / 1299 行）。Message-ID が一致する
+        // 既存行があれば本文行を新規作成しない。Phase 1 で追加する SES 受信経路(ses-{id})と
+        // IMAP バックアップの二重登録もこの dedup で防ぐ。
+        // ただし IMAP の UID ウォーターマーク（lastUid = imap-{UID} 行の最大 UID）を進めるため、
+        // imap- anchor で来た重複は既存行の gmail_message_id をより新しい UID に更新し、同じ UID
+        // を毎 sync で再フェッチするループを防ぐ。NULL（≒ダミー/self/手動登録）は dedup 対象外。
+        if ($rfcMessageId !== null) {
+            $existing = Email::where('tenant_id', $tenantId)
+                ->where('rfc_message_id', $rfcMessageId)
+                ->orderByDesc('id')
+                ->first(['id', 'gmail_message_id']);
+            if ($existing) {
+                if (str_starts_with($uid, 'imap-')) {
+                    $newUidNum      = (int) substr($uid, 5);
+                    $existingIsImap = str_starts_with((string) $existing->gmail_message_id, 'imap-');
+                    $existingUidNum = $existingIsImap ? (int) substr($existing->gmail_message_id, 5) : -1;
+                    // 既存が非 imap(=SES) か、より小さい imap UID のときだけ anchor を前進。
+                    if (!$existingIsImap || $newUidNum > $existingUidNum) {
+                        $existing->update(['gmail_message_id' => $uid]);
+                    }
+                }
+                return false; // 重複につき本文行は作らない
+            }
+        }
+
         [$fromName, $fromAddress] = $this->parseFrom($from);
 
         // Date ヘッダー（送信者メーラーの送信時刻）を優先、なければ INTERNALDATE。
