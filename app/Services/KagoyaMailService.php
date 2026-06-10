@@ -350,6 +350,24 @@ class KagoyaMailService
     /**
      * @return bool true=正常取込／false=バウンスstub保存(再処理スキップ用)
      */
+    /**
+     * SES Inbound 経路から受け取った生 RFC822 を取り込む (B-light)。
+     *
+     * IMAP 経路の storeRawMessage を再利用するが、uid を "ses-{sesMessageId}" にし、
+     * arrived_at を SES 受信時刻にするため $internalDate に SES 受信時刻を渡す。これにより
+     * Kagoya の INBOX 配送遅延 (~2.5h) を回避し、一覧の「受信」表示が準リアルタイムになる。
+     * received_at は従来通り Date ヘッダー優先。dedup は rfc_message_id ベースで、imap- anchor を
+     * 奪わない (storeRawMessage 内の anchor 前進は imap- prefix 限定)。classify/score は既存の
+     * 10 分スケジューラ (category=null を拾う) に委譲する。
+     *
+     * @return bool 本文行を新規作成したら true、重複/バウンス stub なら false
+     */
+    public function storeRawFromSes(string $raw, string $sesMessageId, ?string $sesReceivedAt = null, ?int $tenantId = null): bool
+    {
+        $tenantId ??= (int) config('services.inbound.tenant_id', 1);
+        return $this->storeRawMessage($raw, $tenantId, "ses-{$sesMessageId}", $sesReceivedAt);
+    }
+
     private function storeRawMessage(string $raw, int $tenantId, string $uid, ?string $internalDate = null): bool
     {
         $parts = preg_split('/\r?\n\r?\n/', $raw, 2);

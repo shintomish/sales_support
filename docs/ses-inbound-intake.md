@@ -66,6 +66,50 @@ Kagoya の「Postfix 受理後 → メールボックス最終配送」区間で
 
 ---
 
+## ラグ判定結果（2026-06-10・B-light 成立）
+
+本番 (smz) `emails` の `arrived_at − received_at`（= IMAP 経路の送信→INBOX 配送ラグ）を測定（直近7日 n=28,074）:
+
+| 指標 | ラグ |
+|---|---|
+| 平均 | 177.6 分 (≈3.0h) |
+| p50 | 139.9 分 (≈2.3h) |
+| p90 | 328.0 分 (≈5.5h) |
+| p99 | 1161.5 分 (≈19h) |
+
+バケット分布: 0–5分=10% / 5–30分=9.5% / 30–60分=7.6% / 60–150分=27% / 150–360分=40% / 360分超=6%。
+**80%以上が30分超のラグ**。一方 SES forward は Phase 0 実測で **≈1秒**。差は決定的 → **B-light 成立・Phase 1 着手**。
+
+---
+
+## Phase 1 実装状況（2026-06-10・Laravel 側完了）
+
+Laravel 受信パスを実装・テスト済（commit 参照）。**残るは AWS Lambda のデプロイのみ**（新冨さん作業）。
+
+実装済:
+- `config/services.php` → `services.inbound.secret` / `services.inbound.tenant_id`(既定1)
+- `KagoyaMailService::storeRawFromSes($raw, $sesMessageId, $sesReceivedAt, $tenantId=null)`
+  — `storeRawMessage` を再利用し uid=`ses-{id}` / `arrived_at`=SES受信時刻（`$internalDate` 引数に渡す）。
+- `App\Http\Controllers\Api\InboundEmailController@store` — `X-Inbound-Secret` を `hash_equals` 検証 →
+  JSON `{ses_message_id, received_at, raw_base64}` を受けて取込。store 失敗は 500 で Lambda リトライに委譲。
+- route: `POST /api/v1/inbound/email`（認証不要グループ・共有シークレット認証）。
+- テスト: `tests/Pgsql/Feature/InboundEmailTest.php`（arrived_at=SES時刻 / 401 / 取込）。
+
+本番 `.env` に追記（デプロイ時）:
+```
+INBOUND_EMAIL_SECRET=<openssl rand -hex 32 で生成し Lambda と共有>
+# INBOUND_EMAIL_TENANT_ID=1  # 既定1。変更不要
+```
+
+### AWS Lambda（新冨さん作業）
+- コード: `docs/ses-inbound-lambda.py`（python3.12・標準ライブラリ + boto3 のみ）。
+- 環境変数: `INBOUND_API_URL`=`https://<本番API>/api/v1/inbound/email` / `INBOUND_SECRET`=`.env` の `INBOUND_EMAIL_SECRET` と同値。
+- トリガ: S3 `aizen-sol-inbound-mail` の PutObject イベント（受信ルールの ObjectKeyPrefix に合わせる）。
+- IAM: `s3:GetObject`（対象バケット）+ 基本実行ロール。タイムアウト 30s。
+- 切替え: Lambda 有効化後しばらく IMAP と二重取込（dedup で安全）。SES 経路が安定したら Phase 2 へ。
+
+---
+
 ## Phase 1 — 取込パス構築（Phase 0 合格後・コード作業）
 
 8. **Lambda (Tokyo)**: SES 受信トリガ（S3 action にチェーン or S3 イベント）。S3 から raw 取得 →

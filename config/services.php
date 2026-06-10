@@ -97,6 +97,14 @@ return [
         'expired_threshold' => (int) env('BOUNCE_SUPPRESSION_EXPIRED_THRESHOLD', 2),
     ],
 
+    // SES Inbound 受信パス (B-light)。AWS Lambda が S3 の生メールを
+    // POST /api/v1/inbound/email に転送する際の共有シークレット (hash_equals 検証)。
+    // Kagoya 配送遅延 (~2.5h) 回避のため arrived_at に SES 受信時刻を採用する経路。
+    'inbound' => [
+        'secret'    => env('INBOUND_EMAIL_SECRET'),
+        'tenant_id' => (int) env('INBOUND_EMAIL_TENANT_ID', 1),
+    ],
+
     // pgroonga 全文索引による本文検索の高速化 (emails_pgroonga_fts_idx)。
     // pgroonga 非対応の環境 (テスト用 postgres:17-alpine 等) では false にして ILIKE フォールバックさせる。
     'pgroonga' => [

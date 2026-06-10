@@ -34,6 +34,7 @@ use App\Http\Controllers\Api\EmailBodyTemplateController;
 use App\Http\Controllers\Api\DeliveryAddressController;
 use App\Http\Controllers\Api\DeliveryCampaignController;
 use App\Http\Controllers\Api\HealthController;
+use App\Http\Controllers\Api\InboundEmailController;
 
 // ── 認証不要 ────────────────────────────────────────
 Route::prefix('v1')->group(function () {
@@ -44,6 +45,9 @@ Route::prefix('v1')->group(function () {
 
     // Gmail OAuth（コールバックのみ認証不要）
     Route::get('/gmail/callback', [GmailOAuthController::class, 'callback']);
+
+    // SES Inbound 受信 (B-light)。Supabase JWT ではなく共有シークレット (X-Inbound-Secret) で認証。
+    Route::post('/inbound/email', [InboundEmailController::class, 'store']);
 
 });
 
