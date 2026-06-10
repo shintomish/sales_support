@@ -255,6 +255,28 @@ class ProjectMailController extends Controller
         return response()->json($pms->fresh());
     }
 
+    // 右ペインから「メモ・備考」を関連 email の本文末尾に追記する (手動登録のみ)。
+    // 手動登録はダミー email を持つため本文書き換えが安全。IMAP 受信メールの本文は
+    // 改変しないよう source='manual' 以外は拒否する。再スコアは行わない (メモ用途)。
+    public function appendMemo(Request $request, int $id): JsonResponse
+    {
+        $v = $request->validate(['body_text' => 'required|string|max:10000']);
+
+        $pms = ProjectMailSource::with('email')->findOrFail($id);
+        if ($pms->source !== 'manual') {
+            return response()->json(['message' => '手動登録の案件のみメモを追記できます'], 422);
+        }
+        if (!$pms->email) {
+            return response()->json(['message' => '関連メールがありません'], 422);
+        }
+
+        $memo = trim($v['body_text']);
+        $pms->email->body_text = rtrim((string) $pms->email->body_text) . "\n\n" . $memo;
+        $pms->email->save();
+
+        return response()->json($pms->fresh(['email.attachments']));
+    }
+
     // 案件メール(ProjectMailSource)を論理削除する。
     // SoftDeletes により一覧(global scope)から除外される。実メール(emails)・添付は
     // 保持する（emails.email_id は onDelete cascade のため email 本体には触らない）。復元可能。

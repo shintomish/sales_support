@@ -266,6 +266,28 @@ class EngineerMailController extends Controller
         return response()->json($ems->fresh());
     }
 
+    // 右ペインから「メモ・備考」を関連 email の本文末尾に追記する (手動登録のみ)。
+    // 手動登録はダミー email を持つため本文書き換えが安全。IMAP 受信メールの本文は
+    // 改変しないよう source='manual' 以外は拒否する。再スコアは行わない (メモ用途)。
+    public function appendMemo(Request $request, int $id)
+    {
+        $v = $request->validate(['body_text' => 'required|string|max:10000']);
+
+        $ems = EngineerMailSource::with('email')->findOrFail($id);
+        if ($ems->source !== 'manual') {
+            return response()->json(['message' => '手動登録の技術者のみメモを追記できます'], 422);
+        }
+        if (!$ems->email) {
+            return response()->json(['message' => '関連メールがありません'], 422);
+        }
+
+        $memo = trim($v['body_text']);
+        $ems->email->body_text = rtrim((string) $ems->email->body_text) . "\n\n" . $memo;
+        $ems->email->save();
+
+        return response()->json($ems->fresh(['email.attachments']));
+    }
+
     // 技術者メール(EngineerMailSource)を論理削除する。
     // SoftDeletes により一覧(global scope)から除外される。実メール(emails)・添付は
     // 保持する（emails.email_id は onDelete cascade のため email 本体には触らない）。復元可能。
