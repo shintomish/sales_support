@@ -71,6 +71,10 @@ def lambda_handler(event, context):
                 # Accept: JSON を明示しないと Laravel はバリデーション失敗時に
                 # JSON 422 ではなく 302 リダイレクトを返す (expectsJson() が Accept を見るため)。
                 "Accept": "application/json",
+                # User-Agent: 既定の "Python-urllib/3.x" は Cloudflare の bot 判定
+                # (Error 1010 browser_signature_banned) で弾かれるため独自 UA を付ける。
+                # 恒久対策は Cloudflare 側で /api/v1/inbound/email を WAF skip にすること。
+                "User-Agent": "AizenInbound/1.0",
                 "X-Inbound-Secret": SECRET,
             },
         )
