@@ -533,36 +533,43 @@ class KagoyaMailService
             'classified_at'    => $forceSelf ? $receivedAt : null,
         ]);
 
+        // 添付は part_index を衝突回避キーに使い、1 メール分を 1 回の bulk insert で書き込む
+        // (添付ごとの create+update を避け N+1 を解消)。part_index は parseBody の MIME walk 順
+        // (深さ優先) で同一メール内で一意なため、同名添付 (unknown.bin / attachment.pdf 等) でも
+        // storage path が衝突しない。IMAP 再取得時の安定キーも兼ねる。
+        // Storage アップロードは性質上 1 件ずつ (失敗時はその行だけ storage_path=null で残し、
+        // BackfillImapAttachments で後追い復元できるようにする)。
+        $attachmentRows = [];
+        $now = now();
         foreach ($attachments as $i => $att) {
-            // EmailAttachment を先に作成して id を取得し、path に埋め込んで
-            // 同一メール内で同名添付 (unknown.bin / attachment.pdf 等) が衝突するのを防ぐ。
-            // part_index は parseBody の MIME walk 順 (深さ優先) を保存し、IMAP 再取得時の
-            // 安定キーとして使う。
-            $record = EmailAttachment::create([
-                'email_id'            => $email->id,
-                'filename'            => $att['filename'],
-                'mime_type'           => $att['mime_type'],
-                'size'                => $att['size'],
-                'gmail_attachment_id' => null,
-                'storage_path'        => null,
-                'part_index'          => $i,
-            ]);
-
+            $storagePath = null;
             if (!empty($att['binary'])) {
                 try {
                     $ext  = strtolower(pathinfo($att['filename'], PATHINFO_EXTENSION)) ?: 'bin';
                     $base = preg_replace('/[^\w\-\.]/u', '_', pathinfo($att['filename'], PATHINFO_FILENAME));
                     $base = preg_replace('/[^\x00-\x7F]/u', '', $base) ?: substr(md5($att['filename']), 0, 8);
-                    $path = "attachments/{$tenantId}/{$email->id}/{$record->id}_{$base}.{$ext}";
+                    $path = "attachments/{$tenantId}/{$email->id}/{$i}_{$base}.{$ext}";
                     $storage = app(\App\Services\SupabaseStorageService::class);
                     $storagePath = $storage->uploadBinary($att['binary'], $path, $att['mime_type']);
-                    if ($storagePath) {
-                        $record->update(['storage_path' => $storagePath]);
-                    }
                 } catch (\Throwable $e) {
                     Log::warning("[KagoyaIMAP] 添付Storage保存失敗: {$att['filename']}: " . $e->getMessage());
                 }
             }
+
+            $attachmentRows[] = [
+                'email_id'            => $email->id,
+                'filename'            => $att['filename'],
+                'mime_type'           => $att['mime_type'],
+                'size'                => $att['size'],
+                'gmail_attachment_id' => null,
+                'storage_path'        => $storagePath,
+                'part_index'          => $i,
+                'created_at'          => $now,
+                'updated_at'          => $now,
+            ];
+        }
+        if (!empty($attachmentRows)) {
+            EmailAttachment::insert($attachmentRows);
         }
 
         // 返信紐づけ
