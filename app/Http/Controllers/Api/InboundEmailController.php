@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Services\KagoyaMailService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -60,6 +61,17 @@ class InboundEmailController extends Controller
             // 再送されても二重登録しない)。一時障害 (DB 瞬断等) はリトライで取り込め、
             // 恒久失敗も最終的に IMAP バックアップが拾うため取りこぼさない。
             return response()->json(['error' => 'store_failed'], 500);
+        }
+
+        // ── SES 経路ヘルスチェック用ハートビート ──
+        // 200 を返せた = SES→S3→Lambda→CF→API の全リンクが疎通している証跡。
+        // stored=false(dedup) でも経路自体は生きているので記録する。後段で gmail_message_id が
+        // ses-→imap- に上書きされても消えないため、emails テーブル走査より堅牢な死活シグナル。
+        // emails:check-ses-health がこの値を読み、トラフィックが流れているのに古ければ警告する。
+        try {
+            Cache::put('inbound:ses:last_ok_at', now()->toIso8601String(), now()->addDays(7));
+        } catch (\Throwable $e) {
+            Log::warning('[InboundEmail] ハートビート記録失敗', ['error' => $e->getMessage()]);
         }
 
         return response()->json(['stored' => $stored], 200);

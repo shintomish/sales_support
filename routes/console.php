@@ -240,6 +240,20 @@ Schedule::command('emails:check-delivery-delay --threshold=360')
         Log::error('[Schedule] check-delivery-delay 失敗');
     });
 
+// ── SES Inbound 経路 死活監視（毎時・本番限定）
+// SES→S3→Lambda→CF→API のハートビートが古い(=経路ダウン疑い)のに直近2hで取込が続いて
+// いる(メールは IMAP で流れている)場合に通知。Phase 2(IMAP 低頻度化)で安全網を薄くする前提の
+// 「壊れたら気づく」仕組み (project_ses_inbound_blight)。トラフィック自己ゲートで夜間は鳴らない。
+Schedule::command('emails:check-ses-health --threshold=120')
+    ->hourly()
+    ->timezone('Asia/Tokyo')
+    ->environments(['production'])
+    ->name('check-ses-health')
+    ->withoutOverlapping()
+    ->onFailure(function () {
+        Log::error('[Schedule] check-ses-health 失敗');
+    });
+
 // ── 月別売上集計：前月分を全テナント再集計（毎月1日 1:00 JST・docs/460）
 // SES台帳(ses_contracts)を契約期間ベース・月単位粗計上で monthly_sales_details に確定。
 // 月初に前月が確定するため、当月 1 日に前月を一括集計する。Auth コンテキスト無し=全テナント横断。
