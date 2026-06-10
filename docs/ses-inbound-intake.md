@@ -101,12 +101,47 @@ INBOUND_EMAIL_SECRET=<openssl rand -hex 32 で生成し Lambda と共有>
 # INBOUND_EMAIL_TENANT_ID=1  # 既定1。変更不要
 ```
 
-### AWS Lambda（新冨さん作業）
-- コード: `docs/ses-inbound-lambda.py`（python3.12・標準ライブラリ + boto3 のみ）。
-- 環境変数: `INBOUND_API_URL`=`https://<本番API>/api/v1/inbound/email` / `INBOUND_SECRET`=`.env` の `INBOUND_EMAIL_SECRET` と同値。
-- トリガ: S3 `aizen-sol-inbound-mail` の PutObject イベント（受信ルールの ObjectKeyPrefix に合わせる）。
-- IAM: `s3:GetObject`（対象バケット）+ 基本実行ロール。タイムアウト 30s。
-- 切替え: Lambda 有効化後しばらく IMAP と二重取込（dedup で安全）。SES 経路が安定したら Phase 2 へ。
+### AWS Lambda デプロイ手順（新冨さん作業・コンソール想定）
+
+**確定値（コピペ用）**
+| 項目 | 値 |
+|---|---|
+| リージョン | `ap-northeast-1`（東京） |
+| S3 バケット | `aizen-sol-inbound-mail` |
+| AWS アカウント | `856480643523` |
+| `INBOUND_API_URL` | `https://sales.ai-mon.net/api/v1/inbound/email` |
+| `INBOUND_SECRET` | 本番 `.env` の `INBOUND_EMAIL_SECRET` と**同値**（VPS `/var/www/sales_support/.env` 参照） |
+| Lambda コード | `docs/ses-inbound-lambda.py`（python3.12・boto3 のみ） |
+
+> このコードは **S3 PutObject イベント**形式の `event` を読む。トリガは「SES の Lambda アクション」ではなく **S3→Lambda 通知**にすること（SES アクションだと event 形状が違い動かない）。
+
+**手順**
+1. **関数作成**（Lambda コンソール・東京リージョン）
+   - 「一から作成」/ 名前 `ses-inbound-forward` / ランタイム **Python 3.12** / アーキ x86_64。
+2. **コード貼付**: `docs/ses-inbound-lambda.py` の中身を `lambda_function.py` に貼り「Deploy」。
+   ハンドラは既定の `lambda_function.lambda_handler` のまま。boto3 はランタイム同梱で追加不要。
+3. **環境変数**（設定 → 環境変数）
+   - `INBOUND_API_URL` = `https://sales.ai-mon.net/api/v1/inbound/email`
+   - `INBOUND_SECRET` = 本番 `.env` の `INBOUND_EMAIL_SECRET` 値
+4. **基本設定**（設定 → 一般設定）: タイムアウト **30秒** / メモリ 256MB。
+5. **実行ロールに S3 読取権限**（設定 → アクセス権限 → ロール名クリックで IAM へ）
+   - インラインポリシー追加: `s3:GetObject` を `arn:aws:s3:::aizen-sol-inbound-mail/*` に許可。
+   - CloudWatch Logs 権限（`AWSLambdaBasicExecutionRole`）は作成時に自動付与済。
+6. **S3 トリガ追加**（Lambda コンソール → トリガーを追加 → S3）
+   - バケット `aizen-sol-inbound-mail` / イベントタイプ **PUT（すべてのオブジェクト作成）**。
+   - **プレフィックス**: SES 受信ルール `inbound-to-s3` の S3 アクションで ObjectKeyPrefix を設定して
+     いる場合は同じ値を入れる（未設定ならプレフィックス空欄）。
+   - これで S3→Lambda の invoke 許可（リソースベースポリシー）が自動付与される。
+7. **疎通テスト**: `outsource@aizen-sol.co.jp` 宛に実メール送信（または Gmail から）→
+   - CloudWatch Logs で `{"stored": true}` を確認。
+   - 営業支援アプリの一覧に当該メールが出て、**「受信」時刻が送信直後（≈数秒）**になっていれば成功
+     （従来の IMAP 経路だと数十分〜数時間ラグ）。
+   - IMAP 経路でも同じメールが届くが `rfc_message_id` dedup で二重登録されない。
+
+**ロールバック**: S3 トリガを削除すれば Lambda 休眠（API も叩かれない）。さらに戻すなら
+サブドメイン MX と Kagoya 転送を外して IMAP のみの従来運用へ（完全可逆）。
+
+**切替え運用**: Lambda 有効化後しばらく IMAP と二重取込（dedup で安全）。SES 経路が安定したら Phase 2 で IMAP を低頻度化。
 
 ---
 
