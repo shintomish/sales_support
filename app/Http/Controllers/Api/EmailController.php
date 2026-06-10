@@ -158,6 +158,13 @@ class EmailController extends Controller
             ->where(function ($q) {
                 $q->where('subject', 'not ilike', '[spam]%')->orWhereNull('subject');
             })
+            // 一覧(index)の既定除外と揃える: bounce / 手動登録ダミー (manual_*) は /emails に
+            // 出さないのでカウントからも除外する。これがないと「担当者(6)なのにメール0」になる
+            // (手動登録のダミー emails が担当者宛に積まれるため)。
+            ->where(function ($q) {
+                $q->whereNotIn('category', ['bounce', 'manual_project', 'manual_engineer'])
+                  ->orWhereNull('category');
+            })
             ->selectRaw("lower(substring(to_address from '([A-Za-z0-9._%+\\-]+)@aizen-sol\\.co\\.jp')) as owner, count(*) as count")
             ->groupByRaw('1')
             ->orderByDesc('count')
