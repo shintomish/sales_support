@@ -60,6 +60,9 @@ def lambda_handler(event, context):
             method="POST",
             headers={
                 "Content-Type": "application/json",
+                # Accept: JSON を明示しないと Laravel はバリデーション失敗時に
+                # JSON 422 ではなく 302 リダイレクトを返す (expectsJson() が Accept を見るため)。
+                "Accept": "application/json",
                 "X-Inbound-Secret": SECRET,
             },
         )
