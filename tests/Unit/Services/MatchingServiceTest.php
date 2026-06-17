@@ -312,18 +312,99 @@ class MatchingServiceTest extends TestCase
         $this->assertSame(1, $count);
     }
 
+    // ─── 中立性（自社/外部 完全中立 = score 順のみ）───
+    //
+    // CLAUDE.md「本質の番人」軸2: 自社/外部の技術者・案件は完全中立（score 順のみ）。
+    // affiliation_type がスコア・並び順に混入していないことを守る回帰ガード。
+    // 構造上は calculate() のスコア入力に affiliation は含まれないが、将来うっかり
+    // 「自社を +N 点」等を足す変更を fail させるのがこのテストの目的。
+
+    public function test_calculate_score_is_identical_across_affiliation_types(): void
+    {
+        // スコア構成要素（skill/price/location/availability）を完全に揃え、所属だけを変える。
+        $project = PublicProject::factory()->create([
+            'unit_price_min' => 60, 'unit_price_max' => 80,
+            'work_style'     => 'remote',
+            'start_date'     => '2026-08-01',
+        ]);
+
+        // EngineerController の enum を全数検査（self=自社・他=外部）。
+        $affiliations = ['self', 'first_sub', 'bp', 'bp_member', 'contract', 'freelance', 'joining', 'hiring'];
+
+        $scores = [];
+        foreach ($affiliations as $aff) {
+            $engineer = $this->makeEngineer([
+                'min' => 60, 'max' => 80,
+                'work_style'     => 'remote',
+                'available_from' => '2026-07-01',
+                'affiliation'    => $aff,
+            ]);
+            $scores[$aff] = (float) $this->service->calculate($project, $engineer)['score'];
+        }
+
+        foreach ($scores as $aff => $score) {
+            $this->assertSame(
+                $scores['self'],
+                $score,
+                "所属 {$aff} のスコアが自社(self)と異なる: 中立性違反の疑い（affiliation_type がスコアに混入）"
+            );
+        }
+    }
+
+    public function test_recommend_engineers_ranks_by_score_not_affiliation(): void
+    {
+        // 必須スキルを持つ「外部(bp)」が、持たない「自社(self)」より上位に来ること。
+        // = 自社びいきが無い（score 順のみ）ことの回帰ガード。所属でのフィルタも無いこと。
+        $skill   = Skill::create(['name' => 'PHP', 'category' => 'language']);
+        $project = PublicProject::factory()->create(['unit_price_max' => 80]);
+        ProjectRequiredSkill::create([
+            'project_id'           => $project->id,
+            'skill_id'             => $skill->id,
+            'is_required'          => true,
+            'min_experience_years' => 3,
+        ]);
+
+        // 外部(bp): スキル有り → skill_match 100
+        $external = $this->makeEngineer(['min' => 60, 'max' => 80, 'affiliation' => 'bp']);
+        EngineerSkill::create([
+            'tenant_id'        => $external->tenant_id,
+            'engineer_id'      => $external->id,
+            'skill_id'         => $skill->id,
+            'experience_years' => 5,
+        ]);
+
+        // 自社(self): スキル無し → skill_match 0
+        $self = $this->makeEngineer(['min' => 60, 'max' => 80, 'affiliation' => 'self']);
+
+        $recommended = $this->service->recommendEngineers($project);
+
+        // 両者とも候補に含まれる（所属でフィルタされない）。
+        $ids = $recommended->pluck('engineer.id')->all();
+        $this->assertContains($external->id, $ids, '外部技術者が候補から除外された');
+        $this->assertContains($self->id, $ids, '自社技術者が候補から除外された');
+
+        // スコアの高い外部が先頭（自社びいきが無い）。
+        $this->assertSame(
+            $external->id,
+            $recommended->first()['engineer']->id,
+            'スコアの高い外部技術者が自社より上位に来ていない（中立性違反の疑い）'
+        );
+    }
+
     // ─── helper ───
 
     /**
      * @param array{
      *   min?: float|null, max?: float|null,
      *   work_style?: string|null, preferred_location?: string|null,
-     *   available_from?: string|null,
+     *   available_from?: string|null, affiliation?: string|null,
      * } $profile
      */
     private function makeEngineer(array $profile = []): Engineer
     {
-        $engineer = Engineer::factory()->create();
+        $engineer = Engineer::factory()->create(
+            isset($profile['affiliation']) ? ['affiliation_type' => $profile['affiliation']] : []
+        );
 
         EngineerProfile::create([
             'tenant_id'              => $engineer->tenant_id,

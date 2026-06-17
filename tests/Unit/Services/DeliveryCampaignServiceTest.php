@@ -36,6 +36,9 @@ class DeliveryCampaignServiceTest extends TestCase
         $this->originalTestTo = getenv('MAIL_DELIVERY_TEST_TO');
         putenv('MAIL_DELIVERY_TEST_TO');
         unset($_ENV['MAIL_DELIVERY_TEST_TO'], $_SERVER['MAIL_DELIVERY_TEST_TO']);
+        // config('mail.delivery_test_to') は起動時に env() で解決済みのため putenv では上書きできない。
+        // .env に MAIL_DELIVERY_TEST_TO が設定された環境(自宅等)でも安定させるため config を直接無効化する。
+        config(['mail.delivery_test_to' => null]);
 
         $this->actingAsUser();
         $this->service = new DeliveryCampaignService(
@@ -258,9 +261,12 @@ class DeliveryCampaignServiceTest extends TestCase
         $this->makeAddress(['email' => 'real@example.com']);
         $campaign = $this->makeCampaign();
 
+        // サービスは config('mail.delivery_test_to') を参照するため config を直接設定する
+        // （putenv は起動時解決済みの config を上書きしない）。
         putenv('MAIL_DELIVERY_TEST_TO=devtest@example.com');
         $_ENV['MAIL_DELIVERY_TEST_TO']    = 'devtest@example.com';
         $_SERVER['MAIL_DELIVERY_TEST_TO'] = 'devtest@example.com';
+        config(['mail.delivery_test_to' => 'devtest@example.com']);
 
         $this->service->sendCampaign($campaign);
 
