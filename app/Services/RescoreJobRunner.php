@@ -150,7 +150,10 @@ class RescoreJobRunner
     private function runMarkReadBatch(RescoreJob $job): bool
     {
         return DB::transaction(function () use ($job) {
-            DB::statement("SET LOCAL statement_timeout = '" . self::MARK_READ_STATEMENT_TIMEOUT . "'");
+            // SET LOCAL は Postgres 固有。sqlite 等(テスト)では no-op にする（本番 pgsql は従来どおり）。
+            if (DB::connection()->getDriverName() === 'pgsql') {
+                DB::statement("SET LOCAL statement_timeout = '" . self::MARK_READ_STATEMENT_TIMEOUT . "'");
+            }
 
             $ids = Email::withoutGlobalScopes()
                 ->where('tenant_id', $job->tenant_id)
