@@ -47,7 +47,7 @@ class DeliveryCampaignController extends Controller
         if ($request->boolean('exclude_proposals')) {
             // 一斉配信履歴タブ: 提案スレッド系に加え self_reply(/emails 個別返信)も除外。
             // self_reply は専用「返信履歴」タブ(send_type=self_reply 指定)で表示する。
-            $query->whereNotIn('send_type', ['proposal', 'matching_proposal', 'engineer_proposal', 'engineer_proposal_bulk', 'bulk', 'self_reply']);
+            $query->whereNotIn('send_type', DeliveryCampaign::EXCLUDE_FROM_DELIVERY_TYPES);
         }
 
         if ($userId) {
@@ -369,7 +369,7 @@ class DeliveryCampaignController extends Controller
         // project_mail_id / engineer_mail_source_id でグループ化し、
         // 各グループの最新 sent_at、合計件数、返信有無を取得
         $threadsQuery = DeliveryCampaign::query()
-            ->whereIn('send_type', ['proposal', 'matching_proposal', 'engineer_proposal', 'engineer_proposal_bulk', 'bulk'])
+            ->whereIn('send_type', DeliveryCampaign::PROPOSAL_THREAD_TYPES)
             ->where(function ($q) {
                 $q->whereNotNull('project_mail_id')
                   ->orWhereNotNull('engineer_mail_source_id');
@@ -457,7 +457,7 @@ class DeliveryCampaignController extends Controller
 
         // 各スレッドに紐づくキャンペーンIDを一括取得
         $campaignsByThread = DeliveryCampaign::query()
-            ->whereIn('send_type', ['proposal', 'matching_proposal', 'engineer_proposal', 'engineer_proposal_bulk', 'bulk'])
+            ->whereIn('send_type', DeliveryCampaign::PROPOSAL_THREAD_TYPES)
             ->where(function ($q) use ($projectMailIds, $engineerMailIds) {
                 if ($projectMailIds) {
                     $q->orWhereIn('project_mail_id', $projectMailIds);

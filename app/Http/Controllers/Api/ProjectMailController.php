@@ -575,7 +575,7 @@ class ProjectMailController extends Controller
             }])
             ->where('tenant_id', $tenantId)
             ->where('project_mail_id', $id)
-            ->whereIn('send_type', ['proposal', 'matching_proposal', 'bulk'])
+            ->whereIn('send_type', DeliveryCampaign::PROJECT_PROPOSAL_TYPES)
             ->orderBy('sent_at')
             ->get();
 

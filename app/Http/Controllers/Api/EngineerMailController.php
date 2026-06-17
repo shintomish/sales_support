@@ -683,7 +683,7 @@ class EngineerMailController extends Controller
             }])
             ->where('tenant_id', $tenantId)
             ->where('engineer_mail_source_id', $id)
-            ->whereIn('send_type', ['engineer_proposal', 'engineer_proposal_bulk'])
+            ->whereIn('send_type', DeliveryCampaign::ENGINEER_PROPOSAL_TYPES)
             ->orderBy('sent_at')
             ->get();
 
