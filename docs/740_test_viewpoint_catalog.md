@@ -86,7 +86,7 @@
 |---|---|
 | マッチングスコアは skill/price/location/availability の加重和のみ | ○ `MatchingService::total_score_uses_weighted_sum`（構成要素を網羅）|
 | **affiliation_type（自社/bp/個人）がスコア・並び順に影響しない** | ○ `MatchingService::score_is_identical_across_affiliation_types` / `recommend_engineers_ranks_by_score_not_affiliation`（G1 解決・ミューテーション検証済）|
-| domain bonus / penalty が自己強化ループにならない | ✗ **G5** |
+| domain bonus / penalty が自己強化ループにならない | ○ `DomainBonusNeutralityTest`（floor=-20で発散しない・出力{-20,0,20}有界・status依存でscore非依存・G5解決）|
 
 > 構造上は affiliation はスコア入力に含まれていない（＝現状は中立）。
 > だが「将来うっかり混ぜる」変更を止める回帰テストが無い。軸2 の核心なので最優先で追加。
@@ -98,7 +98,7 @@
 | `self_reply` は exclude_proposals に含まれ「返信履歴」タブのみ表示 | ○ `EmailController::reply` + `DeliveryCampaign::excludes_proposals` |
 | 新規テーブルに RLS 有効がある | ○ `RlsGrantAuditTest`（全 public テーブルの relrowsecurity を検査・G3 解決）|
 | 新規テーブルに適切な GRANT (authenticated/service_role) がある | △ runtime 検査不可（test-postgres に Supabase ロール非存在）→ `rls-grant-audit` スキルで PR レビュー時に判断ベース監査 |
-| emails 一括書き込みは LIMIT バッチで statement_timeout を回避 | △ **G4**（markAllRead のジョブ生成はテスト済、バッチ境界は未検証）|
+| emails 一括書き込みは LIMIT バッチで statement_timeout を回避 | ○ `MarkAllReadBatchTest`（250件をbatch=200で複数UPDATEに分割・全件既読・他テナント不可侵。G4解決）|
 
 ### D5 メール取込の冪等性・重複・anchor ★
 | 観点 | 既存テスト |
@@ -110,7 +110,7 @@
 | SES 取込の arrived_at は SES 受信時刻 / received_at は Date ヘッダー優先 | △ `InboundEmail::arrived_at`（Date ヘッダー優先の単体は別途）|
 | 添付は part_index ベースで一括保存・同名衝突しない | ○ `InboundEmail::添付は_part_index` |
 | 取込エンドポイントは共有シークレットを検証 | ○ `InboundEmail::共有シークレット` |
-| bounce silent-drop でも category='bounce' の stub を必ず insert（再処理ループ防止）| ✗ **G6**（feedback メモリのみ）|
+| bounce silent-drop でも category='bounce' の stub を必ず insert（再処理ループ防止）| ○ `KagoyaStoreRawMessageBounceStubTest`（stub=bounce/is_read/body null・dedup anchor前進・正常メール非該当。G6解決）|
 
 ### D6 入力バリデーション・境界値 ★
 | 観点 | 既存テスト |
@@ -137,7 +137,7 @@
 | destroy は soft delete（復元可能）| ○ 各 `destroy_soft_deletes_*` |
 | 本文 purge 済みメールの再スコアで件名のみ崩落しない（空本文ガード）| ○ `MailScoringBodyPurgeGuard`（5 観点）|
 | 発行済み請求書も回収目的で削除可 | ○ `Invoice::destroy_allows_issued_invoice_for_recovery` |
-| CleanupEmails 30日 NULL化の境界（29日は残る/31日は消える）| ✗ **G7** |
+| CleanupEmails 30日 NULL化の境界（29日は残る/31日は消える）| ○ `CleanupEmailsBodyNullifyBoundaryTest`（29日残/31日NULL化・未分類非該当・dry-run不変。G7解決）|
 
 ### D9 金額・帳票の計算正確性 ★
 | 観点 | 既存テスト |
@@ -161,7 +161,7 @@
 
 - 全 35 テストファイル / 約 270 メソッドを 10 ドメインへマッピング済（§2）。
 - **強い領域**: D1 テナント分離・D6 バリデーション・D7 外部API異常系・D9 金額計算（網羅的）。
-- **弱い領域（ギャップ）**: D3 中立性・D4 同期/防御制約・一部 D5/D8（→ §5）。
+- **解決済ギャップ (2026-06-17)**: G1 中立性 / G2 send_type同期 / G3 RLS / G4 markAllReadバッチ / G5 domainペナルティ非発散 / G6 bounce stub / G7 Cleanup境界。残るは GRANT のスキル運用のみ（→ §5）。
 - 観点が手動スキル頼みの領域: D4 GRANT（rls-grant-audit。RLS は自動化済）・D1 横断（idor-audit）・スコア変更影響（shadow-rescore）。これらは「自動回帰テスト化」が右ループの改善候補。
 
 ---
@@ -191,13 +191,13 @@
 | ~~G1~~ | ~~affiliation_type がマッチング順位に影響しないこと~~ → **解決済 (2026-06-17)** | D3 中立性 | — | `tests/Unit/Services/MatchingServiceTest::test_calculate_score_is_identical_across_affiliation_types`（全8 enum で score 一致）+ `::test_recommend_engineers_ranks_by_score_not_affiliation`（所属でフィルタせず score 順）。自社+5点ボーナス注入で fail することをミューテーション検証済 |
 | ~~G2~~ | ~~send_type 提案スレッド系 whereIn の 4 箇所一致~~ → **解決済 (2026-06-17)** | D4 同期 | — | DeliveryCampaign に4定数を集約し5箇所のインライン配列を置換（挙動不変）。`tests/Unit/Models/DeliveryCampaignSendTypeSyncTest` が派生関係（和集合・+self_reply・delivery非含有・サブセット非重複）と各コントローラの定数参照継続を検証 |
 | ~~G3~~ | ~~新規テーブルに RLS 有効 + GRANT~~ → **RLS 解決済 (2026-06-17) / GRANT はスキル運用** | D4 防御 | — | `tests/Pgsql/Feature/RlsGrantAuditTest`: 全 public テーブルの `pg_class.relrowsecurity` を検査し RLS 無効を fail（framework テーブルは除外・ポジティブコントロール付きで非vacuous）。GRANT は test-postgres に Supabase ロールが無く runtime 検査不可のため `rls-grant-audit` スキルで継続 |
-| G4 | markAllRead の LIMIT バッチ境界（200件超で複数バッチ）| D4 制約 | 中 | 250 件 unread を作り、ジョブ完走後に全件既読 + バッチが複数回回ることを assert |
-| G5 | domain penalty が自己強化ループにならない | D3 中立性 | 中 | ペナルティ適用→再集計でペナルティが累積発散しないことを assert（GFD 事例の回帰）|
-| G6 | bounce silent-drop でも stub insert される | D5 冪等性 | 中 | 取込不可メールでも category='bounce', is_read=true の stub が 1 行残ることを assert（再処理ループ防止アンカー）|
-| G7 | CleanupEmails 30日 NULL化の境界 | D8 可逆性 | 低 | 29日前=本文残る / 31日前=NULL化 の境界テスト |
+| ~~G4~~ | ~~markAllRead の LIMIT バッチ境界~~ → **解決済 (2026-06-17)** | D4 制約 | — | `tests/Pgsql/Feature/MarkAllReadBatchTest`: 250件を batch=200 で複数 UPDATE に分割(DB::listenで計測)・全件既読・他テナント不可侵。併せて `RescoreJobRunner` の `SET LOCAL` を pgsql 限定にガードし、既存 markAllRead Feature テスト(sqlite)の恒常 red を解消 |
+| ~~G5~~ | ~~domain penalty が自己強化ループにならない~~ → **解決済 (2026-06-17)** | D3 中立性 | — | `tests/Feature/Services/DomainBonusNeutralityTest`: floor=-20で発散しない・出力{-20,0,20}有界・status分布依存でscore値非依存・最低サンプル未満は0 |
+| ~~G6~~ | ~~bounce silent-drop でも stub insert される~~ → **解決済 (2026-06-17)** | D5 冪等性 | — | `tests/Pgsql/Feature/KagoyaStoreRawMessageBounceStubTest`: stub=category bounce/is_read true/body null・dedup で1行+UID anchor前進・正常メール非該当 |
+| ~~G7~~ | ~~CleanupEmails 30日 NULL化の境界~~ → **解決済 (2026-06-17)** | D8 可逆性 | — | `tests/Pgsql/Feature/CleanupEmailsBodyNullifyBoundaryTest`: 29日=本文残る / 31日=NULL化 / 未分類は非該当 / dry-run 不変 |
 
-> 着手順の推奨: ~~G1~~（完了）→ ~~G2~~（完了）→ ~~G3 RLS~~（完了）。
-> 高優先 G1/G2/G3 は対応済。残る G4〜G7（中〜低優先）は今後の右ループで順次。
+> **G1〜G7 全て解決済 (2026-06-17)**。残る未自動化観点は D4 GRANT のみ（test-postgres に Supabase ロールが無く runtime 検査不可 → `rls-grant-audit` スキルで PR レビュー時に継続）。
+> 今後の新規ギャップは §6 の NG 学習サイクルで本表に追記していく。
 
 ---
 
