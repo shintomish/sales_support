@@ -312,24 +312,9 @@ class KagoyaMailService
                 return $stats; // DRY-RUN
             }
 
-            $toProcess = array_slice($deletable, 0, $limit);
-            foreach (array_chunk($toProcess, 500) as $chunk) {
-                $set = implode(',', $chunk);
-                $store = $this->imapCommand("UID STORE {$set} +FLAGS.SILENT (\\Deleted)");
-                if ($store['ok']) {
-                    $stats['flagged'] += count($chunk);
-                    if ($uidplus) {
-                        $exp = $this->imapCommand("UID EXPUNGE {$set}");
-                        if ($exp['ok']) $stats['expunged'] += count($chunk);
-                    }
-                }
-            }
-            if (!$uidplus && $stats['flagged'] > 0) {
-                // UIDPLUS 非対応: \Deleted 全体を一括 EXPUNGE（このメールボックスは取込専用で他に \Deleted を付けないため安全）
-                if ($this->imapCommand('EXPUNGE')['ok']) {
-                    $stats['expunged'] = $stats['flagged'];
-                }
-            }
+            $res = $this->flagAndExpunge($deletable, $limit, $uidplus);
+            $stats['flagged'] = $res['flagged'];
+            $stats['expunged'] = $res['expunged'];
 
             $sel2 = $this->imapCommand('SELECT INBOX');
             $stats['exists_after'] = $this->parseExistsCount($sel2['lines']);
@@ -345,6 +330,108 @@ class KagoyaMailService
             if (preg_match('/\*\s+(\d+)\s+EXISTS/', $l, $m)) return (int) $m[1];
         }
         return 0;
+    }
+
+    /**
+     * すでに SELECT INBOX（書込）で開いている接続上で、指定 UID 群に \Deleted を付与し EXPUNGE する。
+     *
+     * UIDPLUS 対応時は `UID EXPUNGE` で対象 UID のみを除去。非対応時は \Deleted 全体を一括 `EXPUNGE`
+     * する（このメールボックスは取込専用で他に \Deleted を付けないため、一括でも対象以外は消えない）。
+     * purgeOutsourceMail / purgeClassifiedMail で共有する単一の削除実体（同期ズレ防止のため一本化）。
+     *
+     * @param  int[] $uids  削除対象 UID
+     * @return array{flagged:int, expunged:int}
+     */
+    private function flagAndExpunge(array $uids, int $limit, bool $uidplus): array
+    {
+        $flagged = 0;
+        $expunged = 0;
+
+        $toProcess = array_slice($uids, 0, $limit);
+        foreach (array_chunk($toProcess, 500) as $chunk) {
+            $set = implode(',', $chunk);
+            $store = $this->imapCommand("UID STORE {$set} +FLAGS.SILENT (\\Deleted)");
+            if ($store['ok']) {
+                $flagged += count($chunk);
+                if ($uidplus) {
+                    $exp = $this->imapCommand("UID EXPUNGE {$set}");
+                    if ($exp['ok']) $expunged += count($chunk);
+                }
+            }
+        }
+        if (!$uidplus && $flagged > 0) {
+            if ($this->imapCommand('EXPUNGE')['ok']) {
+                $expunged = $flagged;
+            }
+        }
+
+        return ['flagged' => $flagged, 'expunged' => $expunged];
+    }
+
+    /**
+     * DB で分類済み(classified_at)の Kagoya 取込メール(imap-UID)を Kagoya サーバー上から削除する。
+     *
+     * 旧 gmail:trash-classified の後継。メールボックス容量超過による受信バウンスの根本対策。
+     * 削除しても案件/技術者の履歴メタは project_mail_sources / engineer_mail_sources に永続保存済みのため失われない。
+     *
+     * 安全設計:
+     *  - 対象は「分類済み(classified_at IS NOT NULL)」かつ「取込済み Kagoya UID(imap-NNN)」のみ。
+     *    Gmail 由来・SES 由来(ses-)・ダミー/手動登録は構造的に対象外。
+     *  - SELECT INBOX（書込）で開く。既存同期は EXAMINE(読取専用)で \Deleted/EXPUNGE 不可なため必須。
+     *  - 同期(syncEmails)の UID ウォーターマークは DB の MAX(imap-UID) から算出するため、サーバー側を
+     *    EXPUNGE しても再取込ループは起きない（サーバー在否に非依存）。
+     *  - min-age 分の取込経過ガードで同期直後の取りこぼしを回避。
+     *  - withoutGlobalScopes() で全テナント横断（共有メールボックス・console はテナント認証なし）。
+     *
+     * @return array{db_target:int, exists_before:?int, exists_after:?int, flagged:int, expunged:int, uidplus:bool, execute:bool}
+     */
+    public function purgeClassifiedMail(int $minAgeMinutes, int $limit, bool $execute): array
+    {
+        $dbUids = Email::withoutGlobalScopes()
+            ->whereNotNull('classified_at')
+            ->whereRaw("gmail_message_id ~ '^imap-[0-9]+$'")
+            ->where('created_at', '<', now()->subMinutes($minAgeMinutes))
+            ->selectRaw('CAST(SUBSTRING(gmail_message_id FROM 6) AS BIGINT) AS uid')
+            ->orderBy('uid')
+            ->limit($limit)
+            ->pluck('uid')
+            ->map(fn ($u) => (int) $u)
+            ->all();
+
+        $stats = [
+            'db_target' => count($dbUids),
+            'exists_before' => null, 'exists_after' => null,
+            'flagged' => 0, 'expunged' => 0, 'uidplus' => false, 'execute' => $execute,
+        ];
+        if (empty($dbUids) || !$execute) {
+            return $stats; // DRY-RUN はサーバー接続せず DB 件数のみ返す
+        }
+
+        if (!$this->connect()) {
+            throw new \RuntimeException('Kagoya IMAP 接続失敗');
+        }
+        try {
+            $sel = $this->imapCommand('SELECT INBOX'); // read-write（EXAMINE では \Deleted/EXPUNGE 不可）
+            if (!$sel['ok']) {
+                throw new \RuntimeException('SELECT INBOX 失敗: ' . $sel['line']);
+            }
+            $stats['exists_before'] = $this->parseExistsCount($sel['lines']);
+
+            $cap = $this->imapCommand('CAPABILITY');
+            foreach ($cap['lines'] as $l) {
+                if (stripos($l, 'UIDPLUS') !== false) $stats['uidplus'] = true;
+            }
+
+            $res = $this->flagAndExpunge($dbUids, $limit, $stats['uidplus']);
+            $stats['flagged'] = $res['flagged'];
+            $stats['expunged'] = $res['expunged'];
+
+            $sel2 = $this->imapCommand('SELECT INBOX');
+            $stats['exists_after'] = $this->parseExistsCount($sel2['lines']);
+            return $stats;
+        } finally {
+            $this->disconnect();
+        }
     }
 
     /**

@@ -211,20 +211,24 @@ Schedule::command('kagoya:purge-outsource --older-than-days=14 --execute --force
         Log::error('[Schedule] purge-outsource-kagoya 失敗');
     });
 
-// ── 分類済みメールをGmailゴミ箱に移動（毎日 2:00 JST）
-// 2026-05-14: Gmail API 取込停止に伴い、ゴミ箱移動も停止
-// 復活させる場合はコメントを外すだけで OK
-// Schedule::command('gmail:trash-classified')
-//     ->dailyAt('02:00')
-//     ->timezone('Asia/Tokyo')
-//     ->name('trash-classified-emails')
-//     ->withoutOverlapping()
-//     ->onSuccess(function () {
-//         Log::info('[Schedule] 分類済みメールのゴミ箱移動 完了');
-//     })
-//     ->onFailure(function () {
-//         Log::error('[Schedule] 分類済みメールのゴミ箱移動 失敗');
-//     });
+// ── 分類済みメールを Kagoya サーバーから削除（毎日 2:00 JST・本番限定）
+// 旧 gmail:trash-classified（Gmail API 廃止で停止）の後継。分類済み(classified_at)の取込済み
+// imap-UID を Kagoya サーバー上で \Deleted + EXPUNGE して容量を回収し、容量超過バウンスを根絶する。
+// DB の *_mail_sources にメタが残るため案件/技術者履歴は失われない。同期 UID ウォーターマークは
+// DB 由来なので EXPUNGE しても再取込ループは起きない。purge-outsource(3:30) と時間帯を分離。
+// 本番限定（Kagoya 認証 + ローカルからの本番メール誤削除回避。purge-outsource と同方針）。
+Schedule::command('kagoya:trash-classified --execute --force --limit=5000')
+    ->dailyAt('02:00')
+    ->timezone('Asia/Tokyo')
+    ->environments(['production'])
+    ->name('trash-classified-kagoya')
+    ->withoutOverlapping()
+    ->onSuccess(function () {
+        Log::info('[Schedule] Kagoya 分類済みメール削除 完了');
+    })
+    ->onFailure(function () {
+        Log::error('[Schedule] trash-classified-kagoya 失敗');
+    });
 
 // ── Kagoya 配送遅延アラート（毎時・本番限定）
 // 直近1hの平均配送遅延(到着-送信)が閾値(360分=6h)超なら日次レポート配信先に通知。

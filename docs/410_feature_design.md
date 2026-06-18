@@ -416,7 +416,7 @@ Claude API（Sonnet 4.6 / `config('services.anthropic.model')` 経由）を使�
 | `classify-emails` | 15分ごと | 未分類メール分類 | 全件 |
 | `score-engineer-mails` | 15分ごと | 技術者メール新着取込・スコアリング | 100件/回（添付Claude解析なし） |
 | `score-project-mails` | 15分ごと | 案件メール新着取込・スコアリング | 全件 |
-| `trash-classified-emails` (`gmail:trash-classified`) | 毎日2:00 JST | 分類済みメールをGmailゴミ箱へ移動 | 全件 |
+| `trash-classified-kagoya` (`kagoya:trash-classified`) | 毎日2:00 JST・本番限定 | 分類済みメールをKagoya IMAPサーバー上で削除（\Deleted + EXPUNGE） | 5000件/回（--limit） |
 | `cleanup-emails` (`emails:cleanup`) | 毎日3:00 JST | メール本文NULL化・古いレコード削除 | 全件 |
 | `rotate-vision-key` | 月次 | Vision API キーローテーション | — |
 
