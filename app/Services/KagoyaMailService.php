@@ -294,15 +294,7 @@ class KagoyaMailService
 
             // サーバー側の「before + 3日バッファ」より古い UID（INTERNALDATE vs Date ヘッダのズレ吸収。DB が日付の正）
             $imapDate = Carbon::parse($before)->addDays(3)->format('d-M-Y');
-            $search = $this->imapCommand("UID SEARCH BEFORE {$imapDate}");
-            $serverUids = [];
-            foreach ($search['lines'] as $l) {
-                if (preg_match('/^\*\s+SEARCH\s+(.+)$/i', $l, $m)) {
-                    foreach (preg_split('/\s+/', trim($m[1])) as $n) {
-                        if ($n !== '') $serverUids[(int) $n] = true;
-                    }
-                }
-            }
+            $serverUids = $this->searchServerUids("BEFORE {$imapDate}");
             $stats['server_old'] = count($serverUids);
 
             $deletable = array_values(array_filter($dbUids, fn ($u) => isset($serverUids[$u])));
@@ -330,6 +322,26 @@ class KagoyaMailService
             if (preg_match('/\*\s+(\d+)\s+EXISTS/', $l, $m)) return (int) $m[1];
         }
         return 0;
+    }
+
+    /**
+     * `UID SEARCH {criteria}` を実行し、サーバーに実在する UID を [uid => true] のセットで返す。
+     * DB に残るがサーバーから既に消えた UID を弾くための突合に使う（no-op 削除の誤計上防止）。
+     *
+     * @return array<int,bool>
+     */
+    private function searchServerUids(string $criteria): array
+    {
+        $resp = $this->imapCommand("UID SEARCH {$criteria}");
+        $uids = [];
+        foreach ($resp['lines'] as $l) {
+            if (preg_match('/^\*\s+SEARCH\s+(.+)$/i', $l, $m)) {
+                foreach (preg_split('/\s+/', trim($m[1])) as $n) {
+                    if ($n !== '') $uids[(int) $n] = true;
+                }
+            }
+        }
+        return $uids;
     }
 
     /**
@@ -383,28 +395,28 @@ class KagoyaMailService
      *  - min-age 分の取込経過ガードで同期直後の取りこぼしを回避。
      *  - withoutGlobalScopes() で全テナント横断（共有メールボックス・console はテナント認証なし）。
      *
-     * @return array{db_target:int, exists_before:?int, exists_after:?int, flagged:int, expunged:int, uidplus:bool, execute:bool}
+     * @return array{db_target:int, server_present:int, deletable:int, exists_before:?int, exists_after:?int, flagged:int, expunged:int, uidplus:bool, execute:bool}
      */
     public function purgeClassifiedMail(int $minAgeMinutes, int $limit, bool $execute): array
     {
+        // DB 側の対象は全件取得する（limit は削除実体側で適用）。orderBy uid asc で最古から。
         $dbUids = Email::withoutGlobalScopes()
             ->whereNotNull('classified_at')
             ->whereRaw("gmail_message_id ~ '^imap-[0-9]+$'")
             ->where('created_at', '<', now()->subMinutes($minAgeMinutes))
             ->selectRaw('CAST(SUBSTRING(gmail_message_id FROM 6) AS BIGINT) AS uid')
             ->orderBy('uid')
-            ->limit($limit)
             ->pluck('uid')
             ->map(fn ($u) => (int) $u)
             ->all();
 
         $stats = [
-            'db_target' => count($dbUids),
+            'db_target' => count($dbUids), 'server_present' => 0, 'deletable' => 0,
             'exists_before' => null, 'exists_after' => null,
             'flagged' => 0, 'expunged' => 0, 'uidplus' => false, 'execute' => $execute,
         ];
-        if (empty($dbUids) || !$execute) {
-            return $stats; // DRY-RUN はサーバー接続せず DB 件数のみ返す
+        if (empty($dbUids)) {
+            return $stats;
         }
 
         if (!$this->connect()) {
@@ -422,7 +434,20 @@ class KagoyaMailService
                 if (stripos($l, 'UIDPLUS') !== false) $stats['uidplus'] = true;
             }
 
-            $res = $this->flagAndExpunge($dbUids, $limit, $stats['uidplus']);
+            // サーバーに実在する UID とだけ突合する。DB に残るがサーバーから既に消えた古い UID
+            // (過去の cleanup/retention 由来) を弾く。これが無いと「既に消えた最古行」を毎回 no-op で
+            // 処理し続け、件数だけ進んで実在メールに到達しない (実削除ゼロのまま進捗しない)。
+            $serverUids = $this->searchServerUids('ALL');
+            $stats['server_present'] = count($serverUids);
+
+            $deletable = array_values(array_filter($dbUids, fn ($u) => isset($serverUids[$u])));
+            $stats['deletable'] = count($deletable);
+
+            if (!$execute) {
+                return $stats; // DRY-RUN
+            }
+
+            $res = $this->flagAndExpunge($deletable, $limit, $stats['uidplus']);
             $stats['flagged'] = $res['flagged'];
             $stats['expunged'] = $res['expunged'];
 

@@ -57,7 +57,7 @@ class KagoyaTrashClassified extends Command
         );
 
         if (!$execute) {
-            $this->info("DRY-RUN: 削除対象 {$stats['db_target']} 件。実削除は --execute（非対話は --force）を付与。");
+            $this->info("DRY-RUN: 削除可能 {$stats['deletable']} 件（DB分類済 {$stats['db_target']} / サーバー実在 {$stats['server_present']}）。実削除は --execute（非対話は --force）を付与。");
         } else {
             Log::info('kagoya:trash-classified 完了', [
                 'db_target' => $stats['db_target'],
