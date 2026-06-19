@@ -39,6 +39,7 @@ class DeliveryCampaign extends Model
         'tenant_id',
         'send_type',
         'delivery_type',
+        'delivery_purpose',
         'project_mail_id',
         'engineer_mail_source_id',
         'source_email',

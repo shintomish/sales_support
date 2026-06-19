@@ -48,6 +48,7 @@ class DeliveryCampaignService
             'tenant_id'               => $this->tenantId,
             'send_type'               => 'delivery',
             'delivery_type'           => $deliveryType,
+            'delivery_purpose'        => $data['delivery_purpose'] ?? 'standard',
             'project_mail_id'         => $projectMailId,
             'engineer_mail_source_id' => $hasEngineer ? $data['engineer_mail_source_id'] : null,
             // 紐づき案件/技術者がない時のみ、手動入力された入手元アドレスを記録

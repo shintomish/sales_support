@@ -31,6 +31,7 @@ use App\Http\Controllers\Api\RefinitivInvoiceController;
 use App\Http\Controllers\Api\ReportRecipientController;
 use App\Http\Controllers\Api\FeedbackController;
 use App\Http\Controllers\Api\EmailBodyTemplateController;
+use App\Http\Controllers\Api\EmailDeliveryTemplateController;
 use App\Http\Controllers\Api\DeliveryAddressController;
 use App\Http\Controllers\Api\DeliveryCampaignController;
 use App\Http\Controllers\Api\HealthController;
@@ -127,6 +128,11 @@ Route::prefix('v1')->middleware(['supabase.auth'])->group(function () {
     Route::post('purchase-orders', [InvoiceController::class, 'storePurchaseOrder']);
     Route::get('email-body-templates/me',  [EmailBodyTemplateController::class, 'show']);
     Route::put('email-body-templates/me',  [EmailBodyTemplateController::class, 'upsert']);
+    // 配信テンプレライブラリ（テナント共有・目的別）
+    Route::get('email-delivery-templates',             [EmailDeliveryTemplateController::class, 'index']);
+    Route::post('email-delivery-templates',            [EmailDeliveryTemplateController::class, 'store']);
+    Route::put('email-delivery-templates/{template}',  [EmailDeliveryTemplateController::class, 'update']);
+    Route::delete('email-delivery-templates/{template}', [EmailDeliveryTemplateController::class, 'destroy']);
     Route::get('dashboard', [DashboardController::class, 'index']);
     // 月別売上集計 (SES台帳ベース・docs/460)
     Route::get('monthly-sales',                          [MonthlySalesController::class, 'index']);

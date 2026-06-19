@@ -213,6 +213,8 @@ class DeliveryCampaignController extends Controller
             'exclude_address_ids.*'   => ['integer', TenantExistsRule::for('delivery_addresses')],
             // フォームで選択された配信種別 (project / engineer)。一斉配信履歴の分類表示に使う
             'delivery_type'           => 'nullable|in:project,engineer',
+            // 配信目的軸 (standard / real_spot)。文面差別化・種別別KPI 用。delivery_type と直交。
+            'delivery_purpose'        => 'nullable|in:standard,real_spot,existing_customer',
         ]);
 
         // 紐づき案件/技術者を選んでいる場合は source_email を無視（フロント側でも非表示）
