@@ -625,6 +625,8 @@ class ProjectMailScoringService
         // from_name を会社名・担当者名に分離する
         [$fromCompany, $fromPerson] = $this->parseFromName($fromName);
 
+        [$priceMin, $priceMax] = $this->extractPriceRange($text);
+
         return [
             'customer_name'    => $this->extractCustomerName($body, $fromName, $fromAddr, $fromCompany),
             'sales_contact'    => $this->extractSalesContact($body, $isSmoothContact) ?? $fromPerson,
@@ -634,8 +636,8 @@ class ProjectMailScoringService
             'process'          => $this->extractProcess($text),
             'work_location'    => $this->extractLocation($text),
             'remote_ok'        => $this->extractRemoteOk($text),
-            'unit_price_min'   => $this->extractPriceMin($text),
-            'unit_price_max'   => $this->extractPriceMax($text),
+            'unit_price_min'   => $priceMin,
+            'unit_price_max'   => $priceMax,
             'start_date'       => $this->extractStartDate($text),
             'contract_type'    => $this->extractContractType($text),
             'age_limit'        => $this->extractAgeLimit($text),
@@ -962,38 +964,47 @@ class ProjectMailScoringService
         return null;
     }
 
-    private function extractPriceMin(string $text): ?float
+    /**
+     * 単価レンジ [min, max] を抽出する。
+     *
+     * ① 単価/単金/月額 ラベル近傍を最優先する。これにより「■人数■ 2~3名」等の別ラベルの
+     *    数字や、「5,500万ID」「約400万契約」のような非価格の数字を拾わない。
+     * ② ラベルが無い場合のみ本文全体から控えめにフォールバック（カンマ区切りの大きな数字
+     *    "5,500万" は (?<![\d,]) で除外）。
+     * 区切りは 〜 ～ ~ と - － の両方に対応（「80 - 90万円」型）。
+     * 入力 $text は呼び出し側で mb_convert_kana('n') 済（全角数字は半角化されている前提）。
+     */
+    private function extractPriceRange(string $text): array
     {
-        // 「60〜80万」「60万〜80万」のレンジ
-        if (preg_match('/(\d{2,3})\s*万[円]?\s*[〜～~]\s*(\d{2,3})\s*万/u', $text, $m)) {
-            return (float) min($m[1], $m[2]);
+        // ① 単価ラベル近傍（ラベル直後 ~30 文字・改行跨ぎ可）。「単　価」の全角スペースも吸収。
+        if (preg_match('/(?:単[　\s]*[価金]|月額|月単価|希望単価|想定単価)[】■\]\s:：]*([\s\S]{0,30})/u', $text, $lm)) {
+            $w = $lm[1];
+            // レンジ「80 - 90万」「80〜90万」「80万〜90万」
+            if (preg_match('/(\d{2,3})\s*(?:万円?)?\s*[〜～~\-－]\s*(\d{2,3})\s*万/u', $w, $m)) {
+                return [(float) min($m[1], $m[2]), (float) max($m[1], $m[2])];
+            }
+            // 上限のみ「〜120万」
+            if (preg_match('/[〜～~\-－]\s*(\d{2,3})\s*万/u', $w, $m)) {
+                return [null, (float) $m[1]];
+            }
+            // 単独「85万」
+            if (preg_match('/(\d{2,3})\s*万/u', $w, $m)) {
+                return [(float) $m[1], (float) $m[1]];
+            }
         }
-        // 「〜80万」（上限のみ）
-        if (preg_match('/[〜～~]\s*(\d{2,3})\s*万/u', $text, $m)) {
-            return null; // 下限不明
-        }
-        // 単独「70万」
-        if (preg_match('/(\d{2,3})\s*万[円]?/u', $text, $m)) {
-            return (float) $m[1];
-        }
-        return null;
-    }
 
-    private function extractPriceMax(string $text): ?float
-    {
-        // レンジ
-        if (preg_match('/(\d{2,3})\s*万[円]?\s*[〜～~]\s*(\d{2,3})\s*万/u', $text, $m)) {
-            return (float) max($m[1], $m[2]);
+        // ② フォールバック（ラベル無し）。カンマ区切りの大きな数字(5,500万)は除外。
+        // 先頭側の万は任意（「60〜80万」「60万〜80万」両対応）。
+        if (preg_match('/(?<![\d,])(\d{2,3})\s*(?:万円?)?\s*[〜～~\-－]\s*(\d{2,3})\s*万/u', $text, $m)) {
+            return [(float) min($m[1], $m[2]), (float) max($m[1], $m[2])];
         }
-        // 「〜80万」
-        if (preg_match('/[〜～~]\s*(\d{2,3})\s*万/u', $text, $m)) {
-            return (float) $m[1];
+        if (preg_match('/[〜～~]\s*(?<![\d,])(\d{2,3})\s*万/u', $text, $m)) {
+            return [null, (float) $m[1]];
         }
-        // 単独
-        if (preg_match('/(\d{2,3})\s*万[円]?/u', $text, $m)) {
-            return (float) $m[1];
+        if (preg_match('/(?<![\d,])(\d{2,3})\s*万[円]?/u', $text, $m)) {
+            return [(float) $m[1], (float) $m[1]];
         }
-        return null;
+        return [null, null];
     }
 
     private function extractStartDate(string $text): ?string
