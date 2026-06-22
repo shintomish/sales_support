@@ -18,6 +18,14 @@ class EmailClassificationService
         '人材募集', '人材を募集', '人材を探',
     ];
 
+    // 件名にこれらが含まれる場合は「本文の案件優先キーワードより先に」技術者メールと確定する。
+    // 自社人材の宣言として一義的に技術者紹介を指すものに限定（案件募集メールには出現しない）。
+    // ※「弊社社員」「弊社要員」は「弊社要員参画中／弊社社員増員枠…募集」等の案件メールにも出る
+    //   ため含めない（過剰 flip 防止・実データで確認済み 2026-06-22）。
+    private const ENGINEER_SUBJECT_KEYWORDS_STRONG = [
+        '弊社正社員', '弊社直',
+    ];
+
     // 件名にこれらが含まれる場合は技術者メールと判定（案件メールに見えても実態は人材紹介）
     private const ENGINEER_SUBJECT_KEYWORDS = [
         '人材', '人財', '正社員', 'プロパー', '要員',
@@ -251,6 +259,15 @@ class EmailClassificationService
         foreach (self::PROJECT_SUBJECT_KEYWORDS_PRIORITY as $kw) {
             if (mb_strpos($subject, $kw) !== false) {
                 return ['project', 'subject_project_priority:' . $kw, $urls];
+            }
+        }
+
+        // 3.4. 件名に自社人材の強い宣言（弊社正社員 等）→ 技術者確定。
+        //      本文に「対応可能な要員」等の案件優先キーワードがあっても、件名が自社人材紹介を
+        //      明示している場合はそちらを優先する（テクニケーション「【弊社正社員】営業中の要員紹介」型）。
+        foreach (self::ENGINEER_SUBJECT_KEYWORDS_STRONG as $kw) {
+            if (mb_strpos($subject, $kw) !== false) {
+                return ['engineer', 'subject_engineer_strong:' . $kw, $urls];
             }
         }
 
