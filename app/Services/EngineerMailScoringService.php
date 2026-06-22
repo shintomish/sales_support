@@ -525,7 +525,9 @@ class EngineerMailScoringService
     {
         foreach ($data as $k => $v) {
             if (is_string($v)) {
-                $data[$k] = iconv('UTF-8', 'UTF-8//IGNORE', $v) ?: '';
+                // mb_scrub は warning を出さずに不正・不完全バイトを置換する
+                // （iconv //IGNORE は末尾不完全 multibyte で warning→Laravel が例外化し中断）。
+                $data[$k] = mb_scrub($v, 'UTF-8');
             } elseif (is_array($v)) {
                 $data[$k] = $this->sanitizeUtf8($v);
             }

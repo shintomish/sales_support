@@ -660,7 +660,10 @@ class ProjectMailScoringService
     {
         foreach ($data as $k => $v) {
             if (is_string($v)) {
-                $data[$k] = iconv('UTF-8', 'UTF-8//IGNORE', $v) ?: '';
+                // mb_scrub は不正・不完全バイトを置換し warning を出さない。
+                // iconv //IGNORE は末尾の不完全 multibyte で warning を出し、
+                // Laravel がそれを例外化して処理を中断させてしまうため使わない。
+                $data[$k] = mb_scrub($v, 'UTF-8');
             } elseif (is_array($v)) {
                 $data[$k] = $this->sanitizeUtf8($v);
             }
