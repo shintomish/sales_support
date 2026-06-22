@@ -467,7 +467,10 @@ class EngineerMailScoringService
     private function extract(Email $email, bool $withAttachment = true): array
     {
         $subject = $email->subject ?? '';
-        $body    = $email->body_text ?? strip_tags($email->body_html ?? '');
+        // body_text が空文字('')の HTML 専用メールでも HTML 本文へフォールバックする（?? は null のみ）。
+        $body    = ($email->body_text ?? '') !== ''
+            ? $email->body_text
+            : $this->htmlToText($email->body_html ?? '');
 
         // 無効なUTF-8バイト列を除去
         $subject = iconv('UTF-8', 'UTF-8//IGNORE', $subject) ?: '';
@@ -513,6 +516,19 @@ class EngineerMailScoringService
         }
 
         return $result;
+    }
+
+    /**
+     * HTML 本文をプレーンテキスト化する。strip_tags は <style>/<script> の中身を残すため、
+     * 先にブロックごと除去してから tags を落とし、HTML エンティティも復元する。
+     */
+    private function htmlToText(string $html): string
+    {
+        if ($html === '') return '';
+        $html = preg_replace('#<(style|script|head)\b[^>]*>.*?</\1>#is', ' ', $html) ?? $html;
+        $html = preg_replace('#<(br|/p|/div|/tr|/li|/h[1-6])\b[^>]*>#i', "\n", $html) ?? $html;
+        $text = strip_tags($html);
+        return html_entity_decode($text, ENT_QUOTES | ENT_HTML5, 'UTF-8');
     }
 
     /**
@@ -975,6 +991,13 @@ class EngineerMailScoringService
             if ($val !== '') return $val;
         }
 
+        // 【稼働開始日】即日 / 【稼働開始】7月 形式（ブラケット内に「開始(日)」を含むラベル）
+        // 先に処理しないと下の汎用パターンが「稼働開始」で部分マッチし「日】即日」を捕捉してしまう。
+        if (preg_match('/【\s*稼[　\s]*働開始日?\s*】[：:　\s]*([^\n]{1,20})/u', $text, $m)) {
+            $val = trim($m[1]);
+            if ($val !== '') return $val;
+        }
+
         // 【稼　働】：7月 形式（Ksync 等の全角スペース入りブラケットラベル）
         if (preg_match('/【\s*稼[　\s]*働\s*】[：:　\s]*([^\n]{1,20})/u', $text, $m)) {
             $val = trim($m[1]);
@@ -982,7 +1005,7 @@ class EngineerMailScoringService
         }
 
         $patterns = [
-            '/(?:稼働開始|稼働可能日?|稼働予定|参画時期|参画可能|開始時期)[：:　\s]*([^■\n]{2,20})/u',
+            '/(?:稼働開始日?|稼働可能日?|稼働予定|参画時期|参画可能|開始時期)[：:　\s]*([^■\n]{2,20})/u',
             '/(?:即日|即稼働|即対応)/u',
         ];
         foreach ($patterns as $i => $pattern) {

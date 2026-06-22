@@ -51,6 +51,20 @@ class EngineerMailScoringExtractionTest extends TestCase
         $this->assertSame('個人事業主', $r['affiliation_type']);
     }
 
+    /**
+     * 【稼働開始日】即日 形式で available_from が "日】即日" と崩れる回帰を防ぐ
+     * （2026-06-22 報告・EC-CUBE 技術者メール）。汎用パターンが「稼働開始」で
+     * 部分マッチしてラベルの残り「日】…」を巻き込んでいた。
+     */
+    public function test_extracts_start_date_with_kaido_kaishi_bi_label(): void
+    {
+        $bracket = $this->extract('★人材情報★EC-CUBE', "【稼働開始日】即日\n【週稼働】5日\n");
+        $this->assertSame('即日', $bracket['available_from']);
+
+        $colon = $this->extract('要員', "稼働開始日：7月\nスキル：PHP\n");
+        $this->assertSame('7月', $colon['available_from']);
+    }
+
     #[\PHPUnit\Framework\Attributes\DataProvider('stationProvider')]
     public function test_extracts_clean_nearest_station(string $body, string $expected): void
     {

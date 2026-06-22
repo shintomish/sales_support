@@ -604,7 +604,12 @@ class ProjectMailScoringService
     public function extract(Email $email): array
     {
         $subject  = $email->subject ?? '';
-        $body     = $email->body_text ?? strip_tags($email->body_html ?? '');
+        // body_text が null だけでなく空文字('')の場合も HTML 本文へフォールバックする。
+        // HTML 専用メール（マーケ系の整形メール等）は body_text が '' で取り込まれるため、
+        // ?? では HTML に切り替わらず営業担当・電話等を取りこぼしていた。
+        $body     = ($email->body_text ?? '') !== ''
+            ? $email->body_text
+            : $this->htmlToText($email->body_html ?? '');
         $fromName = $email->from_name ?? '';
         $fromAddr = $email->from_address ?? '';
 
@@ -644,6 +649,21 @@ class ProjectMailScoringService
             'nationality_ok'   => $this->extractNationalityOk($text),
             'supply_chain'     => $this->extractSupplyChain($text),
         ];
+    }
+
+    /**
+     * HTML 本文をプレーンテキスト化する。strip_tags は <style>/<script> の中身（CSS/JS）を
+     * 残すため、先にブロックごと除去してから tags を落とし、HTML エンティティも復元する。
+     */
+    private function htmlToText(string $html): string
+    {
+        if ($html === '') return '';
+        $html = preg_replace('#<(style|script|head)\b[^>]*>.*?</\1>#is', ' ', $html) ?? $html;
+        // <br>, </p>, </div> 等を改行に（署名ブロック抽出が行単位のため）
+        $html = preg_replace('#<(br|/p|/div|/tr|/li|/h[1-6])\b[^>]*>#i', "\n", $html) ?? $html;
+        $text = strip_tags($html);
+        $text = html_entity_decode($text, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+        return $text;
     }
 
     // ── 各抽出ロジック ─────────────────────────────────────

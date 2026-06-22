@@ -206,6 +206,16 @@ class EmailClassificationService
     }
 
     /**
+     * 現在の分類ルールでカテゴリを判定して返す（DB は更新しない）。
+     * バックフィル（誤分類の再判定）から安全に呼ぶための公開ラッパ。
+     * @return array{0:string,1:string,2:array} [category, reason, urls]
+     */
+    public function predictCategory(Email $email): array
+    {
+        return $this->determineCategory($email);
+    }
+
+    /**
      * 分類ルール（返り値: [category, reason, urls]）
      *
      * 優先順位:
