@@ -63,9 +63,15 @@ class ProjectMailController extends Controller
 
         $query = ProjectMailSource::with(['email:id,subject,from_name,from_address,received_at,arrived_at'])
             ->whereBetween('score', [$scoreMin, $scoreMax])
-            ->where('source', $source)
-            ->orderBy($sort, $order)
-            ->orderByDesc('id'); // tie-break（同値時のページング安定化）
+            ->where('source', $source);
+        // NULL（単価なし等）を常に末尾へ。降順だと Postgres は NULL を最大扱いで先頭に出すため。
+        // $sort/$order はホワイトリスト済みなので raw 補間は安全。pgsql 以外は NULLS 構文非対応なので素の orderBy。
+        if (DB::connection()->getDriverName() === 'pgsql') {
+            $query->orderByRaw("{$sort} {$order} NULLS LAST");
+        } else {
+            $query->orderBy($sort, $order);
+        }
+        $query->orderByDesc('id'); // tie-break（同値時のページング安定化）
 
         if ($status) {
             $query->where('status', $status);
