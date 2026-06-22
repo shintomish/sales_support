@@ -27,8 +27,8 @@ class EngineerMailScoringService
 
     private const EXCLUDE_FROM = ['no-reply', 'noreply'];
 
-    // 自社ドメイン
-    private const EXCLUDE_DOMAIN = ['aizen-sol.co.jp'];
+    // 自社ドメイン + 営業判断で受信不要とした取引先ドメイン (2026-06-22 新冨さん指示)
+    private const EXCLUDE_DOMAIN = ['aizen-sol.co.jp', 'b-tm.co.jp', 'careerbeat.jp'];
 
     // ── ② スコア辞書（max 85点設計）────────────────────────
 
