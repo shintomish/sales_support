@@ -63,6 +63,17 @@ class EngineerMailScoringExtractionTest extends TestCase
 
         $colon = $this->extract('要員', "稼働開始日：7月\nスキル：PHP\n");
         $this->assertSame('7月', $colon['available_from']);
+
+        // ラベル内に稼働/参画/開始を含む各種ブラケットを汎用処理する
+        $jiki = $this->extract('要員', "【稼働開始時期】：2026年7月〜\n");
+        $this->assertSame('2026年7月〜', $jiki['available_from']);
+
+        $sanka = $this->extract('要員', "【参画可能時期】2026年7月1日〜\n");
+        $this->assertSame('2026年7月1日〜', $sanka['available_from']);
+
+        // 勤務形態ラベルの誤マッチで「：／」等のゴミを拾わない
+        $noise = $this->extract('要員', "稼働可能：／【フルリモート（完全在宅勤務）】案件希望\n");
+        $this->assertNull($noise['available_from']);
     }
 
     #[\PHPUnit\Framework\Attributes\DataProvider('stationProvider')]
