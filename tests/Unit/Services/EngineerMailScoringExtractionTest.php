@@ -74,6 +74,10 @@ class EngineerMailScoringExtractionTest extends TestCase
         // 勤務形態ラベルの誤マッチで「：／」等のゴミを拾わない
         $noise = $this->extract('要員', "稼働可能：／【フルリモート（完全在宅勤務）】案件希望\n");
         $this->assertNull($noise['available_from']);
+
+        // 値が空のラベルは次行の別ラベル（【単価】等）を巻き込まない
+        $emptyLabel = $this->extract('要員', "【稼働開始】\n【単価】50万\n【所属】弊社正社員\n");
+        $this->assertNull($emptyLabel['available_from']);
     }
 
     #[\PHPUnit\Framework\Attributes\DataProvider('stationProvider')]
