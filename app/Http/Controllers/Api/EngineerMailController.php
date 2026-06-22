@@ -56,10 +56,16 @@ class EngineerMailController extends Controller
         $source   = $request->input('source', 'imap');
 
         // 並び・表示は arrived_at (Kagoya 着信時刻) 基準。received_at (送信時刻) は送信表示用に併せて取得。
+        // sort はホワイトリスト方式（任意カラム injection 防止）。既定は arrived_at 降順。
+        $sortable = ['arrived_at', 'score', 'unit_price_max', 'received_at'];
+        $sort     = in_array($request->input('sort'), $sortable, true) ? $request->input('sort') : 'arrived_at';
+        $order    = strtolower($request->input('order', 'desc')) === 'asc' ? 'asc' : 'desc';
+
         $query = EngineerMailSource::with(['email:id,subject,from_name,from_address,received_at,arrived_at'])
             ->whereBetween('score', [$scoreMin, $scoreMax])
             ->where('source', $source)
-            ->orderByDesc('arrived_at');
+            ->orderBy($sort, $order)
+            ->orderByDesc('id'); // tie-break（同値時のページング安定化）
 
         if ($status) {
             $query->where('status', $status);

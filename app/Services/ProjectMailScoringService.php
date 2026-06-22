@@ -613,6 +613,11 @@ class ProjectMailScoringService
         $body     = iconv('UTF-8', 'UTF-8//IGNORE', $body)     ?: '';
         $fromName = iconv('UTF-8', 'UTF-8//IGNORE', $fromName) ?: '';
         $fromAddr = iconv('UTF-8', 'UTF-8//IGNORE', $fromAddr) ?: '';
+
+        // 全角数字を半角へ正規化（'n'=数字のみ）。\d ベースの抽出（単価・年齢・期間・人数等）が
+        // 「７５万円」等の全角表記を取りこぼすのを防ぐ。「単金」等の全角スペースは各正規表現側で吸収。
+        $subject  = mb_convert_kana($subject, 'n');
+        $body     = mb_convert_kana($body, 'n');
         $text     = $subject . "\n" . $body;
 
         $isSmoothContact = str_contains($fromAddr, 'smoothcontact');

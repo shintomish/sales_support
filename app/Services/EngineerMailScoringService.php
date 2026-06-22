@@ -472,6 +472,11 @@ class EngineerMailScoringService
         // 無効なUTF-8バイト列を除去
         $subject = iconv('UTF-8', 'UTF-8//IGNORE', $subject) ?: '';
         $body    = iconv('UTF-8', 'UTF-8//IGNORE', $body)    ?: '';
+
+        // 全角数字を半角へ正規化（'n'=数字のみ）。\d ベースの抽出（希望単価・年齢等）が
+        // 「７５万円」等の全角表記を取りこぼすのを防ぐ。
+        $subject = mb_convert_kana($subject, 'n');
+        $body    = mb_convert_kana($body, 'n');
         $text    = $subject . "\n" . $body;
 
         [$priceMin, $priceMax] = $this->extractUnitPrice($text);
