@@ -64,6 +64,15 @@ class ProjectMailController extends Controller
         $query = ProjectMailSource::with(['email:id,subject,from_name,from_address,received_at,arrived_at'])
             ->whereBetween('score', [$scoreMin, $scoreMax])
             ->where('source', $source);
+        // 死にデータ（本文・HTML本文ともに NULL/空 = 分類30日超で本文 purge 済み）を既定で隠す。
+        // 本文が無いと提案も再抽出もできず一覧のノイズになるため (2026-06-22 営業要望)。
+        // include_purged=1 で従来どおり全件表示に戻せる（可逆）。
+        if (!$request->boolean('include_purged')) {
+            $query->whereHas('email', function ($eq) {
+                $eq->where(fn ($q) => $q->whereNotNull('body_text')->where('body_text', '<>', ''))
+                   ->orWhere(fn ($q) => $q->whereNotNull('body_html')->where('body_html', '<>', ''));
+            });
+        }
         // NULL（単価なし等）を常に末尾へ。降順だと Postgres は NULL を最大扱いで先頭に出すため。
         // $sort/$order はホワイトリスト済みなので raw 補間は安全。pgsql 以外は NULLS 構文非対応なので素の orderBy。
         if (DB::connection()->getDriverName() === 'pgsql') {
