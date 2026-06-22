@@ -18,6 +18,7 @@ use App\Models\Skill;
 use App\Services\ClaudeService;
 use App\Services\DeliveryCampaignService;
 use App\Services\EngineerMailScoringService;
+use App\Services\ProjectMailScoringService;
 use App\Services\FreshMailMatchingService;
 use App\Services\GmailService;
 use App\Services\ProposalStatusService;
@@ -97,6 +98,36 @@ class EngineerMailController extends Controller
         }
 
         return response()->json($query->paginate($perPage));
+    }
+
+    // 案件メールへ移動（技術者として誤分類されたメールの手動再分類）。
+    // 元 email の category を project に変え、案件スコアリングで pms を生成し、
+    // 技術者側 ems を削除する（email 本体・添付は保持）。営業要望 2026-06-22 #1。
+    public function moveToProject(int $id, ProjectMailScoringService $projectScoring): JsonResponse
+    {
+        $ems   = EngineerMailSource::with('email')->findOrFail($id);
+        $email = $ems->email;
+        if (!$email) {
+            return response()->json(['message' => '元メールが見つからないため移動できません'], 422);
+        }
+
+        $pms = DB::transaction(function () use ($ems, $email, $projectScoring) {
+            $email->update(['category' => 'project']);
+            // project_mail_sources.email_id は UNIQUE。過去に案件→技術者へ移動した履歴があると
+            // soft-delete の pms が unique 枠を占有しており updateOrCreate の INSERT が衝突する。
+            // 先に trashed 行を restore して更新に寄せる。
+            ProjectMailSource::withTrashed()->where('email_id', $email->id)->restore();
+            $created = $projectScoring->score($email); // updateOrCreate(email_id) で冪等
+            $ems->delete(); // soft delete（email 本体・添付は保持）
+            return $created;
+        });
+
+        Log::info("[move] engineer→project email_id={$email->id} ems_id={$id} pms_id={$pms->id}");
+
+        return response()->json([
+            'message'         => '案件メールへ移動しました',
+            'project_mail_id' => $pms->id,
+        ]);
     }
 
     // 詳細（元メール・添付含む）

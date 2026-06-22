@@ -242,6 +242,7 @@ Route::prefix('v1')->middleware(['supabase.auth'])->group(function () {
         Route::post('/{id}/memo',    [ProjectMailController::class, 'appendMemo']); // 右ペインからメモを本文末尾に追記
         Route::delete('/{id}',       [ProjectMailController::class, 'destroy']);
         Route::patch('/{id}/status', [ProjectMailController::class, 'updateStatus']);
+        Route::post('/{id}/move-to-engineer',     [ProjectMailController::class, 'moveToEngineer']); // 誤分類の手動移動
         Route::post('/{id}/rescore',              [ProjectMailController::class, 'rescore']);
         Route::get('/{id}/thread',                [ProjectMailController::class, 'thread']);
         Route::get('/{id}/matched-engineers',     [ProjectMailController::class, 'matchedEngineers']);
@@ -272,6 +273,7 @@ Route::prefix('v1')->middleware(['supabase.auth'])->group(function () {
         Route::post('/{id}/memo',                     [EngineerMailController::class, 'appendMemo']); // 右ペインからメモを本文末尾に追記
         Route::delete('/{id}',                        [EngineerMailController::class, 'destroy']);
         Route::put('/{id}/status',                    [EngineerMailController::class, 'updateStatus']);
+        Route::post('/{id}/move-to-project',          [EngineerMailController::class, 'moveToProject']); // 誤分類の手動移動
         Route::post('/{id}/register-engineer',        [EngineerMailController::class, 'registerEngineer']);
         Route::get('/{id}/thread',                    [EngineerMailController::class, 'thread']);
         Route::get('/{id}/matched-projects',          [EngineerMailController::class, 'matchedProjects']);
