@@ -515,7 +515,22 @@ class EngineerMailScoringService
             }
         }
 
-        return $result;
+        return $this->sanitizeUtf8($result);
+    }
+
+    /**
+     * 抽出結果の文字列値から不正 UTF8 バイト列を除去する（バイト境界切れの multibyte 対策）。
+     */
+    private function sanitizeUtf8(array $data): array
+    {
+        foreach ($data as $k => $v) {
+            if (is_string($v)) {
+                $data[$k] = iconv('UTF-8', 'UTF-8//IGNORE', $v) ?: '';
+            } elseif (is_array($v)) {
+                $data[$k] = $this->sanitizeUtf8($v);
+            }
+        }
+        return $data;
     }
 
     /**

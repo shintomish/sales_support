@@ -632,7 +632,7 @@ class ProjectMailScoringService
 
         [$priceMin, $priceMax] = $this->extractPriceRange($text);
 
-        return [
+        return $this->sanitizeUtf8([
             'customer_name'    => $this->extractCustomerName($body, $fromName, $fromAddr, $fromCompany),
             'sales_contact'    => $this->extractSalesContact($body, $isSmoothContact) ?? $fromPerson,
             'phone'            => $this->extractPhone($body, $isSmoothContact),
@@ -648,7 +648,24 @@ class ProjectMailScoringService
             'age_limit'        => $this->extractAgeLimit($text),
             'nationality_ok'   => $this->extractNationalityOk($text),
             'supply_chain'     => $this->extractSupplyChain($text),
-        ];
+        ]);
+    }
+
+    /**
+     * 抽出結果の文字列値から不正 UTF8 バイト列を除去する。
+     * バイト単位の substr（署名抽出等）でマルチバイト境界が切れた値が DB の
+     * UTF8 列で "invalid byte sequence" を起こすのを防ぐ（再帰的に配列も処理）。
+     */
+    private function sanitizeUtf8(array $data): array
+    {
+        foreach ($data as $k => $v) {
+            if (is_string($v)) {
+                $data[$k] = iconv('UTF-8', 'UTF-8//IGNORE', $v) ?: '';
+            } elseif (is_array($v)) {
+                $data[$k] = $this->sanitizeUtf8($v);
+            }
+        }
+        return $data;
     }
 
     /**
