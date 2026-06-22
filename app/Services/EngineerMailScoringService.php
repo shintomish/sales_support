@@ -519,6 +519,14 @@ class EngineerMailScoringService
     }
 
     /**
+     * 添付解析なしで抽出結果を返す（バックフィルの安全な再抽出から呼ぶ公開ラッパ）。
+     */
+    public function extractFieldsWithoutAttachment(Email $email): array
+    {
+        return $this->extract($email, false);
+    }
+
+    /**
      * 抽出結果の文字列値から不正 UTF8 バイト列を除去する（バイト境界切れの multibyte 対策）。
      */
     private function sanitizeUtf8(array $data): array
