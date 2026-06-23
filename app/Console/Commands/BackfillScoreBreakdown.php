@@ -44,6 +44,9 @@ class BackfillScoreBreakdown extends Command
                 $email = $row->email;
                 if (!$email) return null;
                 $bd = $proj->calcScoreBreakdown($email);
+                // 本文 purge 済み等で base 内訳が無い時は、ドメイン加点だけの誤解を招く部分内訳を作らず
+                // null のままにする（フロントは score_reasons の理由ラベルにフォールバック）。
+                if (count($bd) === 0) return null;
                 return $this->appendDomain($bd, $row->score_reasons ?? []);
             });
         }
