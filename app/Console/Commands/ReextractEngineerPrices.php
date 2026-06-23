@@ -15,7 +15,9 @@ use Illuminate\Support\Facades\Log;
  *
  * 安全性:
  *  - 対象は unit_price が null かつ status<>'excluded' の行のみ（既に値がある行は触らない）。
- *  - score() を通すため isExcluded（自社/受信除外ドメイン）・35万未満除外などの本番ロジックと完全整合。
+ *  - **単価(unit_price_min/max)のみ更新**。score() は呼ばないため score 閾値(40)による可視性変更
+ *    (review→excluded) を起こさない。例外は業務ルール「35万未満は除外」のみ適用する。
+ *    （2026-06-23: score() 再評価で score<40 の有価格技術者を 525 件除外してしまった事故を受け修正）
  *  - chunkById でメモリ一定。tinker(psysh) を使わないので ProcessForker OOM を起こさない。
  *
  * 例:
@@ -29,14 +31,16 @@ class ReextractEngineerPrices extends Command
         {--execute : 実際に再スコア/更新する（未指定は DRY-RUN）}
         {--limit=0 : 処理上限（0=無制限）}';
 
-    protected $description = '単価が空の技術者メールを再抽出して unit_price を埋める（円建て/税抜等の新フォーマット後追い・score/status整合）';
+    protected $description = '単価が空の技術者メールを再抽出して unit_price のみ埋める（円建て/税抜等の後追い・status非変更/35万未満のみ除外）';
+
+    private const PRICE_MIN_FLOOR = 35; // 万円：これ未満は除外（EngineerMailScoringService と同値）
 
     public function handle(EngineerMailScoringService $scoring): int
     {
         $execute = (bool) $this->option('execute');
         $limit   = (int) $this->option('limit');
 
-        $this->info($execute ? 'モード: 再抽出して更新' : 'モード: DRY-RUN（更新しません）');
+        $this->info($execute ? 'モード: 単価のみ補完して更新' : 'モード: DRY-RUN（更新しません）');
 
         $scanned = 0; $priced = 0; $excluded = 0; $stillNull = 0; $err = 0;
 
@@ -52,23 +56,34 @@ class ReextractEngineerPrices extends Command
                         $email = $ems->email; // lazy load（chunk内で1件ずつ・メモリ一定）
                         if (!$email) { $stillNull++; continue; }
 
+                        // 本文/HTML からの抽出のみ（score()は呼ばない＝score閾値による可視性変更を起こさない）
+                        $d   = $scoring->extractFieldsWithoutAttachment($email);
+                        $min = $d['unit_price_min'] ?? null;
+                        $max = $d['unit_price_max'] ?? null;
+                        $p   = $min ?? $max;
+                        if ($p === null) { $stillNull++; continue; }
+
+                        // status は据え置き。例外は業務ルールの「35万未満は除外」のみ適用。
+                        $tooLow = (int) $p < self::PRICE_MIN_FLOOR;
+                        if ($tooLow) $excluded++; else $priced++;
+
                         if ($execute) {
-                            $res = $scoring->score($email)->fresh();
-                            $p = $res->unit_price_min ?? $res->unit_price_max;
-                            if ($res->status === 'excluded') $excluded++;
-                            elseif ($p !== null) $priced++;
-                            else $stillNull++;
-                        } else {
-                            $d = $scoring->extractFieldsWithoutAttachment($email);
-                            $p = $d['unit_price_min'] ?? $d['unit_price_max'] ?? null;
-                            if ($p !== null) $priced++; else $stillNull++;
+                            $update = ['unit_price_min' => $min, 'unit_price_max' => $max];
+                            if ($tooLow) {
+                                $reasons = (array) ($ems->score_reasons ?? []);
+                                if (!in_array('unit_price_too_low', $reasons, true)) $reasons[] = 'unit_price_too_low';
+                                if (!in_array('excluded', $reasons, true))           $reasons[] = 'excluded';
+                                $update['status']        = 'excluded';
+                                $update['score_reasons'] = $reasons;
+                            }
+                            EngineerMailSource::withoutGlobalScopes()->whereKey($ems->id)->update($update);
                         }
                     } catch (\Throwable $e) {
                         $err++;
                         Log::warning('[reextract-prices] ems=' . $ems->id . ' ' . $e->getMessage());
                     }
                 }
-                $this->info("  ... scanned={$scanned} priced={$priced} excluded={$excluded} stillNull={$stillNull} err={$err}");
+                $this->info("  ... scanned={$scanned} priced={$priced} excluded(<35万)={$excluded} stillNull={$stillNull} err={$err}");
                 gc_collect_cycles();
                 return true;
             });
