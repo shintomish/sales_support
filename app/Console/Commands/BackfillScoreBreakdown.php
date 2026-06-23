@@ -77,8 +77,13 @@ class BackfillScoreBreakdown extends Command
         $model = $kind === 'project' ? ProjectMailSource::class : EngineerMailSource::class;
         $scanned = 0; $filled = 0; $empty = 0; $err = 0;
 
+        // 本文(text/html)が残る行のみ対象（purge 済みは内訳を作れないので SQL で除外）。新しい順に処理。
         $model::withoutGlobalScopes()
             ->whereNull('score_breakdown')
+            ->whereHas('email', function ($q) {
+                $q->where(fn ($q2) => $q2->whereNotNull('body_text')->where('body_text', '<>', ''))
+                  ->orWhere(fn ($q2) => $q2->whereNotNull('body_html')->where('body_html', '<>', ''));
+            })
             ->with('email')
             ->orderBy('id')
             ->chunkById(200, function ($rows) use ($compute, $execute, $limit, &$scanned, &$filled, &$empty, &$err, $kind) {
