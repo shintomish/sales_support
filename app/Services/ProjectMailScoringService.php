@@ -557,6 +557,13 @@ class ProjectMailScoringService
     {
         $empty = ['bonus' => 0, 'rate' => 0.0, 'sample' => 0, 'domain' => ''];
 
+        // ドメイン信頼度(±20)は廃止（2026-06-23）。
+        // 理由: rate が score 由来の status に依存し、score に bonus 自身が含まれる自己強化ループで、
+        //       特に -20 がドメインを恒久的に沈める。中立性原則（content スコアのみ）に反し、本番の
+        //       読み取りIO第1位でもあった。常に 0 を返し新規スコアに加点しない（呼び出し側は bonus!==0 で無効化）。
+        //       既存スコアは一度きりのデータ補正(strip-domain-bonus)で除去する。以下の旧集計は到達しない。
+        return $empty;
+
         if (!$fromAddress) return $empty;
 
         // ドメイン抽出
