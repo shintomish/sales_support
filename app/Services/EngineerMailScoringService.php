@@ -324,7 +324,7 @@ class EngineerMailScoringService
                 } else {
                     $text = $subject . "\n" . $body;
 
-                    [$score, $reasons] = $this->calcScore($text, $email);
+                    [$score, $reasons, $bd] = $this->calcScore($text, $email);
                     $score     = max(0, min(100, $score));
                     // rescoreAll では添付解析をスキップ（タイムアウト防止）
                     $extracted = $this->extract($email, false);
@@ -336,10 +336,11 @@ class EngineerMailScoringService
                     $extracted['unit_price_max'] = $priceMax;
                     $status = $this->priceAdjustedStatus($score, $reasons, $priceMin ?? $priceMax);
                     $ems->update(array_merge($extracted, [
-                        'score'         => $score,
-                        'score_reasons' => $reasons,
-                        'engine'        => 'rule',
-                        'status'        => $status,
+                        'score'          => $score,
+                        'score_reasons'  => $reasons,
+                        'score_breakdown'=> $bd,
+                        'engine'         => 'rule',
+                        'status'         => $status,
                     ]));
                 }
                 $count++;
@@ -350,6 +351,19 @@ class EngineerMailScoringService
             gc_collect_cycles();
         }
         return $count;
+    }
+
+    /**
+     * 営業向けスコア内訳のみを再計算して返す（保存・status/score 変更なし）。既存行のバックフィル用。
+     * [E] 添付加点のため attachments をロードする。本文が purge 済みなら空配列。
+     */
+    public function calcScoreBreakdown(Email $email): array
+    {
+        $body = $email->body_text ?? strip_tags($email->body_html ?? '');
+        if (trim($body) === '') return [];
+        $email->loadMissing('attachments');
+        [, , $bd] = $this->calcScore(($email->subject ?? '') . "\n" . $body, $email);
+        return $bd;
     }
 
     /**
@@ -375,11 +389,11 @@ class EngineerMailScoringService
         //     ガード式は下の calcScore が受け取る本文式と一致させる（件名のみになる時だけ発火）。
         $body = $email->body_text ?? strip_tags($email->body_html ?? '');
         if (trim($body) === '') {
-            return $this->save($email, 0, ['excluded', 'body_purged'], 'rule', []);
+            return $this->save($email, 0, ['excluded', 'body_purged'], 'rule', [], []);
         }
 
         // ② スコアリング
-        [$score, $reasons] = $this->calcScore(
+        [$score, $reasons, $bd] = $this->calcScore(
             $subject . "\n" . $body,
             $email
         );
@@ -387,7 +401,7 @@ class EngineerMailScoringService
         $score     = max(0, min(100, $score));
         $extracted = $this->extract($email, $withAttachment);
 
-        return $this->save($email, $score, $reasons, 'rule', $extracted);
+        return $this->save($email, $score, $reasons, 'rule', $extracted, $bd);
     }
 
     // ── プライベートメソッド ──────────────────────────────
@@ -411,14 +425,17 @@ class EngineerMailScoringService
 
     private function calcScore(string $text, Email $email): array
     {
+        // $bd: 営業向けスコア内訳 [['label'=>表示名,'points'=>加点]]。点数ロジックは不変・記録のみ追加。
         $score   = 0;
         $reasons = [];
+        $bd      = [];
 
         // [A] 明示ワード (+15)
         foreach (self::ENGINEER_A as $kw) {
             if (mb_stripos($text, $kw) !== false) {
                 $score += 15;
                 $reasons[] = "engineer_kw:{$kw}";
+                $bd[] = ['label' => "技術者紹介の明示（{$kw}）", 'points' => 15];
                 break;
             }
         }
@@ -428,26 +445,33 @@ class EngineerMailScoringService
             if (mb_stripos($text, $kw) !== false) {
                 $score += 10;
                 $reasons[] = "availability:{$kw}";
+                $bd[] = ['label' => "稼働条件（{$kw}）", 'points' => 10];
                 break;
             }
         }
 
         // [C] 技術スタック (+3/件 max 20)
-        $techHits = 0;
+        $techHits = 0; $techList = [];
         foreach (self::TECH_STACK as $tech) {
             if (mb_stripos($text, $tech) !== false) {
                 $techHits++;
                 $reasons[] = "tech:{$tech}";
+                $techList[] = $tech;
                 if ($techHits * 3 >= 20) break;
             }
         }
-        $score += min($techHits * 3, 20);
+        $techPts = min($techHits * 3, 20);
+        $score += $techPts;
+        if ($techPts > 0) {
+            $bd[] = ['label' => '技術スタック' . ($techList ? '（' . implode('・', $techList) . '）' : ''), 'points' => $techPts];
+        }
 
         // [D] 所属区分 (+10)
         foreach (self::AFFILIATION_KW as $kw) {
             if (mb_strpos($text, $kw) !== false) {
                 $score += 10;
                 $reasons[] = "affiliation:{$kw}";
+                $bd[] = ['label' => "所属区分（{$kw}）", 'points' => 10];
                 break;
             }
         }
@@ -456,9 +480,10 @@ class EngineerMailScoringService
         if ($email->attachments && $email->attachments->isNotEmpty()) {
             $score += 15;
             $reasons[] = 'has_attachment';
+            $bd[] = ['label' => '添付（スキルシート等）あり', 'points' => 15];
         }
 
-        return [$score, $reasons];
+        return [$score, $reasons, $bd];
     }
 
     /**
@@ -1188,7 +1213,7 @@ class EngineerMailScoringService
         };
     }
 
-    private function save(Email $email, int $score, array $reasons, string $engine, array $extracted): EngineerMailSource
+    private function save(Email $email, int $score, array $reasons, string $engine, array $extracted, array $breakdown = []): EngineerMailSource
     {
         // 添付スキルシート本文を先に抽出 (docs/480 §3.3)。未抽出なら 1 回だけ実行。
         // 単価救済 [A] に使うため price 判定より前に解決する。失敗しても保存は継続。
@@ -1217,12 +1242,13 @@ class EngineerMailScoringService
         $status = $this->priceAdjustedStatus($score, $reasons, $priceMin ?? $priceMax);
 
         $persist = array_merge($extracted, [
-            'score'         => $score,
-            'score_reasons' => $reasons,
-            'engine'        => $engine,
-            'status'        => $status,
-            'received_at'   => $email->received_at,
-            'arrived_at'    => $email->arrived_at,
+            'score'          => $score,
+            'score_reasons'  => $reasons,
+            'score_breakdown'=> $breakdown,
+            'engine'         => $engine,
+            'status'         => $status,
+            'received_at'    => $email->received_at,
+            'arrived_at'     => $email->arrived_at,
         ]);
         if ($skillSheetText !== null) {
             $persist['parsed_skill_sheet_text'] = $skillSheetText;

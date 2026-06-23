@@ -17,6 +17,7 @@ class EngineerMailSource extends Model
         'email_id',
         'score',
         'score_reasons',
+        'score_breakdown',
         'engine',
         'source',
         'name',
@@ -37,6 +38,7 @@ class EngineerMailSource extends Model
 
     protected $casts = [
         'score_reasons'  => 'array',
+        'score_breakdown' => 'array',
         'skills'         => 'array',
         'has_attachment' => 'boolean',
         'received_at'    => 'datetime',

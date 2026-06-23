@@ -17,6 +17,7 @@ class ProjectMailSource extends Model
         'email_id',
         'score',
         'score_reasons',
+        'score_breakdown',
         'engine',
         'source',
         'customer_name',
@@ -45,6 +46,7 @@ class ProjectMailSource extends Model
 
     protected $casts = [
         'score_reasons'                => 'array',
+        'score_breakdown'              => 'array',
         'required_skills'              => 'array',
         'preferred_skills'             => 'array',
         'process'                      => 'array',

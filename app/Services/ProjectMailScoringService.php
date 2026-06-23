@@ -289,13 +289,14 @@ class ProjectMailScoringService
                         // 本文が retention(30日 CleanupEmails) で purge 済み。件名のみの再スコアは
                         // 破壊的なので保存値を温存する（update せずスキップ）。
                     } else {
-                        [$score, $reasons] = $this->calcScore($text);
+                        [$score, $reasons, $bd] = $this->calcScore($text);
                         $domainData = $this->domainBonus($from, $pms->tenant_id);
                         if ($domainData['bonus'] !== 0) {
                             $score    += $domainData['bonus'];
                             $sign      = $domainData['bonus'] > 0 ? '+' : '';
                             $pct       = round($domainData['rate'] * 100);
                             $reasons[] = "domain:{$domainData['domain']}:{$sign}{$domainData['bonus']}({$pct}%/{$domainData['sample']}件)";
+                            $bd[]      = ['label' => "🏢 ドメイン信頼度（{$domainData['domain']}）", 'points' => $domainData['bonus']];
                         }
                         $score     = max(0, min(100, $score));
                         $extracted = $this->extract($email);
@@ -305,10 +306,11 @@ class ProjectMailScoringService
                             default                      => 'excluded',
                         };
                         $pms->update(array_merge($this->sanitizeExtracted($extracted), [
-                            'score'         => $score,
-                            'score_reasons' => $reasons,
-                            'engine'        => 'rule',
-                            'status'        => $status,
+                            'score'          => $score,
+                            'score_reasons'  => $reasons,
+                            'score_breakdown'=> $bd,
+                            'engine'         => 'rule',
+                            'status'         => $status,
                         ]));
                     }
                     $count++;
@@ -493,6 +495,19 @@ class ProjectMailScoringService
     }
 
     /**
+     * 営業向けスコア内訳のみを再計算して返す（保存・status/score 変更なし）。
+     * ドメイン加点は呼び出し側で既存 score_reasons から付与する（domainBonus 再クエリ回避）。
+     * 既存行のバックフィル用。本文が purge 済みなら空配列。
+     */
+    public function calcScoreBreakdown(Email $email): array
+    {
+        $body = $email->body_text ?? strip_tags($email->body_html ?? '');
+        if (trim($body) === '') return [];
+        [, , $bd] = $this->calcScore(($email->subject ?? '') . "\n" . $body);
+        return $bd;
+    }
+
+    /**
      * 1件スコアリング＋抽出して保存
      */
     public function score(Email $email): ProjectMailSource
@@ -512,11 +527,11 @@ class ProjectMailScoringService
         //     メールが catch-up 等で初回スコアされ、件名だけで誤った score/status になるのを防ぐ
         //     （engineer 側の score() と対称。rescoreAll は既存値を温存=skip するが初回は anchor 化）。
         if (trim($body) === '') {
-            return $this->save($email, 0, ['excluded', 'body_purged'], 'rule', []);
+            return $this->save($email, 0, ['excluded', 'body_purged'], 'rule', [], []);
         }
 
         // ② スコアリング（max 85点）
-        [$score, $reasons] = $this->calcScore($text);
+        [$score, $reasons, $bd] = $this->calcScore($text);
 
         // ③ ドメイン学習補正（蓄積データが5件以上のドメインに適用）
         $domainData = $this->domainBonus($from, $email->tenant_id);
@@ -525,12 +540,13 @@ class ProjectMailScoringService
             $sign   = $domainData['bonus'] > 0 ? '+' : '';
             $pct    = round($domainData['rate'] * 100);
             $reasons[] = "domain:{$domainData['domain']}:{$sign}{$domainData['bonus']}({$pct}%/{$domainData['sample']}件)";
+            $bd[]      = ['label' => "🏢 ドメイン信頼度（{$domainData['domain']}）", 'points' => $domainData['bonus']];
         }
 
         $score     = max(0, min(100, $score));
         $extracted = $this->extract($email);
 
-        return $this->save($email, $score, $reasons, 'rule', $extracted);
+        return $this->save($email, $score, $reasons, 'rule', $extracted, $bd);
     }
 
     /**
@@ -1126,49 +1142,54 @@ class ProjectMailScoringService
 
     private function calcScore(string $text): array
     {
-        $score = 0; $reasons = [];
+        // $bd: 営業向けスコア内訳 [['label'=>表示名, 'points'=>加点]]。点数ロジックは不変・記録のみ追加。
+        $score = 0; $reasons = []; $bd = [];
         $textWithoutUrls = preg_replace(self::URL_PATTERN, '', $text) ?? $text;
 
         // [A] 案件確度A: 明示的案件紹介ワード (+15, max 1回)
         foreach (self::PROJECT_A as $kw) {
             if (mb_strpos($text, $kw) !== false) {
-                $score += 15; $reasons[] = "project_a:{$kw}"; break;
+                $score += 15; $reasons[] = "project_a:{$kw}"; $bd[] = ['label' => '案件確度A（明示的な案件紹介）', 'points' => 15]; break;
             }
         }
 
         // [B] 案件確度B: 条件提示ワード (+10, max 1回)
         foreach (self::PROJECT_B as $kw) {
             if (mb_strpos($text, $kw) !== false) {
-                $score += 10; $reasons[] = "project_b:{$kw}"; break;
+                $score += 10; $reasons[] = "project_b:{$kw}"; $bd[] = ['label' => '案件確度B（条件提示）', 'points' => 10]; break;
             }
         }
 
         // [C] 技術スタック (max 20)
-        $techScore = 0; $langCount = 0;
+        $techScore = 0; $langCount = 0; $techKws = [];
         foreach (self::TECH_LANG as $kw) {
             if ($this->skillFound($textWithoutUrls, $kw)) {
                 $langCount++;
-                if ($langCount === 1) { $techScore += 10; $reasons[] = "lang:{$kw}"; }
-                elseif ($langCount === 2) { $techScore += 5;  $reasons[] = "lang2:{$kw}"; break; }
+                if ($langCount === 1) { $techScore += 10; $reasons[] = "lang:{$kw}"; $techKws[] = $kw; }
+                elseif ($langCount === 2) { $techScore += 5;  $reasons[] = "lang2:{$kw}"; $techKws[] = $kw; break; }
             }
         }
         foreach (self::TECH_INFRA as $kw) {
-            if ($this->skillFound($textWithoutUrls, $kw)) { $techScore += 5; $reasons[] = "infra:{$kw}"; break; }
+            if ($this->skillFound($textWithoutUrls, $kw)) { $techScore += 5; $reasons[] = "infra:{$kw}"; $techKws[] = $kw; break; }
         }
         foreach (self::TECH_DB as $kw) {
-            if ($this->skillFound($textWithoutUrls, $kw)) { $techScore += 3; $reasons[] = "db:{$kw}"; break; }
+            if ($this->skillFound($textWithoutUrls, $kw)) { $techScore += 3; $reasons[] = "db:{$kw}"; $techKws[] = $kw; break; }
         }
-        $score += min($techScore, 20);
+        $techCapped = min($techScore, 20);
+        $score += $techCapped;
+        if ($techCapped > 0) {
+            $bd[] = ['label' => '技術スタック' . ($techKws ? '（' . implode('・', $techKws) . '）' : ''), 'points' => $techCapped];
+        }
 
         // [D] 単価具体性: XX万 という数字 (+15)
         if (preg_match('/\d{2,3}\s*万[円]?/u', $text)) {
-            $score += 15; $reasons[] = 'price_concrete';
+            $score += 15; $reasons[] = 'price_concrete'; $bd[] = ['label' => '単価が具体的', 'points' => 15];
         }
 
         // [E] 勤務地 (+10, max 1回)
         foreach (self::LOCATION_KW as $kw) {
             if (mb_strpos($text, $kw) !== false) {
-                $score += 10; $reasons[] = "location:{$kw}"; break;
+                $score += 10; $reasons[] = "location:{$kw}"; $bd[] = ['label' => "勤務地（{$kw}）", 'points' => 10]; break;
             }
         }
 
@@ -1176,20 +1197,20 @@ class ProjectMailScoringService
         $procAdded = false;
         foreach (self::PROCESS_UPPER as $kw) {
             if (mb_strpos($text, $kw) !== false) {
-                $score += 10; $reasons[] = "process:{$kw}"; $procAdded = true; break;
+                $score += 10; $reasons[] = "process:{$kw}"; $bd[] = ['label' => "工程（{$kw}）", 'points' => 10]; $procAdded = true; break;
             }
         }
         if (!$procAdded) {
             foreach (self::PROCESS_DEV as $kw) {
                 if (mb_strpos($text, $kw) !== false) {
-                    $score += 7; $reasons[] = "process:{$kw}"; $procAdded = true; break;
+                    $score += 7; $reasons[] = "process:{$kw}"; $bd[] = ['label' => "工程（{$kw}）", 'points' => 7]; $procAdded = true; break;
                 }
             }
         }
         if (!$procAdded) {
             foreach (self::PROCESS_OTHER as $kw) {
                 if (mb_strpos($text, $kw) !== false) {
-                    $score += 4; $reasons[] = "process:{$kw}"; break;
+                    $score += 4; $reasons[] = "process:{$kw}"; $bd[] = ['label' => "工程（{$kw}）", 'points' => 4]; break;
                 }
             }
         }
@@ -1197,30 +1218,30 @@ class ProjectMailScoringService
         // [G] 稼働・期間 (+5)
         foreach (['即日', '長期', '人月'] as $kw) {
             if (mb_strpos($text, $kw) !== false) {
-                $score += 5; $reasons[] = "timing:{$kw}"; break;
+                $score += 5; $reasons[] = "timing:{$kw}"; $bd[] = ['label' => "稼働・期間（{$kw}）", 'points' => 5]; break;
             }
         }
 
         // ペナルティ: 単価曖昧 (-10)
         foreach (self::PENALTY_VAGUE as $kw) {
             if (mb_strpos($text, $kw) !== false) {
-                $score -= 10; $reasons[] = "penalty_vague:{$kw}"; break;
+                $score -= 10; $reasons[] = "penalty_vague:{$kw}"; $bd[] = ['label' => "⚠ 単価が曖昧（{$kw}）", 'points' => -10]; break;
             }
         }
 
         // ペナルティ: 高次商流 (-10)
         foreach (self::PENALTY_CHAIN as $kw) {
             if (mb_strpos($text, $kw) !== false) {
-                $score -= 10; $reasons[] = "penalty_chain:{$kw}"; break;
+                $score -= 10; $reasons[] = "penalty_chain:{$kw}"; $bd[] = ['label' => "⚠ 高次商流（{$kw}）", 'points' => -10]; break;
             }
         }
 
-        return [max(0, min(85, $score)), $reasons];
+        return [max(0, min(85, $score)), $reasons, $bd];
     }
 
     // ── 保存 ──────────────────────────────────────────────
 
-    private function save(Email $email, int $score, array $reasons, string $engine, array $extracted): ProjectMailSource
+    private function save(Email $email, int $score, array $reasons, string $engine, array $extracted, array $breakdown = []): ProjectMailSource
     {
         $status = match(true) {
             $score === 0              => 'excluded',
@@ -1232,13 +1253,14 @@ class ProjectMailScoringService
         return ProjectMailSource::updateOrCreate(
             ['email_id' => $email->id],
             array_merge([
-                'tenant_id'    => $email->tenant_id,
-                'score'        => $score,
-                'score_reasons'=> $reasons,
-                'engine'       => $engine,
-                'status'       => $status,
-                'received_at'  => $email->received_at,
-                'arrived_at'   => $email->arrived_at,
+                'tenant_id'      => $email->tenant_id,
+                'score'          => $score,
+                'score_reasons'  => $reasons,
+                'score_breakdown'=> $breakdown,
+                'engine'         => $engine,
+                'status'         => $status,
+                'received_at'    => $email->received_at,
+                'arrived_at'     => $email->arrived_at,
             ], $this->sanitizeExtracted($extracted))
         );
     }
