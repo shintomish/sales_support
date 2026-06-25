@@ -101,7 +101,9 @@ class EmailController extends Controller
             // selfOwners と同一定義に揃える: to の先頭 aizen ローカル部 = 担当者、かつ outsource を含まない
             // （ILIKE 部分一致だと outsource 併記や複数宛を重複カウントし、ドロップダウン件数とズレる）
             $query->whereRaw("lower(substring(to_address from '([A-Za-z0-9._%+\\-]+)@aizen-sol\\.co\\.jp')) = ?", [mb_strtolower($selfOwner)])
-                  ->where('to_address', 'not ilike', '%outsource@aizen-sol.co.jp%');
+                  ->where('to_address', 'not ilike', '%outsource@aizen-sol.co.jp%')
+                  // partner@ は業務受信箱のため担当者(自社)ビューから除外
+                  ->where('to_address', 'not ilike', '%partner@aizen-sol.co.jp%');
         } elseif ($mailScope === 'self') {
             $query->where('category', 'self');
         }
@@ -155,6 +157,8 @@ class EmailController extends Controller
     {
         $owners = Email::where('to_address', 'ilike', '%@aizen-sol.co.jp%')
             ->where('to_address', 'not ilike', '%outsource@aizen-sol.co.jp%')
+            // partner@ は業務受信箱（客先見積依頼・仕入先請求書等の外部受信）。担当者(自社)ではないため除外。
+            ->where('to_address', 'not ilike', '%partner@aizen-sol.co.jp%')
             ->where(function ($q) {
                 $q->where('subject', 'not ilike', '[spam]%')->orWhereNull('subject');
             })
