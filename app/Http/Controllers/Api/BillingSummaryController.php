@@ -3,7 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use App\Models\WorkRecord;
+use App\Models\Deal;
 use App\Services\BillingCalculationService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -12,8 +12,10 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 /**
  * 月次請求集計（Phase B）
  *
- * 当該年月に work_records が存在する SES 案件を起点に、
- * 試算金額を案件×月 / 取引先×月 で集計する。
+ * 対象年月に契約がかかる全 SES 案件を行として返す（勤務表未入力の案件も含む）。
+ * 勤務表未入力行はこの画面で実時間を入力 → そのまま請求書作成できる（2026-06-24 管理部要望）。
+ * 集計(totals)・取引先別・CSV は勤務表入力済(actualized)の行のみを対象とし、
+ * 「確定済み請求の集計」という従来の意味を保つ。
  */
 class BillingSummaryController extends Controller
 {
@@ -29,8 +31,10 @@ class BillingSummaryController extends Controller
         $params = $this->validatedParams($request);
         $rows = $this->buildDealRows($params);
 
-        $items  = $params['group'] === 'customer' ? $this->groupByCustomer($rows) : $rows;
-        $totals = $this->sumTotals($rows);
+        // 集計・取引先別は確定済み（勤務表入力済）行のみ。案件別は未入力行も表示（作成導線用）。
+        $actualized = array_values(array_filter($rows, fn($r) => $r['has_work_record']));
+        $items  = $params['group'] === 'customer' ? $this->groupByCustomer($actualized) : $rows;
+        $totals = $this->sumTotals($actualized);
 
         return response()->json([
             'year_month' => $params['year_month'],
@@ -47,7 +51,9 @@ class BillingSummaryController extends Controller
     {
         $params = $this->validatedParams($request);
         $rows = $this->buildDealRows($params);
-        $items = $params['group'] === 'customer' ? $this->groupByCustomer($rows) : $rows;
+        // CSV は確定済み（勤務表入力済）行のみ＝従来の請求集計の意味を保つ
+        $actualized = array_values(array_filter($rows, fn($r) => $r['has_work_record']));
+        $items = $params['group'] === 'customer' ? $this->groupByCustomer($actualized) : $actualized;
 
         $filename = sprintf('billing-summary-%s-%s.csv', $params['year_month'], $params['group']);
 
@@ -110,35 +116,49 @@ class BillingSummaryController extends Controller
      */
     private function buildDealRows(array $params): array
     {
-        $records = WorkRecord::with([
-                'deal.customer',
-                'deal.sesContract',
-                // 集計画面の「発行状況」は請求書のみが対象（見積書/注文書は除外）
-                'deal.invoices' => fn($q) => $q->where('year_month', $params['year_month'])
-                                               ->where('doc_type', 'invoice'),
+        $ym       = $params['year_month'];
+        $firstDay = $ym . '-01';
+        $lastDay  = \Carbon\Carbon::createFromFormat('!Y-m-d', $firstDay)->endOfMonth()->toDateString();
+
+        // 対象月に契約がかかる全 SES 案件（勤務表未入力も含む）。
+        // 契約期間が対象月に重なる案件、または対象月の勤務表が既にある案件を取る。
+        $deals = Deal::with([
+                'customer',
+                'sesContract',
+                // 「発行状況」は請求書のみが対象（見積書/注文書は除外）
+                'invoices'    => fn($q) => $q->where('year_month', $ym)->where('doc_type', 'invoice'),
+                'workRecords' => fn($q) => $q->where('year_month', $ym),
             ])
-            ->where('year_month', $params['year_month'])
-            ->whereHas('deal', function ($q) use ($params) {
-                $q->where('deal_type', 'ses');
-                if ($params['customer_id']) {
-                    $q->where('customer_id', $params['customer_id']);
-                }
-                if ($params['q']) {
-                    $q->where(function ($q2) use ($params) {
-                        $like = '%' . $params['q'] . '%';
-                        $q2->where('title', 'ilike', $like)
-                           ->orWhereHas('customer', fn($cq) => $cq->where('company_name', 'ilike', $like));
+            ->where('deal_type', 'ses')
+            ->whereHas('sesContract')
+            ->where(function ($q) use ($firstDay, $lastDay, $ym) {
+                $q->whereHas('sesContract', function ($c) use ($firstDay, $lastDay) {
+                    $c->where(function ($cc) use ($lastDay) {
+                        $cc->whereNull('contract_period_start')
+                           ->orWhereDate('contract_period_start', '<=', $lastDay);
+                    })->where(function ($cc) use ($firstDay) {
+                        $cc->whereNull('contract_period_end')
+                           ->orWhereDate('contract_period_end', '>=', $firstDay);
                     });
-                }
+                })
+                // 契約期間外でも対象月の勤務表があれば取りこぼさない
+                ->orWhereHas('workRecords', fn($w) => $w->where('year_month', $ym));
+            })
+            ->when($params['customer_id'], fn($q) => $q->where('customer_id', $params['customer_id']))
+            ->when($params['q'], function ($q) use ($params) {
+                $like = '%' . $params['q'] . '%';
+                $q->where(function ($q2) use ($like) {
+                    $q2->where('title', 'ilike', $like)
+                       ->orWhereHas('customer', fn($cq) => $cq->where('company_name', 'ilike', $like));
+                });
             })
             ->get();
 
         $rows = [];
-        foreach ($records as $record) {
-            $deal = $record->deal;
-            if (!$deal) continue;
-
-            $calc = $this->calculator->calculate($deal->sesContract, $record);
+        foreach ($deals as $deal) {
+            $contract = $deal->sesContract;
+            $record   = $deal->workRecords->first();   // null = 勤務表未入力
+            $calc     = $this->calculator->calculate($contract, $record);
             $existingInvoice = $deal->invoices->first();
 
             $rows[] = [
@@ -147,7 +167,7 @@ class BillingSummaryController extends Controller
                 'customer_id'    => $deal->customer?->id,
                 'customer_name'  => $deal->customer?->company_name,
                 'invoice_code'   => $deal->customer?->invoice_code,
-                'engineer_name'  => $deal->sesContract?->engineer_name,
+                'engineer_name'  => $contract?->engineer_name,
                 'actual_hours'   => $calc['actual_hours'],
                 'basic'          => $calc['basic'],
                 'deduction'      => $calc['deduction'],
@@ -157,6 +177,12 @@ class BillingSummaryController extends Controller
                 'tax'            => $calc['tax'],
                 'total'          => $calc['total'],
                 'tax_rate'       => $calc['tax_rate'],
+                'has_work_record' => $record !== null,
+                // 勤務表未入力行のクライアント側ライブ試算用に顧客側精算条件を返す
+                'client_deduction_hours'      => $contract?->client_deduction_hours !== null ? (float) $contract->client_deduction_hours : null,
+                'client_overtime_hours'       => $contract?->client_overtime_hours !== null ? (float) $contract->client_overtime_hours : null,
+                'client_deduction_unit_price' => $contract?->client_deduction_unit_price !== null ? (float) $contract->client_deduction_unit_price : null,
+                'client_overtime_unit_price'  => $contract?->client_overtime_unit_price !== null ? (float) $contract->client_overtime_unit_price : null,
                 'invoice_id'       => $existingInvoice?->id,
                 'invoice_status'   => $existingInvoice?->status,
                 'invoice_pdf_path' => $existingInvoice?->pdf_path,

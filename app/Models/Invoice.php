@@ -23,6 +23,7 @@ class Invoice extends Model
         'language',
         'vendor_metadata',
         'deal_id',
+        'source_email_id',
         'customer_id',
         'year_month',
         'valid_until_text',
@@ -97,6 +98,12 @@ class Invoice extends Model
     public function customer(): BelongsTo
     {
         return $this->belongsTo(Customer::class);
+    }
+
+    /** 見積の起点となった受信メール（見積依頼）。null 可。 */
+    public function sourceEmail(): BelongsTo
+    {
+        return $this->belongsTo(Email::class, 'source_email_id');
     }
 
     public function lines(): HasMany

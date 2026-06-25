@@ -97,6 +97,7 @@ class SesContractController extends Controller
         if ($search = $request->get('search')) {
             $query->where(function ($q) use ($search) {
                 $q->where('deals.title', 'ilike', "%{$search}%")
+                  ->orWhere('deals.affiliation', 'ilike', "%{$search}%")
                   ->orWhereHas('sesContract', fn($q) => $q->where('engineer_name', 'ilike', "%{$search}%"))
                   ->orWhereHas('customer', fn($q) => $q->where('company_name', 'ilike', "%{$search}%"));
             });

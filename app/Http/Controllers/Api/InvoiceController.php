@@ -136,6 +136,7 @@ class InvoiceController extends Controller
         $validated = $request->validate([
             'deal_id'          => ['nullable', 'integer'],   // 通常モード
             'customer_id'      => ['nullable', 'integer'],   // 例外モード
+            'source_email_id'  => ['nullable', 'integer', 'exists:emails,id'], // 見積依頼メールからの作成時
             'issued_date'      => ['nullable', 'date'],
             'valid_until_text' => ['nullable', 'string', 'max:50'],
             'subject_name'     => ['nullable', 'string', 'max:255'],
@@ -172,6 +173,17 @@ class InvoiceController extends Controller
                 'customer_id' => ['この顧客には顧客コード(invoice_code)が設定されていないため見積書を発行できません'],
             ]);
         }
+
+        // 見積依頼メールの紐付け: テナント越境防止。
+        // validate の exists ルールは BelongsToTenant GlobalScope を通らないため、
+        // ここで自テナントのメールであることを必ず確認する（他テナントのメールIDは拒否）。
+        $sourceEmailId = $validated['source_email_id'] ?? null;
+        if ($sourceEmailId && !\App\Models\Email::whereKey($sourceEmailId)->exists()) {
+            throw ValidationException::withMessages([
+                'source_email_id' => ['指定された見積依頼メールが見つかりません'],
+            ]);
+        }
+
         $issuedDate    = $validated['issued_date'] ?? now()->toDateString();
         $yearMonth     = \Carbon\Carbon::parse($issuedDate)->format('Y-m');
         $invoiceNumber = $this->numberService->generate($customer, $yearMonth, 'estimate');
@@ -206,6 +218,7 @@ class InvoiceController extends Controller
             'doc_type'                             => 'estimate',
             'language'                             => $language,
             'deal_id'                              => $deal?->id,
+            'source_email_id'                      => $sourceEmailId,
             'customer_id'                          => $customer->id,
             'year_month'                           => $yearMonth,
             'invoice_number'                       => $invoiceNumber,
@@ -437,6 +450,8 @@ class InvoiceController extends Controller
             'customer:id,company_name,invoice_delivery_method,primary_contact_id',
             'customer.contacts:id,customer_id,name,email,position',
             'deal:id,title',
+            // 見積の起点となった受信メール（見積依頼）。記録一元化のため本文も返す。
+            'sourceEmail:id,subject,from_address,from_name,to_address,received_at,category,body_text',
         ]);
         return response()->json($invoice);
     }
@@ -1097,26 +1112,13 @@ class InvoiceController extends Controller
             ]);
         }
 
-        // 対象データの翌月で採番する。
-        // `createFromFormat('Y-m', ...)` は日付欄を「今日の日」で補完するため、
-        // 当日が28〜31日かつ対象月にその日が存在しない (例: 5/30 で year_month='2026-02')
-        // と翌月へロールオーバーし、addMonthNoOverflow が「翌々月」を返してしまう
-        // (docs/730 §High #7)。`!Y-m-d` で明示的に月初日として組み立てる。
-        $yearMonth = \Carbon\Carbon::createFromFormat('!Y-m-d', $invoice->year_month . '-01')
-            ->addMonthNoOverflow()
-            ->format('Y-m');
-        $issuedDate = $invoice->issued_date
-            ? \Carbon\Carbon::parse($invoice->issued_date)->addMonthNoOverflow()->toDateString()
-            : \Carbon\Carbon::createFromFormat('!Y-m-d', $yearMonth . '-01')->toDateString();
-
-        // 当月の2ヶ月先以降の複写は禁止（誤って先々月分まで作らないため）
-        // 許容: 計算後 year_month <= 当月+1
-        $maxAllowedYm = now()->addMonthNoOverflow()->format('Y-m');
-        if (strcmp($yearMonth, $maxAllowedYm) > 0) {
-            throw ValidationException::withMessages([
-                'year_month' => ['当月の2ヶ月先の複写はできません'],
-            ]);
-        }
+        // 複写時は「本日」基準で採番・日付を設定する（2026-06-24 管理部要望）。
+        //   - 対象月(year_month) = 当月
+        //   - 発行日(見積日/注文日/請求日) = 本日
+        // 旧仕様は「対象データの翌月・翌月同日」へ進めていたが、
+        // 実運用では複写=当月分の新規作成が大半のため本日基準に統一。
+        $yearMonth  = now()->format('Y-m');
+        $issuedDate = now()->toDateString();
 
         $kind = match ($invoice->doc_type) {
             'estimate'       => 'estimate',

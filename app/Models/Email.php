@@ -107,4 +107,10 @@ class Email extends Model
     {
         return $this->belongsTo(Customer::class);
     }
+
+    /** このメール（見積依頼）を起点に作成された見積/請求書。 */
+    public function sourcedInvoices()
+    {
+        return $this->hasMany(Invoice::class, 'source_email_id');
+    }
 }

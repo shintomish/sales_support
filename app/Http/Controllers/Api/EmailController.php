@@ -205,8 +205,12 @@ class EmailController extends Controller
     // メール詳細（自動既読）
     public function show(int $id)
     {
-        $email = Email::with(['contact', 'deal', 'customer', 'attachments'])
-            ->findOrFail($id);
+        $email = Email::with([
+            'contact', 'deal', 'customer', 'attachments',
+            // この依頼メールから作成済みの見積（記録一元化の導線表示用）
+            'sourcedInvoices' => fn($q) => $q->select('id', 'source_email_id', 'invoice_number', 'doc_type', 'status', 'total')
+                ->orderByDesc('id'),
+        ])->findOrFail($id);
 
         if (!$email->is_read) {
             $email->update(['is_read' => true]);
