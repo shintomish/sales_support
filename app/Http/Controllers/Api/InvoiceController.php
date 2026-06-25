@@ -656,14 +656,17 @@ class InvoiceController extends Controller
             'note'            => ['nullable', 'string', 'max:1000'],
             'to_recipients'   => ['nullable', 'array'],
             'to_recipients.*' => ['string', 'max:200'],
-            'attachments'     => ['nullable', 'array'],
+            'items'           => ['nullable', 'array'],   // 同封物名（見積書/送付状 等）
+            'items.*'         => ['string', 'max:50'],
+            'attachments'     => ['nullable', 'array'],   // 添付ファイル（任意）
             'attachments.*'   => ['file', 'max:10240'],
         ]);
 
         $user       = \Illuminate\Support\Facades\Auth::user();
         $recipients = $v['to_recipients'] ?? [];
 
-        $meta = [];
+        // attachments_meta は「同封物名(文字列)」＋「アップロード添付({name,url})」の混在で保持
+        $meta = array_values($v['items'] ?? []);
         if ($request->hasFile('attachments')) {
             foreach ($request->file('attachments') as $file) {
                 $name = $file->getClientOriginalName();
