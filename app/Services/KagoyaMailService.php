@@ -610,11 +610,20 @@ class KagoyaMailService
         $lcTo            = strtolower($to);
 
         $isSelfFrom = $selfDomain && $fromDomain === $selfDomain;
-        // to が自社ドメイン(@aizen-sol.co.jp)宛 = 自社タブ対象（partner@=管理部宛も含む。差出人が外部でも self）。
-        // outsource@(catch-all/送信元)宛だけは loop-back 以外を self にしない（従来どおり除外）。
+        // 「業務受信箱」(outsource@ / partner@=管理部) は外部からの受信を前提とするため、
+        // to ベースの自社判定(isInternalTo)では self にしない（外部発→partner@ は非self＝その他へ）。
+        // 自社タブには出さない方針（2026-06-24 管理部確定）。社員個人宛(s-fujisaki@等)は従来どおり self。
+        $functionalInboxes = array_filter([
+            $selfFromAddress,
+            $selfDomain ? 'partner@' . $selfDomain : '',
+        ]);
+        $toHitsFunctionalInbox = false;
+        foreach ($functionalInboxes as $addr) {
+            if ($addr !== '' && str_contains($lcTo, $addr)) { $toHitsFunctionalInbox = true; break; }
+        }
         $isInternalTo = $selfDomain
             && str_contains($lcTo, '@' . $selfDomain)
-            && ($selfFromAddress === '' || !str_contains($lcTo, $selfFromAddress));
+            && !$toHitsFunctionalInbox;
         $forceSelf = $isSelfFrom || $isInternalTo;
 
         $contentType = $headers['content-type'] ?? 'text/plain';
