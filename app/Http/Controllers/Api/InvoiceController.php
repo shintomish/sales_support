@@ -82,7 +82,11 @@ class InvoiceController extends Controller
             $like = '%' . $validated['q'] . '%';
             $query->where(function ($q) use ($like) {
                 $q->where('invoice_number', 'ilike', $like)
-                  ->orWhere('customer_name_snapshot', 'ilike', $like);
+                  ->orWhere('customer_name_snapshot', 'ilike', $like)
+                  // 件名・注文請書番号でも検索（⑦ 注文書検索の対象漏れ是正。
+                  // acknowledgement_no は注文書専用カラムで他 doc_type は null のため無害）
+                  ->orWhere('subject_name', 'ilike', $like)
+                  ->orWhere('acknowledgement_no', 'ilike', $like);
             });
         }
 
