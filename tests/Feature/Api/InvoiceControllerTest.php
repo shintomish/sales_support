@@ -63,8 +63,9 @@ class InvoiceControllerTest extends TestCase
         $res->assertCreated();
         $this->assertSame('INV-A001-202604-001', $res->json('invoice_number'));
         $this->assertSame('draft', $res->json('status'));
-        // 基本800000(10%) + 交通費5000(0%) → 小計805000、税80000、合計885000
-        $this->assertEquals(805000, $res->json('subtotal'));
+        // 基本800000(10%) → 課税小計800000・税80000。
+        // 交通費5000は経費(is_expense=非課税)のため小計には含めず合計に直接加算 → 合計885000
+        $this->assertEquals(800000, $res->json('subtotal'));
         $this->assertEquals(80000,  $res->json('tax'));
         $this->assertEquals(885000, $res->json('total'));
         $this->assertCount(2, $res->json('lines'));
