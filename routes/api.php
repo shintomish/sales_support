@@ -111,6 +111,8 @@ Route::prefix('v1')->middleware(['supabase.auth'])->group(function () {
     Route::post('invoices/{invoice}/send-mail',    [InvoiceController::class, 'sendMail']);
     Route::post('invoices/{invoice}/record-post',  [InvoiceController::class, 'recordPost']);
     Route::get('invoices/{invoice}/latest-post',   [InvoiceController::class, 'latestPost']);
+    Route::post('invoices/{invoice}/record-partner', [InvoiceController::class, 'recordPartner']);
+    Route::get('invoices/{invoice}/latest-partner',  [InvoiceController::class, 'latestPartner']);
     Route::get('invoices/{invoice}/mail-template', [InvoiceController::class, 'mailTemplate']);
     Route::get('invoices/{invoice}/send-histories',[InvoiceController::class, 'sendHistories']);
     Route::get('invoice-send-histories',           [InvoiceController::class, 'allSendHistories']);

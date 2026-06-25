@@ -615,6 +615,84 @@ class InvoiceController extends Controller
     }
 
     /**
+     * GET /api/v1/invoices/{invoice}/latest-partner
+     * partner送信モーダル用：最新の partner 記録 + 宛先候補（顧客連絡先）を返す。
+     */
+    public function latestPartner(Invoice $invoice): JsonResponse
+    {
+        $invoice->load('customer:id,company_name', 'customer.contacts:id,customer_id,name,email');
+
+        $candidates = collect($invoice->customer?->contacts ?? [])
+            ->map(fn($c) => ['name' => $c->name, 'email' => $c->email])
+            ->values();
+
+        $r = \App\Models\InvoiceSendHistory::where('invoice_id', $invoice->id)
+            ->where('method', 'partner')
+            ->orderByDesc('sent_at')
+            ->orderByDesc('id')
+            ->first();
+
+        return response()->json([
+            'latest' => $r ? [
+                'id'               => $r->id,
+                'sent_at'          => $r->sent_at?->format('Y-m-d'),
+                'note'             => $r->subject,
+                'attachments_meta' => $r->attachments_meta ?? [],
+                'to_recipients'    => $r->to_emails ?? [],
+            ] : null,
+            'candidates' => $candidates,
+        ]);
+    }
+
+    /**
+     * POST /api/v1/invoices/{invoice}/record-partner
+     * partner@ 経由で送った実績を method='partner' で記録（実送信なし）。
+     * 同封物の代わりに添付ファイルを Supabase に保存し、attachments_meta に [{name,url}] で持つ。
+     */
+    public function recordPartner(Request $request, Invoice $invoice): JsonResponse
+    {
+        $v = $request->validate([
+            'sent_at'         => ['nullable', 'date'],
+            'note'            => ['nullable', 'string', 'max:1000'],
+            'to_recipients'   => ['nullable', 'array'],
+            'to_recipients.*' => ['string', 'max:200'],
+            'attachments'     => ['nullable', 'array'],
+            'attachments.*'   => ['file', 'max:10240'],
+        ]);
+
+        $user       = \Illuminate\Support\Facades\Auth::user();
+        $recipients = $v['to_recipients'] ?? [];
+
+        $meta = [];
+        if ($request->hasFile('attachments')) {
+            foreach ($request->file('attachments') as $file) {
+                $name = $file->getClientOriginalName();
+                $url  = $this->storage->upload($file, "partner-send/{$invoice->tenant_id}/{$invoice->id}");
+                $meta[] = ['name' => $name, 'url' => $url];
+            }
+        }
+
+        $history = \App\Models\InvoiceSendHistory::create([
+            'tenant_id'        => $user?->tenant_id,
+            'invoice_id'       => $invoice->id,
+            'method'           => 'partner',
+            'to_emails'        => !empty($recipients) ? $recipients : null,
+            'cc_emails'        => null,
+            'subject'          => $v['note'] ?? null,
+            'body'             => null,
+            'attachments_meta' => $meta,
+            'status'           => 'sent',
+            'sent_at'          => $v['sent_at'] ?? now()->toDateTimeString(),
+            'sent_by'          => $user?->id,
+        ]);
+
+        return response()->json([
+            'message'    => 'partner送信を記録しました',
+            'history_id' => $history->id,
+        ], 201);
+    }
+
+    /**
      * GET /api/v1/invoices/{invoice}/mail-template
      * メール送信モーダル用のテンプレート（subject/body）を返す。
      * テナントに保存されたテンプレがあればそれを使い、無ければデフォルトを使用。
@@ -769,77 +847,77 @@ class InvoiceController extends Controller
     {
         $v = $request->validate([
             'year_month' => ['nullable', 'regex:/^\d{4}-(0[1-9]|1[0-2])$/'],
-            'status'     => ['nullable', 'in:sent,failed'],
-            'method'     => ['nullable', 'in:mail,post'],
             'doc_type'   => ['nullable', 'in:invoice,estimate,purchase_order'],
             'q'          => ['nullable', 'string', 'max:200'],
         ]);
 
         $docType = $v['doc_type'] ?? 'invoice';
 
-        $q = \App\Models\InvoiceSendHistory::query()
-            ->with([
-                'sender:id,name',
-                'invoice:id,doc_type,invoice_number,customer_id,customer_name_snapshot,year_month,total,subject_name',
-            ])
-            ->whereHas('invoice', fn($iq) => $iq->where('doc_type', $docType))
-            ->orderByDesc('sent_at');
+        // 1見積1行に集約（2026-06-24 管理部）。送信履歴を持つ invoice を最新送信日時の降順でページング。
+        $invQ = Invoice::query()
+            ->where('doc_type', $docType)
+            ->whereHas('sendHistories')
+            ->withMax('sendHistories', 'sent_at')
+            ->orderByDesc('send_histories_max_sent_at');
 
-        if (!empty($v['status'])) $q->where('status', $v['status']);
-        if (!empty($v['method'])) $q->where('method', $v['method']);
         if (!empty($v['year_month'])) {
-            $q->whereHas('invoice', fn($iq) => $iq->where('year_month', $v['year_month']));
+            $invQ->where('year_month', $v['year_month']);
         }
         if (!empty($v['q'])) {
             $like = '%' . $v['q'] . '%';
-            $q->where(function ($qq) use ($like) {
-                $qq->where('subject', 'ilike', $like)
-                   ->orWhereHas('invoice', fn($iq) =>
-                       $iq->where('invoice_number', 'ilike', $like)
-                          ->orWhere('customer_name_snapshot', 'ilike', $like)
-                          ->orWhere('subject_name', 'ilike', $like));
+            $invQ->where(function ($iq) use ($like) {
+                $iq->where('invoice_number', 'ilike', $like)
+                   ->orWhere('customer_name_snapshot', 'ilike', $like)
+                   ->orWhere('subject_name', 'ilike', $like);
             });
         }
 
-        $paginated = $q->paginate(50);
+        $paginated = $invQ->with(['sendHistories.sender:id,name'])->paginate(50);
 
-        // TO のメールアドレスから連絡先名を解決するためのマップを作る
+        // TO のメールアドレス → 連絡先名 解決マップ
         $allEmails = collect();
-        foreach ($paginated->items() as $r) {
-            $allEmails = $allEmails->concat($r->to_emails ?? []);
+        foreach ($paginated->items() as $inv) {
+            foreach ($inv->sendHistories as $h) {
+                $allEmails = $allEmails->concat($h->to_emails ?? []);
+            }
         }
-        $allEmails = $allEmails->unique()->values();
-        $emailToName = [];
-        if ($allEmails->isNotEmpty()) {
-            $emailToName = \App\Models\Contact::query()
-                ->whereIn('email', $allEmails)
-                ->pluck('name', 'email')
-                ->all();
-        }
+        $allEmails = $allEmails->filter(fn($e) => is_string($e) && str_contains($e, '@'))->unique()->values();
+        $emailToName = $allEmails->isNotEmpty()
+            ? \App\Models\Contact::query()->whereIn('email', $allEmails)->pluck('name', 'email')->all()
+            : [];
 
-        $paginated->getCollection()->transform(function ($r) use ($emailToName) {
-            $toNames = collect($r->to_emails ?? [])
-                ->map(fn($em) => $emailToName[$em] ?? $em)
-                ->values()->all();
+        $fmt = function ($h) use ($emailToName) {
+            if (!$h) return null;
+            $toNames = collect($h->to_emails ?? [])->map(fn($em) => $emailToName[$em] ?? $em)->values()->all();
             return [
-                'id'                   => $r->id,
-                'method'               => $r->method,
-                'to_emails'            => $r->to_emails,
-                'to_names'             => $toNames,
-                'cc_emails'            => $r->cc_emails,
-                'subject'              => $r->subject,
-                'attachments_meta'     => $r->attachments_meta,
-                'status'               => $r->status,
-                'error_message'        => $r->error_message,
-                'sent_at'              => $r->sent_at?->toIso8601String(),
-                'created_at'           => $r->created_at?->toIso8601String(),
-                'sent_by_name'         => $r->sender?->name,
-                'invoice_id'           => $r->invoice_id,
-                'invoice_number'       => $r->invoice?->invoice_number,
-                'invoice_year_month'   => $r->invoice?->year_month,
-                'invoice_total'        => $r->invoice?->total,
-                'invoice_subject_name' => $r->invoice?->subject_name,
-                'customer_name'        => $r->invoice?->customer_name_snapshot,
+                'id'               => $h->id,
+                'status'           => $h->status,
+                'error_message'    => $h->error_message,
+                'to_emails'        => $h->to_emails,
+                'to_names'         => $toNames,
+                'subject'          => $h->subject,
+                'attachments_meta' => $h->attachments_meta,
+                'sent_at'          => $h->sent_at?->toIso8601String(),
+                'sent_by_name'     => $h->sender?->name,
+            ];
+        };
+
+        $paginated->getCollection()->transform(function ($inv) use ($fmt) {
+            $latestOf = fn($m) => $inv->sendHistories
+                ->where('method', $m)
+                ->sortByDesc('sent_at')->first();
+            return [
+                'invoice_id'           => $inv->id,
+                'invoice_number'       => $inv->invoice_number,
+                'invoice_year_month'   => $inv->year_month,
+                'invoice_total'        => $inv->total,
+                'invoice_subject_name' => $inv->subject_name,
+                'customer_name'        => $inv->customer_name_snapshot,
+                'last_sent_at'         => $inv->send_histories_max_sent_at,
+                // ①②③ それぞれの最新状態（null = 未実施）
+                'mail'    => $fmt($latestOf('mail')),
+                'partner' => $fmt($latestOf('partner')),
+                'post'    => $fmt($latestOf('post')),
             ];
         });
 

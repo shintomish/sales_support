@@ -111,6 +111,12 @@ class Invoice extends Model
         return $this->hasMany(InvoiceLine::class)->orderBy('sort_order');
     }
 
+    /** 送信履歴（メール送信/partner送信/郵送記録）。method で識別。 */
+    public function sendHistories(): HasMany
+    {
+        return $this->hasMany(InvoiceSendHistory::class);
+    }
+
     /**
      * 明細から金額を再計算してプロパティに反映する（保存はしない）。
      *  - 経費(is_expense=true) は 小計には入れず、税対象外として 合計に直接加算
