@@ -133,17 +133,6 @@
         ? sprintf('%dH-%dH', (int) $dedH, (int) $ovtH)
         : null;
     $unitMinText = $unitMin ? sprintf('【精算単位：%d分】', (int) $unitMin) : '';
-
-    // 控除/超過の数量(時間)を "1H15M" 形式で出力する（2026-06-24 管理部）。
-    $hoursToHM = function ($h) {
-        $h  = (float) $h;
-        $hh = (int) floor($h);
-        $mm = (int) round(($h - $hh) * 60);
-        if ($mm === 60) { $hh++; $mm = 0; }
-        if ($hh > 0 && $mm > 0) return $hh . 'H' . $mm . 'M';
-        if ($hh > 0)            return $hh . 'H';
-        return $mm . 'M';
-    };
 @endphp
 <!DOCTYPE html>
 <html lang="ja">
@@ -572,7 +561,7 @@ body.sans-en {
                 $rows[] = [
                     'name'       => '超過単価：' . number_format((float) $invoice->client_overtime_unit_price_snapshot) . '円',
                     'indent'     => true,
-                    'qty'        => $overtimeLine ? $hoursToHM($overtimeLine->quantity) : null,
+                    'qty'        => $overtimeLine ? rtrim(rtrim(number_format((float) $overtimeLine->quantity, 2), '0'), '.') : null,
                     'unit_price' => $overtimeLine ? $overtimeLine->unit_price : null,
                     'amount'     => $overtimeLine ? $overtimeLine->amount : null,
                 ];
@@ -581,7 +570,7 @@ body.sans-en {
                 $rows[] = [
                     'name'       => '控除単価：-' . number_format((float) $invoice->client_deduction_unit_price_snapshot) . '円',
                     'indent'     => true,
-                    'qty'        => $deductionLine ? $hoursToHM($deductionLine->quantity) : null,
+                    'qty'        => $deductionLine ? rtrim(rtrim(number_format((float) $deductionLine->quantity, 2), '0'), '.') : null,
                     'unit_price' => $deductionLine ? $deductionLine->unit_price : null,
                     'amount'     => $deductionLine ? $deductionLine->amount : null,
                     'amount_negative' => true,
