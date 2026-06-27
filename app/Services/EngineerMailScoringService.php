@@ -813,8 +813,9 @@ class EngineerMailScoringService
             if ($name !== '') return $name;
         }
 
-        // 優先2.5: 【氏　名】TY や 【氏名】山田太郎 形式（角括弧 + 全角空白許容）
-        if (preg_match('/【\s*氏[\s　]*名\s*】[\s　]*([^\s\n　■【（(]{1,15})/u', $text, $m)) {
+        // 優先2.5: 【氏　名】TY / 【氏名】山田太郎 / 【氏　名】：TS 形式（角括弧 + 全角空白 + 後続コロン許容）
+        // ※ 】の後の「：/:」を消費しないと「：TS」のようにコロンが氏名に混入する（GFD形式）
+        if (preg_match('/【\s*氏[\s　]*名\s*】[\s　：:]*([^\s\n　■【（(：:]{1,15})/u', $text, $m)) {
             $name = trim(preg_replace('/[（(].*/u', '', $m[1]));
             if ($name !== '') return $name;
         }
