@@ -47,12 +47,12 @@ class MailSearchController extends Controller
 
         $rows = $v['kind'] === 'project'
             ? array_merge(
-                $this->searchProjectMails($terms, $keyword, $priceMin, $priceMax),
-                $this->searchPublicProjects($terms, $keyword, $priceMin, $priceMax),
+                $this->searchProjectMails($terms, $keyword, $priceMin, $priceMax, $sort),
+                $this->searchPublicProjects($terms, $keyword, $priceMin, $priceMax, $sort),
             )
             : array_merge(
-                $this->searchEngineerMails($terms, $keyword, $priceMin, $priceMax),
-                $this->searchEngineers($terms, $keyword, $priceMin, $priceMax),
+                $this->searchEngineerMails($terms, $keyword, $priceMin, $priceMax, $sort),
+                $this->searchEngineers($terms, $keyword, $priceMin, $priceMax, $sort),
             );
 
         $rows = $this->sortRows($rows, $sort);
@@ -103,8 +103,21 @@ class MailSearchController extends Controller
         return true;
     }
 
+    /**
+     * 取得(cap)段階のSQL並び順。件数が多いソースで cap 内に「正しい行」を残すため。
+     * price系は unit_price_max を採用（最安/最高を確実に拾う）。それ以外は新着(created_at)。
+     */
+    private function applyOrder($q, string $sort, string $priceCol = 'unit_price_max'): void
+    {
+        switch ($sort) {
+            case 'price_asc':  $q->orderByRaw("{$priceCol} ASC NULLS LAST");  break;
+            case 'price_desc': $q->orderByRaw("{$priceCol} DESC NULLS LAST"); break;
+            default:           $q->orderByDesc('created_at');                 break; // recent / skill_match
+        }
+    }
+
     // ── 案件メール（PMS）────────────────────────────────
-    private function searchProjectMails(array $terms, string $keyword, ?float $min, ?float $max): array
+    private function searchProjectMails(array $terms, string $keyword, ?float $min, ?float $max, string $sort): array
     {
         $q = ProjectMailSource::query()->with('email:id,received_at,arrived_at');
         $this->applySkillJson($q, $terms, ['required_skills', 'preferred_skills']);
@@ -112,6 +125,7 @@ class MailSearchController extends Controller
             $like = '%' . $keyword . '%';
             $q->where(fn($w) => $w->where('title', 'ilike', $like)->orWhere('customer_name', 'ilike', $like)->orWhere('work_location', 'ilike', $like));
         }
+        $this->applyOrder($q, $sort);
         $out = [];
         foreach ($q->limit(self::SOURCE_CAP)->get() as $p) {
             $price = $p->unit_price_max !== null ? (float) $p->unit_price_max : null;
@@ -131,7 +145,7 @@ class MailSearchController extends Controller
     }
 
     // ── 登録案件（PublicProject）─────────────────────────
-    private function searchPublicProjects(array $terms, string $keyword, ?float $min, ?float $max): array
+    private function searchPublicProjects(array $terms, string $keyword, ?float $min, ?float $max, string $sort): array
     {
         $q = PublicProject::query()->with('skills:id,name');
         if (!empty($terms)) {
@@ -145,6 +159,7 @@ class MailSearchController extends Controller
             $like = '%' . $keyword . '%';
             $q->where(fn($w) => $w->where('title', 'ilike', $like)->orWhere('work_location', 'ilike', $like));
         }
+        $this->applyOrder($q, $sort);
         $out = [];
         foreach ($q->limit(self::SOURCE_CAP)->get() as $p) {
             $price = $p->unit_price_max !== null ? (float) $p->unit_price_max : null;
@@ -164,7 +179,7 @@ class MailSearchController extends Controller
     }
 
     // ── 技術者メール（EMS）──────────────────────────────
-    private function searchEngineerMails(array $terms, string $keyword, ?float $min, ?float $max): array
+    private function searchEngineerMails(array $terms, string $keyword, ?float $min, ?float $max, string $sort): array
     {
         $q = EngineerMailSource::query()->with('email:id,received_at,arrived_at');
         $this->applySkillJson($q, $terms, ['skills']);
@@ -172,6 +187,7 @@ class MailSearchController extends Controller
             $like = '%' . $keyword . '%';
             $q->where(fn($w) => $w->where('name', 'ilike', $like)->orWhere('affiliation', 'ilike', $like)->orWhere('nearest_station', 'ilike', $like));
         }
+        $this->applyOrder($q, $sort);
         $out = [];
         foreach ($q->limit(self::SOURCE_CAP)->get() as $e) {
             $price = $e->unit_price_max !== null ? (float) $e->unit_price_max : null;
@@ -191,9 +207,12 @@ class MailSearchController extends Controller
     }
 
     // ── 登録技術者（Engineer 自社・BP）──────────────────
-    private function searchEngineers(array $terms, string $keyword, ?float $min, ?float $max): array
+    private function searchEngineers(array $terms, string $keyword, ?float $min, ?float $max, string $sort): array
     {
-        $q = Engineer::query()->with(['engineerSkills.skill:id,name', 'profile:id,engineer_id,desired_unit_price_min,desired_unit_price_max']);
+        // 登録技術者は件数が少なく、希望単価は profile(別テーブル)のため、cap段階は新着順で取得し
+        // 最終的な単価並び替えは PHP 側(sortRows)で行う。
+        $q = Engineer::query()->with(['engineerSkills.skill:id,name', 'profile:id,engineer_id,desired_unit_price_min,desired_unit_price_max'])
+            ->orderByDesc('created_at');
         if (!empty($terms)) {
             $q->whereHas('engineerSkills.skill', function ($s) use ($terms) {
                 $s->where(function ($w) use ($terms) {
