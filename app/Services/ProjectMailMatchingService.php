@@ -18,6 +18,14 @@ use Illuminate\Support\Collection;
  */
 class ProjectMailMatchingService
 {
+    private ?SkillDictionary $skillDict = null;
+
+    /** スキル同義語辞書（遅延解決・1インスタンス再利用）。 */
+    private function dict(): SkillDictionary
+    {
+        return $this->skillDict ??= app(SkillDictionary::class);
+    }
+
     /**
      * 案件メールに対してマッチする技術者を上位N件返す
      *
@@ -339,9 +347,13 @@ class ProjectMailMatchingService
         $target = mb_strtolower(trim($targetName));
         if ($target === '') return false;
 
+        $targetCanon = $this->dict()->canonical($targetName);
+
         foreach ($engineerSkillNames as $name) {
             if ($name === $target) return true;
             if (str_contains($name, $target) || str_contains($target, $name)) return true;
+            // 辞書による同義語/別名一致（例: React ↔ React.js、社内SE ↔ 情シス）
+            if ($targetCanon !== '' && $this->dict()->canonical($name) === $targetCanon) return true;
         }
 
         // アルファベット正規化（Java → java, JavaScript → javascript 等）

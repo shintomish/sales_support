@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Services\ClaudeService;
+use App\Services\SkillDictionary;
 use App\Models\Engineer;
 use App\Models\EngineerMailSource;
 use App\Models\ProjectMailSource;
@@ -169,16 +170,31 @@ PROMPT;
         return array_values(array_filter(array_map('trim', $parts), fn($t) => $t !== ''));
     }
 
-    /** 行のスキル配列に対し、検索語のうち何件含むか（部分一致・大小無視） */
+    /** 検索語を辞書で全表記揺れに展開（ILIKE の OR 用）。未知語は自身のみ。 */
+    private function expandTerms(array $terms): array
+    {
+        if (empty($terms)) return [];
+        $dict = app(SkillDictionary::class);
+        $out = [];
+        foreach ($terms as $t) {
+            $out[] = $t;
+            foreach ($dict->expand($t) as $f) $out[] = $f;
+        }
+        return array_values(array_unique(array_filter($out, fn($x) => trim((string) $x) !== '')));
+    }
+
+    /** 行のスキル配列に対し、検索語のうち何件含むか（辞書で名寄せ・部分一致・大小無視） */
     private function countMatched(array $terms, array $skillNames): array
     {
         if (empty($terms)) return [];
-        $lcNames = array_map(fn($n) => mb_strtolower((string) $n), $skillNames);
+        $dict = app(SkillDictionary::class);
+        $canonNames = array_map(fn($n) => $dict->canonical((string) $n), $skillNames);
         $matched = [];
         foreach ($terms as $t) {
-            $lt = mb_strtolower($t);
-            foreach ($lcNames as $i => $n) {
-                if ($n !== '' && (str_contains($n, $lt) || str_contains($lt, $n))) {
+            $tc = $dict->canonical($t);
+            if ($tc === '') continue;
+            foreach ($canonNames as $i => $cn) {
+                if ($cn !== '' && ($cn === $tc || str_contains($cn, $tc) || str_contains($tc, $cn))) {
                     $matched[] = $skillNames[$i] ?? $t;
                     break;
                 }
@@ -254,9 +270,10 @@ PROMPT;
     {
         $q = PublicProject::query()->with('skills:id,name');
         if (!empty($terms)) {
-            $q->whereHas('skills', function ($s) use ($terms) {
-                $s->where(function ($w) use ($terms) {
-                    foreach ($terms as $t) $w->orWhere('name', 'ilike', '%' . $t . '%');
+            $forms = $this->expandTerms($terms);
+            $q->whereHas('skills', function ($s) use ($forms) {
+                $s->where(function ($w) use ($forms) {
+                    foreach ($forms as $t) $w->orWhere('name', 'ilike', '%' . $t . '%');
                 });
             });
         }
@@ -327,9 +344,10 @@ PROMPT;
             $q->where(fn($w) => $w->where('affiliation_type', '!=', 'self')->orWhereNull('affiliation_type'));
         }
         if (!empty($terms)) {
-            $q->whereHas('engineerSkills.skill', function ($s) use ($terms) {
-                $s->where(function ($w) use ($terms) {
-                    foreach ($terms as $t) $w->orWhere('name', 'ilike', '%' . $t . '%');
+            $forms = $this->expandTerms($terms);
+            $q->whereHas('engineerSkills.skill', function ($s) use ($forms) {
+                $s->where(function ($w) use ($forms) {
+                    foreach ($forms as $t) $w->orWhere('name', 'ilike', '%' . $t . '%');
                 });
             });
         }
@@ -356,13 +374,14 @@ PROMPT;
         return $out;
     }
 
-    /** json スキルカラム（配列）に対する「いずれかの語を含む」フィルタ */
+    /** json スキルカラム（配列）に対する「いずれかの語を含む」フィルタ（辞書で表記揺れ展開） */
     private function applySkillJson($q, array $terms, array $columns): void
     {
         if (empty($terms)) return;
-        $q->where(function ($w) use ($terms, $columns) {
+        $forms = $this->expandTerms($terms);
+        $q->where(function ($w) use ($forms, $columns) {
             foreach ($columns as $col) {
-                foreach ($terms as $t) {
+                foreach ($forms as $t) {
                     $w->orWhereRaw("{$col}::text ILIKE ?", ['%' . $t . '%']);
                 }
             }
