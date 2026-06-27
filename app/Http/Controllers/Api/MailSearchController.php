@@ -116,6 +116,17 @@ class MailSearchController extends Controller
     }
 
     /**
+     * SQL 段階の単価フィルタ（cap+ORDER BY より前に効かせる）。
+     * これが無いと price_desc で cap が高額順の上位300件を取り、PHPの範囲外除外で0件になる不具合が出る。
+     * 不明(null)は除外しない（取りこぼし防止）。Engineer は希望単価が profile 別表のため PHP 側で処理。
+     */
+    private function applyPriceFilter($q, ?float $min, ?float $max, string $col = 'unit_price_max'): void
+    {
+        if ($min !== null) $q->where(fn($w) => $w->where($col, '>=', $min)->orWhereNull($col));
+        if ($max !== null) $q->where(fn($w) => $w->where($col, '<=', $max)->orWhereNull($col));
+    }
+
+    /**
      * 取得(cap)段階のSQL並び順。件数が多いソースで cap 内に「正しい行」を残すため。
      * price系は unit_price_max を採用（最安/最高を確実に拾う）。それ以外は新着(created_at)。
      */
@@ -137,6 +148,7 @@ class MailSearchController extends Controller
             $like = '%' . $keyword . '%';
             $q->where(fn($w) => $w->where('title', 'ilike', $like)->orWhere('customer_name', 'ilike', $like)->orWhere('work_location', 'ilike', $like));
         }
+        $this->applyPriceFilter($q, $min, $max);
         $this->applyOrder($q, $sort);
         $out = [];
         foreach ($q->limit(self::SOURCE_CAP)->get() as $p) {
@@ -150,7 +162,7 @@ class MailSearchController extends Controller
                 'unit_price_min' => $p->unit_price_min !== null ? (float) $p->unit_price_min : null,
                 'unit_price_max' => $price, 'location' => $p->work_location,
                 'date' => optional($p->email)->received_at?->toIso8601String() ?? $p->created_at?->toIso8601String(),
-                'detail_url' => "/matching/{$p->id}",
+                'detail_url' => "/project-mails?select={$p->id}",
             ];
         }
         return $out;
@@ -171,6 +183,7 @@ class MailSearchController extends Controller
             $like = '%' . $keyword . '%';
             $q->where(fn($w) => $w->where('title', 'ilike', $like)->orWhere('work_location', 'ilike', $like));
         }
+        $this->applyPriceFilter($q, $min, $max);
         $this->applyOrder($q, $sort);
         $out = [];
         foreach ($q->limit(self::SOURCE_CAP)->get() as $p) {
@@ -199,6 +212,7 @@ class MailSearchController extends Controller
             $like = '%' . $keyword . '%';
             $q->where(fn($w) => $w->where('name', 'ilike', $like)->orWhere('affiliation', 'ilike', $like)->orWhere('nearest_station', 'ilike', $like));
         }
+        $this->applyPriceFilter($q, $min, $max);
         $this->applyOrder($q, $sort);
         $out = [];
         foreach ($q->limit(self::SOURCE_CAP)->get() as $e) {
@@ -212,7 +226,7 @@ class MailSearchController extends Controller
                 'unit_price_min' => $e->unit_price_min !== null ? (float) $e->unit_price_min : null,
                 'unit_price_max' => $price, 'location' => $e->nearest_station,
                 'date' => optional($e->email)->received_at?->toIso8601String() ?? $e->created_at?->toIso8601String(),
-                'detail_url' => '/engineer-mails',
+                'detail_url' => "/engineer-mails?select={$e->id}",
             ];
         }
         return $out;
