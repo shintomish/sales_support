@@ -122,7 +122,8 @@ Route::prefix('v1')->middleware(['supabase.auth'])->group(function () {
     // メール横断 検索マッチング（スコア足切りなし・条件一致）
     Route::get('mail-search', [MailSearchController::class, 'search']);
     Route::post('mail-search/parse', [MailSearchController::class, 'parse']);  // 自然文→条件(AI)
-    Route::post('mail-search/judge', [MailSearchController::class, 'judge']);  // 候補×条件のAI判定
+    Route::post('mail-search/judge', [MailSearchController::class, 'judge']);  // 候補×条件のAI判定(単件)
+    Route::post('mail-search/judge-bulk', [MailSearchController::class, 'judgeBulk']);  // 一括AI判定(キャッシュ優先・並列)
 
     // お気に入り（技術者/案件・横断）
     Route::get('favorites',        [FavoriteController::class, 'index']);   // ?kind=project|engineer 一覧

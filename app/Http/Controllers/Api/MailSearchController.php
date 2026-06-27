@@ -5,12 +5,14 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Services\ClaudeService;
 use App\Services\SkillDictionary;
+use App\Models\AiMatchJudgment;
 use App\Models\Engineer;
 use App\Models\EngineerMailSource;
 use App\Models\ProjectMailSource;
 use App\Models\PublicProject;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 
 /**
  * メール横断 検索マッチング（/mail-search）。
@@ -117,38 +119,170 @@ PROMPT;
         ]);
     }
 
+    /** 1リクエストで新規にAI判定する最大件数（キャッシュ済みは無制限）。コスト/レイテンシのガード。 */
+    private const BULK_AI_CAP = 30;
+
     /**
      * POST /api/v1/mail-search/judge — 候補1件が検索意図にどの程度合うかAI判定（haiku・オンデマンド）。
+     * キャッシュ(ai_match_judgments)を参照・保存する。
      */
     public function judge(Request $request): JsonResponse
     {
         $v = $request->validate([
             'query'         => ['required', 'string', 'max:500'],
-            'item.type'     => ['nullable', 'string', 'max:50'],
+            'item.type'     => ['nullable', 'string', 'max:50'],   // source enum（キャッシュキー）
+            'item.label'    => ['nullable', 'string', 'max:50'],   // 表示用 種別（プロンプト用）
+            'item.id'       => ['nullable', 'integer'],
             'item.title'    => ['nullable', 'string', 'max:300'],
             'item.skills'   => ['nullable', 'string', 'max:1000'],
             'item.price'    => ['nullable', 'string', 'max:50'],
             'item.sub'      => ['nullable', 'string', 'max:200'],
             'item.location' => ['nullable', 'string', 'max:200'],
+            'refresh'       => ['nullable', 'boolean'],
         ]);
-        $it = $v['item'] ?? [];
-        $prompt = <<<PROMPT
-次の「探している条件」に対し、候補がどの程度合うかを判定し、厳密なJSONのみ出力してください（説明やコードフェンス禁止）。
-形式: {"verdict":"◯"または"△"または"×","reason":"40字以内の理由"}
-判定基準: ◯=よく合う / △=一部合う・情報不足 / ×=合わない。
-探している条件: {$v['query']}
-候補: 種別={$it['type']} / 名称={$it['title']} / スキル={$it['skills']} / 単価={$it['price']} / 所属={$it['sub']} / 勤務地={$it['location']}
-PROMPT;
+        $it      = $v['item'] ?? [];
+        $query   = trim($v['query']);
+        $qHash   = $this->queryHash($query);
+        $type    = $it['type'] ?? null;
+        $id      = isset($it['id']) ? (int) $it['id'] : null;
+        $refresh = (bool) ($v['refresh'] ?? false);
+
+        // キャッシュ参照（type/id があり、かつ refresh でない場合）
+        if (!$refresh && $type && $id && in_array($type, AiMatchJudgment::TYPES, true)) {
+            $hit = AiMatchJudgment::where('query_hash', $qHash)->where('target_type', $type)->where('target_id', $id)->first();
+            if ($hit) {
+                return response()->json(['verdict' => $hit->verdict, 'reason' => $hit->reason, 'cached' => true]);
+            }
+        }
+
         try {
-            $json = $this->parseJsonLoose(app(ClaudeService::class)->ask($prompt));
+            $text = app(ClaudeService::class)->ask($this->buildJudgePrompt($query, $it));
         } catch (\Throwable $e) {
             return response()->json(['message' => 'AI判定に失敗しました'], 502);
         }
-        $verdict = in_array($json['verdict'] ?? '', ['◯', '△', '×'], true) ? $json['verdict'] : '△';
-        return response()->json([
-            'verdict' => $verdict,
-            'reason'  => isset($json['reason']) && is_string($json['reason']) ? mb_substr($json['reason'], 0, 60) : '',
+        [$verdict, $reason] = $this->parseJudge($text);
+        $this->storeJudgment($qHash, $type, $id, $verdict, $reason);
+
+        return response()->json(['verdict' => $verdict, 'reason' => $reason, 'cached' => false]);
+    }
+
+    /**
+     * POST /api/v1/mail-search/judge-bulk — 複数候補を一括AI判定。
+     * キャッシュ優先 → 未判定のみ並列(haiku)で判定（1回あたり最大 BULK_AI_CAP 件）→ 保存。
+     */
+    public function judgeBulk(Request $request): JsonResponse
+    {
+        $v = $request->validate([
+            'query'             => ['required', 'string', 'max:500'],
+            'items'             => ['required', 'array', 'max:60'],
+            'items.*.type'      => ['required', 'in:project_mail,public_project,engineer_mail,engineer'],
+            'items.*.label'     => ['nullable', 'string', 'max:50'],
+            'items.*.id'        => ['required', 'integer'],
+            'items.*.title'     => ['nullable', 'string', 'max:300'],
+            'items.*.skills'    => ['nullable', 'string', 'max:1000'],
+            'items.*.price'     => ['nullable', 'string', 'max:50'],
+            'items.*.sub'       => ['nullable', 'string', 'max:200'],
+            'items.*.location'  => ['nullable', 'string', 'max:200'],
+            'refresh'           => ['nullable', 'boolean'],
         ]);
+        $query   = trim($v['query']);
+        $qHash   = $this->queryHash($query);
+        $items   = $v['items'];
+        $refresh = (bool) ($v['refresh'] ?? false);
+
+        // 1) キャッシュ一括取得
+        $cached = [];
+        if (!$refresh) {
+            foreach (AiMatchJudgment::where('query_hash', $qHash)->get() as $r) {
+                $cached["{$r->target_type}:{$r->target_id}"] = ['verdict' => $r->verdict, 'reason' => $r->reason, 'cached' => true];
+            }
+        }
+
+        // 2) 未判定を抽出（最大 BULK_AI_CAP 件だけ新規判定）
+        $toJudge = [];
+        foreach ($items as $it) {
+            $key = "{$it['type']}:{$it['id']}";
+            if (isset($cached[$key]) || isset($toJudge[$key])) continue;
+            $toJudge[$key] = $it;
+        }
+        $capped = array_slice($toJudge, 0, self::BULK_AI_CAP, true);
+
+        // 3) 並列AI判定 → 保存
+        $fresh = [];
+        if (!empty($capped)) {
+            $prompts = [];
+            foreach ($capped as $key => $it) $prompts[$key] = $this->buildJudgePrompt($query, $it);
+            $texts = app(ClaudeService::class)->askMany($prompts);
+            foreach ($capped as $key => $it) {
+                $text = $texts[$key] ?? null;
+                if ($text === null) continue; // 失敗は未判定のまま（再試行可）
+                [$verdict, $reason] = $this->parseJudge($text);
+                $fresh[$key] = ['verdict' => $verdict, 'reason' => $reason, 'cached' => false];
+                $this->storeJudgment($qHash, $it['type'], (int) $it['id'], $verdict, $reason);
+            }
+        }
+
+        // 4) items 順にマージして返す
+        $out = [];
+        foreach ($items as $it) {
+            $key = "{$it['type']}:{$it['id']}";
+            $r = $cached[$key] ?? $fresh[$key] ?? null;
+            $out[] = [
+                'type'    => $it['type'],
+                'id'      => (int) $it['id'],
+                'verdict' => $r['verdict'] ?? null,
+                'reason'  => $r['reason'] ?? null,
+                'cached'  => $r['cached'] ?? false,
+                'judged'  => $r !== null,
+            ];
+        }
+        return response()->json(['data' => $out, 'ai_calls' => count($fresh)]);
+    }
+
+    /** 検索意図文字列 → キャッシュ用ハッシュ（小文字化・空白圧縮で表記揺れを吸収）。 */
+    private function queryHash(string $query): string
+    {
+        $norm = mb_strtolower(trim($query));
+        $norm = preg_replace('/\s+/u', ' ', $norm);
+        return hash('sha256', $norm);
+    }
+
+    /** 判定プロンプト（種別は label があれば優先・無ければ type）。 */
+    private function buildJudgePrompt(string $query, array $it): string
+    {
+        $label = $it['label'] ?? ($it['type'] ?? '');
+        $title = $it['title'] ?? '';
+        $skills = $it['skills'] ?? '';
+        $price = $it['price'] ?? '';
+        $sub = $it['sub'] ?? '';
+        $location = $it['location'] ?? '';
+        return <<<PROMPT
+次の「探している条件」に対し、候補がどの程度合うかを判定し、厳密なJSONのみ出力してください（説明やコードフェンス禁止）。
+形式: {"verdict":"◯"または"△"または"×","reason":"40字以内の理由"}
+判定基準: ◯=よく合う / △=一部合う・情報不足 / ×=合わない。
+探している条件: {$query}
+候補: 種別={$label} / 名称={$title} / スキル={$skills} / 単価={$price} / 所属={$sub} / 勤務地={$location}
+PROMPT;
+    }
+
+    /** AI応答 → [verdict, reason]。verdict は ◯/△/× に正規化（不明は △）。 */
+    private function parseJudge(string $text): array
+    {
+        $json = $this->parseJsonLoose($text);
+        $verdict = in_array($json['verdict'] ?? '', ['◯', '△', '×'], true) ? $json['verdict'] : '△';
+        $reason  = isset($json['reason']) && is_string($json['reason']) ? mb_substr($json['reason'], 0, 60) : '';
+        return [$verdict, $reason];
+    }
+
+    /** 判定をキャッシュに保存（type/id があるときのみ）。 */
+    private function storeJudgment(string $qHash, ?string $type, ?int $id, string $verdict, string $reason): void
+    {
+        if (!$type || !$id) return;
+        if (!in_array($type, AiMatchJudgment::TYPES, true)) return;
+        AiMatchJudgment::updateOrCreate(
+            ['tenant_id' => Auth::user()->tenant_id, 'query_hash' => $qHash, 'target_type' => $type, 'target_id' => $id],
+            ['verdict' => $verdict, 'reason' => $reason],
+        );
     }
 
     /** Claude 応答からJSONを緩く抽出（コードフェンス・前後文を許容） */

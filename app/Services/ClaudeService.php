@@ -3,6 +3,8 @@
 namespace App\Services;
 
 use App\Exceptions\ClaudeOverloadedException;
+use Illuminate\Http\Client\Pool;
+use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
@@ -32,6 +34,46 @@ class ClaudeService
         }
 
         return $response->json('content.0.text') ?? '';
+    }
+
+    /**
+     * 複数プロンプトを並列実行（haiku）。一括AI判定など軽量タスクの高速化用。
+     * 入力キーを維持して応答テキストを返す。失敗した要素は null。
+     *
+     * @param array<int|string,string> $prompts
+     * @return array<int|string,?string>
+     */
+    public function askMany(array $prompts, int $timeout = 30): array
+    {
+        if (empty($prompts)) return [];
+
+        $model   = config('services.anthropic.haiku_model');
+        $headers = [
+            'anthropic-version' => '2023-06-01',
+            'x-api-key'         => $this->apiKey,
+            'content-type'      => 'application/json',
+        ];
+
+        $responses = Http::pool(fn (Pool $pool) => array_map(
+            fn ($key, $prompt) => $pool->as((string) $key)
+                ->withHeaders($headers)->timeout($timeout)
+                ->post($this->apiUrl, [
+                    'model'      => $model,
+                    'max_tokens' => 512,
+                    'messages'   => [['role' => 'user', 'content' => $prompt]],
+                ]),
+            array_keys($prompts),
+            array_values($prompts),
+        ));
+
+        $out = [];
+        foreach (array_keys($prompts) as $key) {
+            $resp = $responses[(string) $key] ?? null;
+            $out[$key] = ($resp instanceof Response && $resp->successful())
+                ? ($resp->json('content.0.text') ?? '')
+                : null;
+        }
+        return $out;
     }
 
     /**
