@@ -30,6 +30,7 @@ class MailSearchController extends Controller
     {
         $v = $request->validate([
             'kind'      => ['required', 'in:project,engineer'],
+            'category'  => ['nullable', 'in:all,mail,self,bp'], // 全て/メール/自社/BP
             'skill'     => ['nullable', 'string', 'max:200'],
             'keyword'   => ['nullable', 'string', 'max:200'],
             'price_min' => ['nullable', 'numeric', 'min:0', 'max:9999'],
@@ -37,6 +38,7 @@ class MailSearchController extends Controller
             'sort'      => ['nullable', 'in:price_asc,price_desc,recent,skill_match'],
             'page'      => ['nullable', 'integer', 'min:1'],
         ]);
+        $category = $v['category'] ?? 'all';
 
         $terms    = $this->splitTerms($v['skill'] ?? '');
         $keyword  = trim((string) ($v['keyword'] ?? ''));
@@ -45,15 +47,25 @@ class MailSearchController extends Controller
         $sort     = $v['sort'] ?? 'price_asc';
         $page     = max(1, (int) ($v['page'] ?? 1));
 
-        $rows = $v['kind'] === 'project'
-            ? array_merge(
-                $this->searchProjectMails($terms, $keyword, $priceMin, $priceMax, $sort),
-                $this->searchPublicProjects($terms, $keyword, $priceMin, $priceMax, $sort),
-            )
-            : array_merge(
-                $this->searchEngineerMails($terms, $keyword, $priceMin, $priceMax, $sort),
-                $this->searchEngineers($terms, $keyword, $priceMin, $priceMax, $sort),
-            );
+        // 分類フィルタ: メール=PMS/EMS、自社=登録案件+自社技術者、BP=BP技術者
+        $rows = [];
+        if ($v['kind'] === 'project') {
+            if (in_array($category, ['all', 'mail'], true)) {
+                $rows = array_merge($rows, $this->searchProjectMails($terms, $keyword, $priceMin, $priceMax, $sort));
+            }
+            if (in_array($category, ['all', 'self'], true)) {
+                $rows = array_merge($rows, $this->searchPublicProjects($terms, $keyword, $priceMin, $priceMax, $sort));
+            }
+            // bp は案件側に該当なし（空）
+        } else {
+            if (in_array($category, ['all', 'mail'], true)) {
+                $rows = array_merge($rows, $this->searchEngineerMails($terms, $keyword, $priceMin, $priceMax, $sort));
+            }
+            if (in_array($category, ['all', 'self', 'bp'], true)) {
+                $affiliation = $category === 'self' ? 'self' : ($category === 'bp' ? 'bp' : 'all');
+                $rows = array_merge($rows, $this->searchEngineers($terms, $keyword, $priceMin, $priceMax, $sort, $affiliation));
+            }
+        }
 
         $rows = $this->sortRows($rows, $sort);
 
@@ -207,12 +219,18 @@ class MailSearchController extends Controller
     }
 
     // ── 登録技術者（Engineer 自社・BP）──────────────────
-    private function searchEngineers(array $terms, string $keyword, ?float $min, ?float $max, string $sort): array
+    private function searchEngineers(array $terms, string $keyword, ?float $min, ?float $max, string $sort, string $affiliation = 'all'): array
     {
         // 登録技術者は件数が少なく、希望単価は profile(別テーブル)のため、cap段階は新着順で取得し
         // 最終的な単価並び替えは PHP 側(sortRows)で行う。
         $q = Engineer::query()->with(['engineerSkills.skill:id,name', 'profile:id,engineer_id,desired_unit_price_min,desired_unit_price_max'])
             ->orderByDesc('created_at');
+        // 自社/BP 判定は EngineerController と同一規約（self=affiliation_type='self' / bp=それ以外）
+        if ($affiliation === 'self') {
+            $q->where('affiliation_type', 'self');
+        } elseif ($affiliation === 'bp') {
+            $q->where(fn($w) => $w->where('affiliation_type', '!=', 'self')->orWhereNull('affiliation_type'));
+        }
         if (!empty($terms)) {
             $q->whereHas('engineerSkills.skill', function ($s) use ($terms) {
                 $s->where(function ($w) use ($terms) {
@@ -229,8 +247,9 @@ class MailSearchController extends Controller
             $price = $e->profile?->desired_unit_price_max !== null ? (float) $e->profile->desired_unit_price_max : null;
             if (!$this->priceOk($price, $min, $max)) continue;
             $skills = $e->engineerSkills->map(fn($es) => $es->skill?->name)->filter()->values()->all();
+            $isSelf = ($e->affiliation_type ?? '') === 'self';
             $out[] = [
-                'source' => 'engineer', 'source_label' => '登録技術者', 'is_registered' => true,
+                'source' => 'engineer', 'source_label' => $isSelf ? '登録技術者(自社)' : '登録技術者(BP)', 'is_registered' => true,
                 'id' => $e->id, 'title' => $e->name ?: '(氏名なし)', 'sub' => $e->affiliation,
                 'skills' => $skills, 'matched_skills' => $this->countMatched($terms, $skills),
                 'unit_price_min' => $e->profile?->desired_unit_price_min !== null ? (float) $e->profile->desired_unit_price_min : null,
