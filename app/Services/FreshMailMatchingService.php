@@ -78,6 +78,7 @@ class FreshMailMatchingService
                     'score'     => $scored['score'],
                     'breakdown' => $scored['breakdown'],
                     'reasons'   => $scored['reasons'],
+                    'flags'     => $scored['flags'] ?? null,
                 ];
             })
             ->filter(fn($r) => $r['score'] >= $minScore)
@@ -128,6 +129,7 @@ class FreshMailMatchingService
                     'score'     => $scored['score'],
                     'breakdown' => $scored['breakdown'],
                     'reasons'   => $scored['reasons'],
+                    'flags'     => $scored['flags'] ?? null,
                 ];
             })
             ->filter(fn($r) => $r['score'] >= $minScore)

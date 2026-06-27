@@ -744,6 +744,7 @@ class ProjectMailController extends Controller
                 'score'            => $r['score'],
                 'breakdown'        => $r['breakdown'],
                 'reasons'          => $r['reasons'],
+                'flags'            => $r['flags'] ?? null,
                 'availability_status'    => $r['engineer']->profile?->availability_status,
                 'available_from'         => $r['engineer']->profile?->available_from,
                 'work_style'             => $r['engineer']->profile?->work_style,
@@ -807,6 +808,7 @@ class ProjectMailController extends Controller
                     'score'                   => $r['score'],
                     'breakdown'               => $r['breakdown'],
                     'reasons'                 => $r['reasons'],
+                    'flags'                   => $r['flags'] ?? null,
                     'badge'                   => $status['badge'],
                     'registered_engineer_id'  => $status['engineer_id'],
                 ];

@@ -71,7 +71,7 @@ class ProjectMailMatchingService
         }
 
         // ── ② スキル適合度（25点）────────────────────────────
-        [$s2, $r2] = $this->scoreSkills($mail, $engineer);
+        [$s2, $r2, $skillStats] = $this->scoreSkills($mail, $engineer);
         $breakdown['skills'] = $s2;
         $reasons = array_merge($reasons, $r2);
 
@@ -92,11 +92,25 @@ class ProjectMailMatchingService
 
         $total = $s1 + $s2 + $s3 + $s4 + $s5;
 
+        // 画面の分かりやすさ用フラグ（必須スキルの適合/不足名・情報不足項目）
+        $infoMissing = [];
+        $mailPriceKnown = $mail->unit_price_min !== null || $mail->unit_price_max !== null;
+        $engPriceKnown  = ($engineer->profile?->desired_unit_price_min !== null) || ($engineer->profile?->desired_unit_price_max !== null);
+        if (!$mailPriceKnown || !$engPriceKnown)      $infoMissing[] = '単価';
+        if (empty($mail->required_skills) || $engineer->engineerSkills->isEmpty()) $infoMissing[] = 'スキル';
+        if ($mail->nationality_ok === null)           $infoMissing[] = '国籍';
+
         return [
             'engineer'  => $engineer,
             'score'     => $total,
             'breakdown' => $breakdown,
             'reasons'   => $reasons,
+            'flags'     => [
+                'required_skills_matched' => $skillStats['matched_names'],
+                'required_skills_missing' => $skillStats['missing_names'],
+                'required_skills_total'   => $skillStats['required_total'],
+                'info_missing'            => $infoMissing,
+            ],
         ];
     }
 
@@ -268,20 +282,29 @@ class ProjectMailMatchingService
             ->toArray();
 
         // 必須スキル（20点）
+        $skillStats = ['required_total' => 0, 'required_matched' => 0, 'matched_names' => [], 'missing_names' => []];
         if (empty($requiredSkills)) {
             $score += 10; // スキル情報なし: 中間点
         } else {
-            $matched = 0;
             $matchedNames = [];
+            $missingNames = [];
             foreach ($requiredSkills as $reqSkill) {
                 if ($this->skillMatches($reqSkill, $engineerSkillNames)) {
-                    $matched++;
                     $matchedNames[] = $reqSkill;
+                } else {
+                    $missingNames[] = $reqSkill;
                 }
             }
+            $matched = count($matchedNames);
             $total   = count($requiredSkills);
             $ratio   = $total > 0 ? $matched / $total : 0;
             $score  += (int)round($ratio * 20);
+            $skillStats = [
+                'required_total'   => $total,
+                'required_matched' => $matched,
+                'matched_names'    => $matchedNames,
+                'missing_names'    => $missingNames,
+            ];
 
             if ($matched > 0) {
                 $reasons[] = "必須スキル {$matched}/{$total} 適合（" . implode(',', $matchedNames) . '）';
@@ -305,7 +328,7 @@ class ProjectMailMatchingService
             }
         }
 
-        return [$score, $reasons];
+        return [$score, $reasons, $skillStats];
     }
 
     /**

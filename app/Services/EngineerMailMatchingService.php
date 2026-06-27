@@ -26,7 +26,7 @@ class EngineerMailMatchingService
     /**
      * EMS × PMS のスコアを計算。
      *
-     * @return array{score:int, breakdown:array, reasons:string[]}
+     * @return array{score:int, breakdown:array, reasons:string[], flags:array}
      */
     public function score(EngineerMailSource $ems, ProjectMailSource $pms): array
     {
@@ -36,6 +36,7 @@ class EngineerMailMatchingService
             'score'     => $scored['score'],
             'breakdown' => $scored['breakdown'],
             'reasons'   => $scored['reasons'],
+            'flags'     => $scored['flags'] ?? null,
         ];
     }
 
