@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Services\ClaudeService;
 use App\Models\Engineer;
 use App\Models\EngineerMailSource;
 use App\Models\ProjectMailSource;
@@ -79,6 +80,82 @@ class MailSearchController extends Controller
             'current_page' => $page,
             'last_page'    => $lastPage,
         ]);
+    }
+
+    /**
+     * POST /api/v1/mail-search/parse — 自然文の検索文を条件(JSON)に解釈（AI/haiku）。
+     * 例: 「Javaできて即日・70万くらい」→ {skills:["Java"], price_min:60, price_max:80, keyword:"即日"}
+     */
+    public function parse(Request $request): JsonResponse
+    {
+        $v = $request->validate(['text' => ['required', 'string', 'max:500']]);
+        $prompt = <<<PROMPT
+あなたはSES(技術者派遣)の検索アシスタントです。次の検索文から条件を抽出し、厳密なJSONのみを出力してください（前後に説明やコードフェンスは禁止）。
+形式:
+{"skills":["..."],"price_min":数値またはnull,"price_max":数値またはnull,"keyword":"..."またはnull}
+ルール:
+- skills: 技術名/スキル(Java, AWS, PM 等)。複数可。無ければ []。
+- price_min/price_max: 単価(単位=万)。「70万以上」→price_min=70。「60万以下/まで」→price_max=60。「70万くらい」→price_min=60,price_max=80(±10万)。無ければ null。
+- keyword: スキル・単価以外の絞り込み語(勤務地・即日・リモート 等)。無ければ null。
+検索文: {$v['text']}
+PROMPT;
+        try {
+            $json = $this->parseJsonLoose(app(ClaudeService::class)->ask($prompt));
+        } catch (\Throwable $e) {
+            return response()->json(['message' => 'AI解釈に失敗しました'], 502);
+        }
+        return response()->json([
+            'skills'    => array_values(array_filter(array_map('strval', (array) ($json['skills'] ?? [])))),
+            'price_min' => is_numeric($json['price_min'] ?? null) ? (float) $json['price_min'] : null,
+            'price_max' => is_numeric($json['price_max'] ?? null) ? (float) $json['price_max'] : null,
+            'keyword'   => isset($json['keyword']) && is_string($json['keyword']) ? $json['keyword'] : null,
+        ]);
+    }
+
+    /**
+     * POST /api/v1/mail-search/judge — 候補1件が検索意図にどの程度合うかAI判定（haiku・オンデマンド）。
+     */
+    public function judge(Request $request): JsonResponse
+    {
+        $v = $request->validate([
+            'query'         => ['required', 'string', 'max:500'],
+            'item.type'     => ['nullable', 'string', 'max:50'],
+            'item.title'    => ['nullable', 'string', 'max:300'],
+            'item.skills'   => ['nullable', 'string', 'max:1000'],
+            'item.price'    => ['nullable', 'string', 'max:50'],
+            'item.sub'      => ['nullable', 'string', 'max:200'],
+            'item.location' => ['nullable', 'string', 'max:200'],
+        ]);
+        $it = $v['item'] ?? [];
+        $prompt = <<<PROMPT
+次の「探している条件」に対し、候補がどの程度合うかを判定し、厳密なJSONのみ出力してください（説明やコードフェンス禁止）。
+形式: {"verdict":"◯"または"△"または"×","reason":"40字以内の理由"}
+判定基準: ◯=よく合う / △=一部合う・情報不足 / ×=合わない。
+探している条件: {$v['query']}
+候補: 種別={$it['type']} / 名称={$it['title']} / スキル={$it['skills']} / 単価={$it['price']} / 所属={$it['sub']} / 勤務地={$it['location']}
+PROMPT;
+        try {
+            $json = $this->parseJsonLoose(app(ClaudeService::class)->ask($prompt));
+        } catch (\Throwable $e) {
+            return response()->json(['message' => 'AI判定に失敗しました'], 502);
+        }
+        $verdict = in_array($json['verdict'] ?? '', ['◯', '△', '×'], true) ? $json['verdict'] : '△';
+        return response()->json([
+            'verdict' => $verdict,
+            'reason'  => isset($json['reason']) && is_string($json['reason']) ? mb_substr($json['reason'], 0, 60) : '',
+        ]);
+    }
+
+    /** Claude 応答からJSONを緩く抽出（コードフェンス・前後文を許容） */
+    private function parseJsonLoose(string $text): array
+    {
+        $text = trim($text);
+        $text = preg_replace('/^```(?:json)?|```$/m', '', $text);
+        if (preg_match('/\{.*\}/s', $text, $m)) {
+            $decoded = json_decode($m[0], true);
+            if (is_array($decoded)) return $decoded;
+        }
+        return [];
     }
 
     /** スキル入力を語に分割（空白・カンマ・読点・スラッシュ区切り） */

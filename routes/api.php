@@ -120,6 +120,8 @@ Route::prefix('v1')->middleware(['supabase.auth'])->group(function () {
 
     // メール横断 検索マッチング（スコア足切りなし・条件一致）
     Route::get('mail-search', [MailSearchController::class, 'search']);
+    Route::post('mail-search/parse', [MailSearchController::class, 'parse']);  // 自然文→条件(AI)
+    Route::post('mail-search/judge', [MailSearchController::class, 'judge']);  // 候補×条件のAI判定
 
     // ── 見積書（doc_type='estimate'）─────────────────────
     // 一覧/取得/更新/削除/PDF生成/承認/送信履歴/メール は InvoiceController を流用。
