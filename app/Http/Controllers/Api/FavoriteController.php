@@ -25,6 +25,19 @@ class FavoriteController extends Controller
             'target_id'   => ['required', 'integer'],
         ]);
         $user = Auth::user();
+
+        // テナント越境防止: 対象が自テナントに存在することを確認（各モデルの GlobalScope=テナント絞り）
+        $exists = match ($v['target_type']) {
+            'project_mail'   => ProjectMailSource::whereKey($v['target_id'])->exists(),
+            'public_project' => PublicProject::whereKey($v['target_id'])->exists(),
+            'engineer_mail'  => EngineerMailSource::whereKey($v['target_id'])->exists(),
+            'engineer'       => Engineer::whereKey($v['target_id'])->exists(),
+            default          => false,
+        };
+        if (!$exists) {
+            abort(404, '対象が見つかりません');
+        }
+
         $existing = Favorite::where('user_id', $user->id)
             ->where('target_type', $v['target_type'])
             ->where('target_id', $v['target_id'])
