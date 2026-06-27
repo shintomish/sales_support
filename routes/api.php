@@ -27,6 +27,7 @@ use App\Http\Controllers\Api\WorkRecordController;
 use App\Http\Controllers\Api\BillingSummaryController;
 use App\Http\Controllers\Api\InvoiceController;
 use App\Http\Controllers\Api\MailSearchController;
+use App\Http\Controllers\Api\FavoriteController;
 use App\Http\Controllers\Api\InvoiceIssuerController;
 use App\Http\Controllers\Api\RefinitivInvoiceController;
 use App\Http\Controllers\Api\ReportRecipientController;
@@ -122,6 +123,11 @@ Route::prefix('v1')->middleware(['supabase.auth'])->group(function () {
     Route::get('mail-search', [MailSearchController::class, 'search']);
     Route::post('mail-search/parse', [MailSearchController::class, 'parse']);  // 自然文→条件(AI)
     Route::post('mail-search/judge', [MailSearchController::class, 'judge']);  // 候補×条件のAI判定
+
+    // お気に入り（技術者/案件・横断）
+    Route::get('favorites',        [FavoriteController::class, 'index']);   // ?kind=project|engineer 一覧
+    Route::get('favorites/ids',    [FavoriteController::class, 'ids']);     // ★表示用ID
+    Route::post('favorites/toggle',[FavoriteController::class, 'toggle']);
 
     // ── 見積書（doc_type='estimate'）─────────────────────
     // 一覧/取得/更新/削除/PDF生成/承認/送信履歴/メール は InvoiceController を流用。
