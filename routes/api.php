@@ -26,6 +26,7 @@ use App\Http\Controllers\Api\AdminStatsController;
 use App\Http\Controllers\Api\WorkRecordController;
 use App\Http\Controllers\Api\BillingSummaryController;
 use App\Http\Controllers\Api\InvoiceController;
+use App\Http\Controllers\Api\MailSearchController;
 use App\Http\Controllers\Api\InvoiceIssuerController;
 use App\Http\Controllers\Api\RefinitivInvoiceController;
 use App\Http\Controllers\Api\ReportRecipientController;
@@ -116,6 +117,9 @@ Route::prefix('v1')->middleware(['supabase.auth'])->group(function () {
     Route::get('invoices/{invoice}/mail-template', [InvoiceController::class, 'mailTemplate']);
     Route::get('invoices/{invoice}/send-histories',[InvoiceController::class, 'sendHistories']);
     Route::get('invoice-send-histories',           [InvoiceController::class, 'allSendHistories']);
+
+    // メール横断 検索マッチング（スコア足切りなし・条件一致）
+    Route::get('mail-search', [MailSearchController::class, 'search']);
 
     // ── 見積書（doc_type='estimate'）─────────────────────
     // 一覧/取得/更新/削除/PDF生成/承認/送信履歴/メール は InvoiceController を流用。
