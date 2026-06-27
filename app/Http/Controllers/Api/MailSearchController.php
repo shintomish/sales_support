@@ -88,16 +88,20 @@ class MailSearchController extends Controller
      */
     public function parse(Request $request): JsonResponse
     {
-        $v = $request->validate(['text' => ['required', 'string', 'max:500']]);
+        // 自然文だけでなく、案件/技術者メールの本文を丸ごと貼り付けても抽出できるよう長文を許容。
+        $v = $request->validate(['text' => ['required', 'string', 'max:8000']]);
+        $text = mb_substr($v['text'], 0, 8000);
         $prompt = <<<PROMPT
-あなたはSES(技術者派遣)の検索アシスタントです。次の検索文から条件を抽出し、厳密なJSONのみを出力してください（前後に説明やコードフェンスは禁止）。
+あなたはSES(技術者派遣)の検索アシスタントです。次の入力（検索文、または案件/技術者メールの本文をそのまま貼り付けたもの）から、マッチング検索に使う条件を抽出し、厳密なJSONのみを出力してください（前後に説明やコードフェンスは禁止）。
 形式:
 {"skills":["..."],"price_min":数値またはnull,"price_max":数値またはnull,"keyword":"..."またはnull}
 ルール:
-- skills: 技術名/スキル(Java, AWS, PM 等)。複数可。無ければ []。
-- price_min/price_max: 単価(単位=万)。「70万以上」→price_min=70。「60万以下/まで」→price_max=60。「70万くらい」→price_min=60,price_max=80(±10万)。無ければ null。
-- keyword: スキル・単価以外の絞り込み語(勤務地・即日・リモート 等)。無ければ null。
-検索文: {$v['text']}
+- skills: 技術名/スキル(Java, TypeScript, AWS, PM, NW運用 等)。本文中の必須・尚可・保有スキルを拾う。複数可。無ければ []。
+- price_min/price_max: 単価(単位=万)。「70万以上」→price_min=70。「60万以下/まで」→price_max=60。「35万」「70万くらい」→±0〜10万程度の妥当な範囲。無ければ null。
+- keyword: スキル・単価以外の絞り込み語(勤務地・最寄駅・即日・リモート・常駐 等を1〜2語)。無ければ null。
+- メール本文の場合は、挨拶/署名/会社名は無視し、技術者または案件の要件のみを対象にする。
+入力:
+{$text}
 PROMPT;
         try {
             $json = $this->parseJsonLoose(app(ClaudeService::class)->ask($prompt));
