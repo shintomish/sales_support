@@ -28,6 +28,7 @@ use App\Http\Controllers\Api\BillingSummaryController;
 use App\Http\Controllers\Api\InvoiceController;
 use App\Http\Controllers\Api\MailSearchController;
 use App\Http\Controllers\Api\FavoriteController;
+use App\Http\Controllers\Api\SkillAliasController;
 use App\Http\Controllers\Api\InvoiceIssuerController;
 use App\Http\Controllers\Api\RefinitivInvoiceController;
 use App\Http\Controllers\Api\ReportRecipientController;
@@ -129,6 +130,13 @@ Route::prefix('v1')->middleware(['supabase.auth'])->group(function () {
     Route::get('favorites',        [FavoriteController::class, 'index']);   // ?kind=project|engineer 一覧
     Route::get('favorites/ids',    [FavoriteController::class, 'ids']);     // ★表示用ID
     Route::post('favorites/toggle',[FavoriteController::class, 'toggle']);
+
+    // スキル同義語辞書（名寄せ）管理。閲覧=全員 / 編集=管理者のみ（グローバルデータ）
+    Route::get('skill-aliases',           [SkillAliasController::class, 'index']);
+    Route::post('skill-aliases',          [SkillAliasController::class, 'store']);
+    Route::put('skill-aliases/rename',    [SkillAliasController::class, 'rename']);
+    Route::delete('skill-aliases/group',  [SkillAliasController::class, 'destroyGroup']);
+    Route::delete('skill-aliases/{id}',   [SkillAliasController::class, 'destroy'])->whereNumber('id');
 
     // ── 見積書（doc_type='estimate'）─────────────────────
     // 一覧/取得/更新/削除/PDF生成/承認/送信履歴/メール は InvoiceController を流用。

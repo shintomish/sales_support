@@ -122,6 +122,9 @@ PROMPT;
     /** 1リクエストで新規にAI判定する最大件数（キャッシュ済みは無制限）。コスト/レイテンシのガード。 */
     private const BULK_AI_CAP = 30;
 
+    /** AI判定キャッシュの有効期限（日）。これより古い判定は無視して再判定する（陳腐化対策）。 */
+    private const JUDGMENT_TTL_DAYS = 14;
+
     /**
      * POST /api/v1/mail-search/judge — 候補1件が検索意図にどの程度合うかAI判定（haiku・オンデマンド）。
      * キャッシュ(ai_match_judgments)を参照・保存する。
@@ -149,7 +152,8 @@ PROMPT;
 
         // キャッシュ参照（type/id があり、かつ refresh でない場合）
         if (!$refresh && $type && $id && in_array($type, AiMatchJudgment::TYPES, true)) {
-            $hit = AiMatchJudgment::where('query_hash', $qHash)->where('target_type', $type)->where('target_id', $id)->first();
+            $hit = AiMatchJudgment::where('query_hash', $qHash)->where('target_type', $type)->where('target_id', $id)
+                ->where('updated_at', '>=', now()->subDays(self::JUDGMENT_TTL_DAYS))->first();
             if ($hit) {
                 return response()->json(['verdict' => $hit->verdict, 'reason' => $hit->reason, 'cached' => true]);
             }
@@ -190,10 +194,12 @@ PROMPT;
         $items   = $v['items'];
         $refresh = (bool) ($v['refresh'] ?? false);
 
-        // 1) キャッシュ一括取得
+        // 1) キャッシュ一括取得（TTL内のみ。期限切れは未判定扱い→再判定）
         $cached = [];
         if (!$refresh) {
-            foreach (AiMatchJudgment::where('query_hash', $qHash)->get() as $r) {
+            $rows = AiMatchJudgment::where('query_hash', $qHash)
+                ->where('updated_at', '>=', now()->subDays(self::JUDGMENT_TTL_DAYS))->get();
+            foreach ($rows as $r) {
                 $cached["{$r->target_type}:{$r->target_id}"] = ['verdict' => $r->verdict, 'reason' => $r->reason, 'cached' => true];
             }
         }

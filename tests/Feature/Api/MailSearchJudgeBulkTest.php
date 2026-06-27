@@ -71,6 +71,20 @@ class MailSearchJudgeBulkTest extends TestCase
         $this->assertSame(4, AiMatchJudgment::count());
     }
 
+    public function test_TTL超過の判定は無視され再判定される(): void
+    {
+        $this->actingAsUser();
+        $this->postJson('/api/v1/mail-search/judge-bulk', ['query' => 'Java', 'items' => $this->items(1)])
+            ->assertOk()->assertJsonPath('ai_calls', 1);
+
+        // 15日後（TTL=14日 超過）→ キャッシュ無視で再判定
+        $this->travel(15)->days();
+        $res = $this->postJson('/api/v1/mail-search/judge-bulk', ['query' => 'Java', 'items' => $this->items(1)]);
+        $res->assertOk()->assertJsonPath('ai_calls', 1)->assertJsonPath('data.0.cached', false);
+        $this->assertSame(1, AiMatchJudgment::count()); // 同キーは更新（増えない）
+        $this->travelBack();
+    }
+
     public function test_新規AI判定は1回あたり最大30件(): void
     {
         $this->actingAsUser();

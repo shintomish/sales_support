@@ -296,3 +296,21 @@ Schedule::command("report:daily-delivery-report")
     ->onFailure(function () {
         Log::error("[Schedule] 日次配信レポート 失敗");
     });
+
+// ── /mail-search AI判定キャッシュの期限切れ削除（毎日 3:10 JST・本番限定）
+// TTL(14日)を過ぎた判定は read 側で既に無視されるが、テーブル肥大を防ぐため掃除する。
+// 再判定された行は updateOrCreate で更新されるので消えない。Auth 無し=全テナント横断。
+Schedule::call(function () {
+    $deleted = \App\Models\AiMatchJudgment::where('updated_at', '<', now()->subDays(14))->delete();
+    if ($deleted > 0) {
+        Log::info("[Schedule] AI判定キャッシュ 期限切れ削除: {$deleted}件");
+    }
+})
+    ->dailyAt('03:10')
+    ->timezone('Asia/Tokyo')
+    ->environments(['production'])
+    ->name('prune-ai-judgments')
+    ->withoutOverlapping()
+    ->onFailure(function () {
+        Log::error('[Schedule] prune-ai-judgments 失敗');
+    });
