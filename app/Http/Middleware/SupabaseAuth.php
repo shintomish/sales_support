@@ -62,10 +62,15 @@ class SupabaseAuth
             // 内部例外メッセージ (Expired token / Signature verification failed / kid invalid 等) を
             // 直接返すと JWT 偽造試行の助けになるため、外向きは固定文言、詳細は audit ログへ
             // (docs/730 §Low #28)。
-            \Illuminate\Support\Facades\Log::channel('audit')->warning('JWT decode failed', [
-                'err' => $e->getMessage(),
-                'ip'  => request()->ip(),
-            ]);
+            // 監査ログ書き込み失敗で 401 が 500 に化けないよう握り潰す（ファイル権限/ディスク対策）。
+            try {
+                \Illuminate\Support\Facades\Log::channel('audit')->warning('JWT decode failed', [
+                    'err' => $e->getMessage(),
+                    'ip'  => request()->ip(),
+                ]);
+            } catch (\Throwable $logErr) {
+                error_log('[SupabaseAuth] audit log write failed: ' . $logErr->getMessage());
+            }
             return response()->json(["message" => "Unauthenticated."], 401);
         }
 

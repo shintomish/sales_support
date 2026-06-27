@@ -57,18 +57,25 @@ class LogUserActivity
         $segments = explode('/', $path);
         $resource = $segments[2] ?? $path;
 
-        Log::channel('audit')->info('[USER_ACTIVITY]', [
-            'action'    => $action,
-            'resource'  => $resource,
-            'path'      => $path,
-            'method'    => $method,
-            'status'    => $status,
-            'user_id'   => $userId,
-            'user_name' => $userName,
-            'tenant_id' => $tenantId,
-            'ip'        => $request->ip(),
-            'params'    => $this->sanitizeParams($request),
-        ]);
+        // 監査ログの書き込み失敗（ファイル権限・ディスク等）でリクエストを致命化させない。
+        // 例: audit-YYYY-MM-DD.log が root 所有だと www-data が追記できず例外→本来200が500化し
+        //     ログイン不能になる事故が日付替わりごとに再発していた。stderr にだけ残して握り潰す。
+        try {
+            Log::channel('audit')->info('[USER_ACTIVITY]', [
+                'action'    => $action,
+                'resource'  => $resource,
+                'path'      => $path,
+                'method'    => $method,
+                'status'    => $status,
+                'user_id'   => $userId,
+                'user_name' => $userName,
+                'tenant_id' => $tenantId,
+                'ip'        => $request->ip(),
+                'params'    => $this->sanitizeParams($request),
+            ]);
+        } catch (\Throwable $e) {
+            error_log('[USER_ACTIVITY] audit log write failed: ' . $e->getMessage());
+        }
 
         return $response;
     }
