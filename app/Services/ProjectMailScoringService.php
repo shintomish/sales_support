@@ -263,6 +263,8 @@ class ProjectMailScoringService
 
     public function rescoreAll(?int $limit = null, int $offset = 0, ?int $tenantId = null): int
     {
+        ini_set('memory_limit', '512M');
+
         $query = ProjectMailSource::with('email')
             ->whereNotNull('email_id')
             ->orderBy('id');
@@ -270,55 +272,58 @@ class ProjectMailScoringService
         if ($offset > 0) $query->skip($offset);
         if ($limit !== null) $query->limit($limit);
 
+        // メモリ枯渇対策 (Sentry 2026-06-27 FatalError 512MB): get() で本文込み全件を一括ロード
+        // すると大型HTMLメールを含むバッチで 200MB+ を一度に確保し OOM する。技術者側
+        // (EngineerMailScoringService::rescoreAll) と同様に cursor() + 逐次 gc で 1 件ずつ処理する。
+        // 旧実装の「1トランザクションにまとめて fsync 削減 (Sentry 2026-05-23)」は OOM 回避を優先
+        // して取り下げ（更新は 1 件ずつ。内部 try/catch で 1 件失敗は握りつぶす）。
         $count = 0;
-        // batchSize 件分の UPDATE を 1 トランザクションにまとめて fsync 回数を削減
-        // (Sentry 2026-05-23 N+1 警告対応)。1件単位の例外は内部 try/catch で握りつぶす。
-        DB::transaction(function () use ($query, &$count) {
-            foreach ($query->get() as $pms) {
-                if (!$pms->email) continue;
-                try {
-                    $email   = $pms->email;
-                    $subject = $email->subject ?? '';
-                    $body    = $email->body_text ?? strip_tags($email->body_html ?? '');
-                    $from    = $email->from_address ?? '';
-                    $text    = $subject . "\n" . $body;
+        foreach ($query->cursor() as $pms) {
+            if (!$pms->email) continue;
+            try {
+                $email   = $pms->email;
+                $subject = $email->subject ?? '';
+                $body    = $email->body_text ?? strip_tags($email->body_html ?? '');
+                $from    = $email->from_address ?? '';
+                $text    = $subject . "\n" . $body;
 
-                    if ($this->isExcluded($subject, $from)) {
-                        $pms->update(['score' => 0, 'score_reasons' => ['excluded'], 'status' => 'excluded']);
-                    } elseif (trim($body) === '') {
-                        // 本文が retention(30日 CleanupEmails) で purge 済み。件名のみの再スコアは
-                        // 破壊的なので保存値を温存する（update せずスキップ）。
-                    } else {
-                        [$score, $reasons, $bd] = $this->calcScore($text);
-                        $domainData = $this->domainBonus($from, $pms->tenant_id);
-                        if ($domainData['bonus'] !== 0) {
-                            $score    += $domainData['bonus'];
-                            $sign      = $domainData['bonus'] > 0 ? '+' : '';
-                            $pct       = round($domainData['rate'] * 100);
-                            $reasons[] = "domain:{$domainData['domain']}:{$sign}{$domainData['bonus']}({$pct}%/{$domainData['sample']}件)";
-                            $bd[]      = ['label' => "🏢 ドメイン信頼度（{$domainData['domain']}）", 'points' => $domainData['bonus']];
-                        }
-                        $score     = max(0, min(100, $score));
-                        $extracted = $this->extract($email);
-                        $status = match(true) {
-                            $score >= self::SCORE_OK     => 'new',
-                            $score >= self::SCORE_REVIEW => 'review',
-                            default                      => 'excluded',
-                        };
-                        $pms->update(array_merge($this->sanitizeExtracted($extracted), [
-                            'score'          => $score,
-                            'score_reasons'  => $reasons,
-                            'score_breakdown'=> $bd,
-                            'engine'         => 'rule',
-                            'status'         => $status,
-                        ]));
+                if ($this->isExcluded($subject, $from)) {
+                    $pms->update(['score' => 0, 'score_reasons' => ['excluded'], 'status' => 'excluded']);
+                } elseif (trim($body) === '') {
+                    // 本文が retention(30日 CleanupEmails) で purge 済み。件名のみの再スコアは
+                    // 破壊的なので保存値を温存する（update せずスキップ）。
+                } else {
+                    [$score, $reasons, $bd] = $this->calcScore($text);
+                    $domainData = $this->domainBonus($from, $pms->tenant_id);
+                    if ($domainData['bonus'] !== 0) {
+                        $score    += $domainData['bonus'];
+                        $sign      = $domainData['bonus'] > 0 ? '+' : '';
+                        $pct       = round($domainData['rate'] * 100);
+                        $reasons[] = "domain:{$domainData['domain']}:{$sign}{$domainData['bonus']}({$pct}%/{$domainData['sample']}件)";
+                        $bd[]      = ['label' => "🏢 ドメイン信頼度（{$domainData['domain']}）", 'points' => $domainData['bonus']];
                     }
-                    $count++;
-                } catch (\Throwable $e) {
-                    Log::error("[ProjectMailRescore] pms_id={$pms->id} 失敗: " . $e->getMessage());
+                    $score     = max(0, min(100, $score));
+                    $extracted = $this->extract($email);
+                    $status = match(true) {
+                        $score >= self::SCORE_OK     => 'new',
+                        $score >= self::SCORE_REVIEW => 'review',
+                        default                      => 'excluded',
+                    };
+                    $pms->update(array_merge($this->sanitizeExtracted($extracted), [
+                        'score'          => $score,
+                        'score_reasons'  => $reasons,
+                        'score_breakdown'=> $bd,
+                        'engine'         => 'rule',
+                        'status'         => $status,
+                    ]));
                 }
+                $count++;
+            } catch (\Throwable $e) {
+                Log::error("[ProjectMailRescore] pms_id={$pms->id} 失敗: " . $e->getMessage());
             }
-        });
+            // メモリ解放（大型本文の逐次破棄）
+            gc_collect_cycles();
+        }
         return $count;
     }
 
@@ -871,7 +876,11 @@ class ProjectMailScoringService
         // 例: "*-*-*\n株式会社ルートゼロ\n営業企画部...\n榎本 勝也" → "榎本 勝也"
         if (preg_match('/[\*＊\-]{4,}[\r\n]+/u', $body, $sepMatch, PREG_OFFSET_CAPTURE)) {
             $sigStart = $sepMatch[0][1] + strlen($sepMatch[0][0]);
-            $sigText  = substr($body, $sigStart, 800); // バイトオフセット → substr を使う
+            // mb_strcut: バイトオフセット(preg PREG_OFFSET_CAPTURE)起点で 800 バイト取得しつつ
+            // マルチバイト境界を割らない。素の substr だと末尾で文字が切れ、不正 UTF8 (0xe6 0x9c 等)
+            // が sales_contact に混入する (Sentry 2026-06-22 invalid byte sequence)。sanitizeUtf8 でも
+            // 救えるが、その場合 � 置換文字が氏名に残るため入口で正しく切る。
+            $sigText  = mb_strcut($body, $sigStart, 800, 'UTF-8');
             $sigLines = preg_split('/\r?\n/', $sigText);
             $foundCompany = false;
             $deptSkipped  = false;
