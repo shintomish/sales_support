@@ -194,7 +194,7 @@ class ProjectMailScoringService
             try {
                 $email   = $pms->email;
                 $subject = $email->subject ?? '';
-                $body    = $email->body_text ?? strip_tags($email->body_html ?? '');
+                $body    = $this->resolveBody($email);
                 $from    = $email->from_address ?? '';
                 $text    = $subject . "\n" . $body;
 
@@ -286,7 +286,7 @@ class ProjectMailScoringService
             try {
                 $email   = $pms->email;
                 $subject = $email->subject ?? '';
-                $body    = $email->body_text ?? strip_tags($email->body_html ?? '');
+                $body    = $this->resolveBody($email);
                 $from    = $email->from_address ?? '';
                 $text    = $subject . "\n" . $body;
 

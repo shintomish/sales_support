@@ -233,7 +233,7 @@ class EngineerMailScoringService
                 $oldScore  = (int) $ems->score;
                 $oldStatus = $ems->status;
 
-                $body = $email->body_text ?? strip_tags($email->body_html ?? '');
+                $body = $this->resolveBody($email);
                 if ($this->isExcluded($subject, $from)) {
                     $newScore  = 0;
                     $newStatus = 'excluded';
@@ -318,7 +318,7 @@ class EngineerMailScoringService
                 $subject = $email->subject ?? '';
                 $from    = $email->from_address ?? '';
 
-                $body = $email->body_text ?? strip_tags($email->body_html ?? '');
+                $body = $this->resolveBody($email);
                 if ($this->isExcluded($subject, $from)) {
                     $ems->update(['score' => 0, 'score_reasons' => ['excluded'], 'status' => 'excluded']);
                 } elseif (trim($body) === '') {

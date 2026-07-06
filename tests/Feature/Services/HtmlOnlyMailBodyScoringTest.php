@@ -3,6 +3,7 @@
 namespace Tests\Feature\Services;
 
 use App\Models\Email;
+use App\Models\ProjectMailSource;
 use App\Models\Tenant;
 use App\Services\EngineerMailScoringService;
 use App\Services\ProjectMailScoringService;
@@ -78,6 +79,37 @@ class HtmlOnlyMailBodyScoringTest extends TestCase
 
         $this->assertNotSame('excluded', $pms->status);
         $this->assertContains('location:大阪', $pms->score_reasons ?? [], 'body_text 側の内容で採点される');
+    }
+
+    public function test_project_rescore_all_applies_html_fallback(): void
+    {
+        // rescoreAll() は score() を呼ばず採点ロジックをインライン複製しているため、
+        // resolveBody への切替が漏れると「再スコアしても低スコアのまま」になる。
+        // 本番既存行の是正は rescoreAll 経由なので、ここを回帰で守る。
+        $tenant = Tenant::factory()->create();
+        $email  = Email::factory()->create([
+            'tenant_id' => $tenant->id,
+            'subject'   => '【エンド直】65万円程度（スキル見合い）/ 基本リモート / SQL',
+            'body_text' => self::BOILERPLATE,
+            'body_html' => '<html><head><style>body{width:100%}</style></head><body>'
+                . '<p>案件のご紹介：データアナリスト</p><p>単価：65万円程度</p>'
+                . '<p>勤務地：東京（基本リモート）</p><p>スキル：Python / SQL / AWS</p>'
+                . '<p>工程：詳細設計〜開発</p><p>即日・長期</p></body></html>',
+        ]);
+        // 旧ロジックで採点された「単価はあるのに 5点で除外」の既存行を模す。
+        $pms = ProjectMailSource::factory()->create([
+            'tenant_id'     => $tenant->id,
+            'email_id'      => $email->id,
+            'score'         => 5,
+            'status'        => 'excluded',
+            'score_reasons' => ['price_concrete', 'penalty_vague:スキル見合い'],
+        ]);
+
+        (new ProjectMailScoringService())->rescoreAll(null, 0, $tenant->id);
+
+        $pms->refresh();
+        $this->assertGreaterThanOrEqual(40, (int) $pms->score, 'rescoreAll が HTML 本文を採用して加点し直す');
+        $this->assertNotSame('excluded', $pms->status, '除外圏を脱する');
     }
 
     public function test_engineer_thin_body_falls_back_to_html(): void
