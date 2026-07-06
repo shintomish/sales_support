@@ -19,6 +19,9 @@ class ProjectMailScoringService
 {
     private const URL_PATTERN = '/https?:\/\/[^\s\x{3000}"\'<>「」【】）\)]+/u';
 
+    // body_text がこの文字数未満なら「定型文だけの薄い本文」とみなし HTML 本文へ切替（resolveBody）
+    private const THIN_BODY_LEN = 200;
+
     /**
      * ドメインボーナス集計のランタイムキャッシュ（テナント×ドメイン単位）。
      * rescoreAll() で N 件処理する際、同一ドメインの集計クエリを毎回流すのを防ぐ。
@@ -191,7 +194,7 @@ class ProjectMailScoringService
             try {
                 $email   = $pms->email;
                 $subject = $email->subject ?? '';
-                $body    = $email->body_text ?? strip_tags($email->body_html ?? '');
+                $body    = $this->resolveBody($email);
                 $from    = $email->from_address ?? '';
                 $text    = $subject . "\n" . $body;
 
@@ -283,7 +286,7 @@ class ProjectMailScoringService
             try {
                 $email   = $pms->email;
                 $subject = $email->subject ?? '';
-                $body    = $email->body_text ?? strip_tags($email->body_html ?? '');
+                $body    = $this->resolveBody($email);
                 $from    = $email->from_address ?? '';
                 $text    = $subject . "\n" . $body;
 
@@ -506,7 +509,7 @@ class ProjectMailScoringService
      */
     public function calcScoreBreakdown(Email $email): array
     {
-        $body = $email->body_text ?? strip_tags($email->body_html ?? '');
+        $body = $this->resolveBody($email);
         if (trim($body) === '') return [];
         [, , $bd] = $this->calcScore(($email->subject ?? '') . "\n" . $body);
         return $bd;
@@ -518,7 +521,7 @@ class ProjectMailScoringService
     public function score(Email $email): ProjectMailSource
     {
         $subject = $email->subject ?? '';
-        $body    = $email->body_text ?? strip_tags($email->body_html ?? '');
+        $body    = $this->resolveBody($email);
         $from    = $email->from_address ?? '';
         $text    = $subject . "\n" . $body;
 
@@ -632,12 +635,8 @@ class ProjectMailScoringService
     public function extract(Email $email): array
     {
         $subject  = $email->subject ?? '';
-        // body_text が null だけでなく空文字('')の場合も HTML 本文へフォールバックする。
-        // HTML 専用メール（マーケ系の整形メール等）は body_text が '' で取り込まれるため、
-        // ?? では HTML に切り替わらず営業担当・電話等を取りこぼしていた。
-        $body     = ($email->body_text ?? '') !== ''
-            ? $email->body_text
-            : $this->htmlToText($email->body_html ?? '');
+        // 本文選択は resolveBody() に一元化（空/定型文だけの薄い body_text は HTML 本文へ切替）。
+        $body     = $this->resolveBody($email);
         $fromName = $email->from_name ?? '';
         $fromAddr = $email->from_address ?? '';
 
@@ -703,6 +702,28 @@ class ProjectMailScoringService
      * HTML 本文をプレーンテキスト化する。strip_tags は <style>/<script> の中身（CSS/JS）を
      * 残すため、先にブロックごと除去してから tags を落とし、HTML エンティティも復元する。
      */
+    /**
+     * 採点・抽出に用いる本文を決定する。
+     *
+     * body_text が空、または「メールがうまく表示されない方はこちら」等の定型文だけで極端に
+     * 短い配信ASPメール（cuenote 等）は、実体が body_html にしか無い。この場合は
+     * <style>/<script> 除去済みの htmlToText(body_html) の方が長ければそちらを採用する。
+     * これをしないと件名＋定型文だけで採点され、単価(+15)以外が全滅して本来有効な案件が
+     * 除外圏(score<40)に沈む（本番実測 約1,900件・単価あり）。
+     */
+    private function resolveBody(Email $email): string
+    {
+        $text = trim($email->body_text ?? '');
+        $html = $email->body_html ?? '';
+        if ($html !== '') {
+            $htmlText = trim($this->htmlToText($html));
+            if (mb_strlen($text) < self::THIN_BODY_LEN && mb_strlen($htmlText) > mb_strlen($text)) {
+                return $htmlText;
+            }
+        }
+        return $text;
+    }
+
     private function htmlToText(string $html): string
     {
         if ($html === '') return '';

@@ -20,6 +20,9 @@ class EngineerMailScoringService
 {
     // ── ① 除外ワード ──────────────────────────────────────
 
+    // body_text がこの文字数未満なら「定型文だけの薄い本文」とみなし HTML 本文へ切替（resolveBody）
+    private const THIN_BODY_LEN = 200;
+
     private const EXCLUDE_SUBJECT = [
         '配信停止', 'メルマガ', '広告', '請求書', 'お支払い',
         'ご挨拶', 'お知らせ',
@@ -230,7 +233,7 @@ class EngineerMailScoringService
                 $oldScore  = (int) $ems->score;
                 $oldStatus = $ems->status;
 
-                $body = $email->body_text ?? strip_tags($email->body_html ?? '');
+                $body = $this->resolveBody($email);
                 if ($this->isExcluded($subject, $from)) {
                     $newScore  = 0;
                     $newStatus = 'excluded';
@@ -315,7 +318,7 @@ class EngineerMailScoringService
                 $subject = $email->subject ?? '';
                 $from    = $email->from_address ?? '';
 
-                $body = $email->body_text ?? strip_tags($email->body_html ?? '');
+                $body = $this->resolveBody($email);
                 if ($this->isExcluded($subject, $from)) {
                     $ems->update(['score' => 0, 'score_reasons' => ['excluded'], 'status' => 'excluded']);
                 } elseif (trim($body) === '') {
@@ -359,7 +362,7 @@ class EngineerMailScoringService
      */
     public function calcScoreBreakdown(Email $email): array
     {
-        $body = $email->body_text ?? strip_tags($email->body_html ?? '');
+        $body = $this->resolveBody($email);
         if (trim($body) === '') return [];
         $email->loadMissing('attachments');
         [, , $bd] = $this->calcScore(($email->subject ?? '') . "\n" . $body, $email);
@@ -387,7 +390,7 @@ class EngineerMailScoringService
         //     score/status になり提案対象に混入する事故を防ぐ（rescoreAll は既存値を温存=skip するが、
         //     初回は温存対象が無いため anchor 化して whereNotExists の再選択も止める）。
         //     ガード式は下の calcScore が受け取る本文式と一致させる（件名のみになる時だけ発火）。
-        $body = $email->body_text ?? strip_tags($email->body_html ?? '');
+        $body = $this->resolveBody($email);
         if (trim($body) === '') {
             return $this->save($email, 0, ['excluded', 'body_purged'], 'rule', [], []);
         }
@@ -492,10 +495,8 @@ class EngineerMailScoringService
     private function extract(Email $email, bool $withAttachment = true): array
     {
         $subject = $email->subject ?? '';
-        // body_text が空文字('')の HTML 専用メールでも HTML 本文へフォールバックする（?? は null のみ）。
-        $body    = ($email->body_text ?? '') !== ''
-            ? $email->body_text
-            : $this->htmlToText($email->body_html ?? '');
+        // 本文選択は resolveBody() に一元化（空/定型文だけの薄い body_text は HTML 本文へ切替）。
+        $body    = $this->resolveBody($email);
 
         // 無効なUTF-8バイト列を除去
         $subject = iconv('UTF-8', 'UTF-8//IGNORE', $subject) ?: '';
@@ -566,6 +567,26 @@ class EngineerMailScoringService
             }
         }
         return $data;
+    }
+
+    /**
+     * 採点・抽出に用いる本文を決定する。
+     *
+     * body_text が空、または「メールがうまく表示されない方はこちら」等の定型文だけで極端に短い
+     * 配信ASPメールは、実体が body_html にしか無い。この場合は <style>/<script> 除去済みの
+     * htmlToText(body_html) の方が長ければそちらを採用する（件名＋定型文だけの採点を防ぐ）。
+     */
+    private function resolveBody(Email $email): string
+    {
+        $text = trim($email->body_text ?? '');
+        $html = $email->body_html ?? '';
+        if ($html !== '') {
+            $htmlText = trim($this->htmlToText($html));
+            if (mb_strlen($text) < self::THIN_BODY_LEN && mb_strlen($htmlText) > mb_strlen($text)) {
+                return $htmlText;
+            }
+        }
+        return $text;
     }
 
     /**
