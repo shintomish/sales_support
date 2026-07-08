@@ -30,19 +30,24 @@ class MailSearchController extends Controller
     private const PER_PAGE   = 50;
     private const SOURCE_CAP = 300; // 各ソースの取得上限（メモリ保護。条件で絞れば十分）
 
+    /** スキル語の結合方式: 'or'=いずれか含む(既定) / 'and'=すべて含む。search() で確定しリクエスト内で共有 */
+    private string $skillMode = 'or';
+
     public function search(Request $request): JsonResponse
     {
         $v = $request->validate([
-            'kind'      => ['required', 'in:project,engineer'],
-            'category'  => ['nullable', 'in:all,mail,self,bp'], // 全て/メール/自社/BP
-            'skill'     => ['nullable', 'string', 'max:200'],
-            'keyword'   => ['nullable', 'string', 'max:200'],
-            'price_min' => ['nullable', 'numeric', 'min:0', 'max:9999'],
-            'price_max' => ['nullable', 'numeric', 'min:0', 'max:9999'],
-            'sort'      => ['nullable', 'in:price_asc,price_desc,recent,skill_match'],
-            'page'      => ['nullable', 'integer', 'min:1'],
+            'kind'       => ['required', 'in:project,engineer'],
+            'category'   => ['nullable', 'in:all,mail,self,bp'], // 全て/メール/自社/BP
+            'skill'      => ['nullable', 'string', 'max:200'],
+            'skill_mode' => ['nullable', 'in:or,and'],           // スキル複数語の結合: OR(既定)/AND
+            'keyword'    => ['nullable', 'string', 'max:200'],
+            'price_min'  => ['nullable', 'numeric', 'min:0', 'max:9999'],
+            'price_max'  => ['nullable', 'numeric', 'min:0', 'max:9999'],
+            'sort'       => ['nullable', 'in:price_asc,price_desc,recent,skill_match'],
+            'page'       => ['nullable', 'integer', 'min:1'],
         ]);
         $category = $v['category'] ?? 'all';
+        $this->skillMode = $v['skill_mode'] ?? 'or';
 
         $terms    = $this->splitTerms($v['skill'] ?? '');
         $keyword  = trim((string) ($v['keyword'] ?? ''));
@@ -409,14 +414,7 @@ PROMPT;
     private function searchPublicProjects(array $terms, string $keyword, ?float $min, ?float $max, string $sort): array
     {
         $q = PublicProject::query()->with('skills:id,name');
-        if (!empty($terms)) {
-            $forms = $this->expandTerms($terms);
-            $q->whereHas('skills', function ($s) use ($forms) {
-                $s->where(function ($w) use ($forms) {
-                    foreach ($forms as $t) $w->orWhere('name', 'ilike', '%' . $t . '%');
-                });
-            });
-        }
+        $this->applySkillRelation($q, 'skills', $terms);
         if ($keyword !== '') {
             $like = '%' . $keyword . '%';
             $q->where(fn($w) => $w->where('title', 'ilike', $like)->orWhere('work_location', 'ilike', $like));
@@ -483,14 +481,7 @@ PROMPT;
         } elseif ($affiliation === 'bp') {
             $q->where(fn($w) => $w->where('affiliation_type', '!=', 'self')->orWhereNull('affiliation_type'));
         }
-        if (!empty($terms)) {
-            $forms = $this->expandTerms($terms);
-            $q->whereHas('engineerSkills.skill', function ($s) use ($forms) {
-                $s->where(function ($w) use ($forms) {
-                    foreach ($forms as $t) $w->orWhere('name', 'ilike', '%' . $t . '%');
-                });
-            });
-        }
+        $this->applySkillRelation($q, 'engineerSkills.skill', $terms);
         if ($keyword !== '') {
             $like = '%' . $keyword . '%';
             $q->where(fn($w) => $w->where('name', 'ilike', $like)->orWhere('affiliation', 'ilike', $like)->orWhere('nearest_station', 'ilike', $like));
@@ -518,14 +509,57 @@ PROMPT;
     private function applySkillJson($q, array $terms, array $columns): void
     {
         if (empty($terms)) return;
-        $forms = $this->expandTerms($terms);
-        $q->where(function ($w) use ($forms, $columns) {
+
+        // 1語ぶんの条件: その語＋辞書同義語を、対象カラム横断で OR（表記揺れ吸収）
+        $applyOneTerm = function ($w, string $term) use ($columns) {
             foreach ($columns as $col) {
-                foreach ($forms as $t) {
-                    $w->orWhereRaw("{$col}::text ILIKE ?", ['%' . $t . '%']);
+                foreach ($this->expandTerms([$term]) as $f) {
+                    $w->orWhereRaw("{$col}::text ILIKE ?", ['%' . $f . '%']);
                 }
             }
-        });
+        };
+
+        if ($this->skillMode === 'and') {
+            // AND: 各語ごとに独立した where を重ねる（すべての語を含む行のみ）
+            foreach ($terms as $term) {
+                $q->where(fn($w) => $applyOneTerm($w, $term));
+            }
+        } else {
+            // OR: 全語を1つの where 内で OR（いずれかを含む行）
+            $q->where(function ($w) use ($terms, $applyOneTerm) {
+                foreach ($terms as $term) $applyOneTerm($w, $term);
+            });
+        }
+    }
+
+    /** リレーション（PublicProject.skills / Engineer.engineerSkills.skill）へのスキル条件。OR/AND 対応 */
+    private function applySkillRelation($q, string $relation, array $terms): void
+    {
+        if (empty($terms)) return;
+
+        $matchTerm = function ($s, string $term) {
+            $forms = $this->expandTerms([$term]);
+            $s->where(function ($w) use ($forms) {
+                foreach ($forms as $f) $w->orWhere('name', 'ilike', '%' . $f . '%');
+            });
+        };
+
+        if ($this->skillMode === 'and') {
+            // AND: 語ごとに whereHas を重ねる（各語に一致するスキルを持つ行のみ）
+            foreach ($terms as $term) {
+                $q->whereHas($relation, fn($s) => $matchTerm($s, $term));
+            }
+        } else {
+            // OR: 1つの whereHas 内で全語を OR
+            $q->whereHas($relation, function ($s) use ($terms, $matchTerm) {
+                $s->where(function ($w) use ($terms, $matchTerm) {
+                    foreach ($terms as $term) {
+                        $forms = $this->expandTerms([$term]);
+                        foreach ($forms as $f) $w->orWhere('name', 'ilike', '%' . $f . '%');
+                    }
+                });
+            });
+        }
     }
 
     /** 並び替え（既定: 単価 昇順）。スコアは使わない。 */
