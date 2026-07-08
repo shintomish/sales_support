@@ -328,7 +328,7 @@ PROMPT;
         return array_values(array_unique(array_filter($out, fn($x) => trim((string) $x) !== '')));
     }
 
-    /** 行のスキル配列に対し、検索語のうち何件含むか（辞書で名寄せ・部分一致・大小無視） */
+    /** 行のスキル配列に対し、検索語のうち何件含むか（辞書で名寄せ・語境界一致・大小無視） */
     private function countMatched(array $terms, array $skillNames): array
     {
         if (empty($terms)) return [];
@@ -339,13 +339,28 @@ PROMPT;
             $tc = $dict->canonical($t);
             if ($tc === '') continue;
             foreach ($canonNames as $i => $cn) {
-                if ($cn !== '' && ($cn === $tc || str_contains($cn, $tc) || str_contains($tc, $cn))) {
+                if ($cn !== '' && $this->skillCanonMatch($cn, $tc)) {
                     $matched[] = $skillNames[$i] ?? $t;
                     break;
                 }
             }
         }
         return array_values(array_unique($matched));
+    }
+
+    /**
+     * スキル名の正規化名($cn)が検索語の正規化名($tc)に一致するか。
+     * SQL 側(addSkillForm)と揃える: 英数字語は語境界一致（java≠javascript）、記号/日本語は部分一致。
+     */
+    private function skillCanonMatch(string $cn, string $tc): bool
+    {
+        if ($cn === $tc) return true;
+        if (preg_match('/^[A-Za-z0-9 ]+$/', $tc)) {
+            // 語境界一致: "java" は "javascript" を拾わない／"java" は "core java" を拾う
+            return (bool) preg_match('/\b' . preg_quote($tc, '/') . '\b/', $cn);
+        }
+        // 記号入り・日本語などは従来どおり部分一致（双方向）
+        return str_contains($cn, $tc) || str_contains($tc, $cn);
     }
 
     /** 単価フィルタ: 既知価格は範囲判定、不明(null)は除外しない（取りこぼし防止） */
@@ -505,16 +520,31 @@ PROMPT;
         return $out;
     }
 
+    /**
+     * スキル1表記($form)を SQL 式($expr)に OR 条件で足す。
+     * 英数字（＋空白）のみの語は「語境界一致」(~* '\yword\y') で照合し、"java" が "javascript" を
+     * 拾わないようにする。記号を含む語（C++, C#, .NET, Node.js 等）は語境界が定義しづらいため
+     * 従来どおり部分一致(ILIKE)にフォールバックする。日本語など非ASCII語も部分一致。
+     */
+    private function addSkillForm($w, string $expr, string $form): void
+    {
+        if ($form !== '' && preg_match('/^[A-Za-z0-9 ]+$/', $form)) {
+            $w->orWhereRaw("{$expr} ~* ?", ['\y' . $form . '\y']);
+        } else {
+            $w->orWhereRaw("{$expr} ILIKE ?", ['%' . $form . '%']);
+        }
+    }
+
     /** json スキルカラム（配列）に対する「いずれかの語を含む」フィルタ（辞書で表記揺れ展開） */
     private function applySkillJson($q, array $terms, array $columns): void
     {
         if (empty($terms)) return;
 
-        // 1語ぶんの条件: その語＋辞書同義語を、対象カラム横断で OR（表記揺れ吸収）
+        // 1語ぶんの条件: その語＋辞書同義語を、対象カラム横断で OR（表記揺れ吸収・語境界一致）
         $applyOneTerm = function ($w, string $term) use ($columns) {
             foreach ($columns as $col) {
                 foreach ($this->expandTerms([$term]) as $f) {
-                    $w->orWhereRaw("{$col}::text ILIKE ?", ['%' . $f . '%']);
+                    $this->addSkillForm($w, "{$col}::text", $f);
                 }
             }
         };
@@ -538,9 +568,8 @@ PROMPT;
         if (empty($terms)) return;
 
         $matchTerm = function ($s, string $term) {
-            $forms = $this->expandTerms([$term]);
-            $s->where(function ($w) use ($forms) {
-                foreach ($forms as $f) $w->orWhere('name', 'ilike', '%' . $f . '%');
+            $s->where(function ($w) use ($term) {
+                foreach ($this->expandTerms([$term]) as $f) $this->addSkillForm($w, 'name', $f);
             });
         };
 
@@ -551,11 +580,10 @@ PROMPT;
             }
         } else {
             // OR: 1つの whereHas 内で全語を OR
-            $q->whereHas($relation, function ($s) use ($terms, $matchTerm) {
-                $s->where(function ($w) use ($terms, $matchTerm) {
+            $q->whereHas($relation, function ($s) use ($terms) {
+                $s->where(function ($w) use ($terms) {
                     foreach ($terms as $term) {
-                        $forms = $this->expandTerms([$term]);
-                        foreach ($forms as $f) $w->orWhere('name', 'ilike', '%' . $f . '%');
+                        foreach ($this->expandTerms([$term]) as $f) $this->addSkillForm($w, 'name', $f);
                     }
                 });
             });
