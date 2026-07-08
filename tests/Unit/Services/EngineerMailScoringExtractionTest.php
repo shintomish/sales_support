@@ -109,6 +109,44 @@ class EngineerMailScoringExtractionTest extends TestCase
         ];
     }
 
+    /**
+     * 希望単価の抽出。単金額（末尾「額」）・【単金】ブラケットは HTML 配信メールで多く、
+     * 旧パターンがラベルを取りこぼしていた（2026-07-08。本番の no_unit_price → review 止まり）。
+     * ラベル無しの単独「NN万」は誤検出（年商・利用者数等）を避けるため引き続き非対象。
+     *
+     * @param array{0:int|null,1:int|null} $expected
+     */
+    #[\PHPUnit\Framework\Attributes\DataProvider('unitPriceProvider')]
+    public function test_extracts_unit_price(string $text, array $expected): void
+    {
+        $svc = new EngineerMailScoringService();
+        $m = new ReflectionMethod($svc, 'extractUnitPrice');
+        $m->setAccessible(true);
+
+        $this->assertSame($expected, $m->invoke($svc, $text));
+    }
+
+    public static function unitPriceProvider(): array
+    {
+        return [
+            // 修正で拾えるようになったラベル付き（HTML配信メール由来）
+            '単金額 単一'        => ['単金額：85万円（応相談）', [85, 85]],
+            '単価額 単一'        => ['単価額：40万', [40, 40]],
+            '単金額 範囲'        => ['単金額：60〜70万', [60, 70]],
+            '【単金】単一'       => ['【単金】60万', [60, 60]],
+            '【単 金】全角空白'  => ['【単 金】95万円 ※応相談', [95, 95]],
+            // 既存パターンの非退行
+            '単価コロン'         => ['単価：120万円/月', [120, 120]],
+            '単金 範囲'          => ['単金 60〜70万', [60, 70]],
+            '■単金額'           => ['■単金額：110万', [110, 110]],
+            '【単価】前後'       => ['【単　価】：自動車領域160万円前後', [160, 160]],
+            // 誤検出ガード（ラベル無しの NN万 は拾わない）
+            '経験件数は非対象'   => ['経験10万件のプロジェクト', [null, null]],
+            '年商は非対象'       => ['年商5000万円の企業', [null, null]],
+            '利用者数は非対象'   => ['月200万人が利用', [null, null]],
+        ];
+    }
+
     public function test_age_does_not_false_match_retirement_age_in_comment(): void
     {
         // 本文コメントの「60歳で定年退職」を現在年齢(64)と取り違えないこと。
