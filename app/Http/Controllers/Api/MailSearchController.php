@@ -350,17 +350,16 @@ PROMPT;
 
     /**
      * スキル名の正規化名($cn)が検索語の正規化名($tc)に一致するか。
-     * SQL 側(addSkillForm)と揃える: 英数字語は語境界一致（java≠javascript）、記号/日本語は部分一致。
+     * SQL 側(addSkillForm)と同じトークン境界一致（+#.- は語構成・それ以外は区切り）。
+     * "java"≠"javascript"、"c"≠"c++"、"core java" は "java" でヒット。
      */
     private function skillCanonMatch(string $cn, string $tc): bool
     {
         if ($cn === $tc) return true;
-        if (preg_match('/^[A-Za-z0-9 ]+$/', $tc)) {
-            // 語境界一致: "java" は "javascript" を拾わない／"java" は "core java" を拾う
-            return (bool) preg_match('/\b' . preg_quote($tc, '/') . '\b/', $cn);
-        }
-        // 記号入り・日本語などは従来どおり部分一致（双方向）
-        return str_contains($cn, $tc) || str_contains($tc, $cn);
+        if ($tc === '') return false;
+        $sep = '[^' . self::SKILL_WORD . ']';
+        $pattern = '/(^|' . $sep . ')' . preg_quote($tc, '/') . '(' . $sep . '|$)/iu';
+        return (bool) preg_match($pattern, $cn);
     }
 
     /** 単価フィルタ: 既知価格は範囲判定、不明(null)は除外しない（取りこぼし防止） */
@@ -520,19 +519,30 @@ PROMPT;
         return $out;
     }
 
+    // スキル名の「語」を構成する文字（英数字＋記号 +#.-）。これ以外（空白・引用符・角括弧・
+    // カンマ・日本語等）は語の区切りとみなす。+#.- を語構成に含めることで "C" が "C++"/"C#" を、
+    // "java" が "javascript" を、"Node" が "Node.js" を拾わない（別スキルは別語）。
+    private const SKILL_WORD = 'A-Za-z0-9+#.-';
+
+    /** POSIX ERE / PCRE のメタ文字をエスケープ（リテラル一致用） */
+    private function escapeRegex(string $s): string
+    {
+        return preg_replace('/[.+*?()\[\]{}|^$\\\\]/', '\\\\$0', $s);
+    }
+
     /**
      * スキル1表記($form)を SQL 式($expr)に OR 条件で足す。
-     * 英数字（＋空白）のみの語は「語境界一致」(~* '\yword\y') で照合し、"java" が "javascript" を
-     * 拾わないようにする。記号を含む語（C++, C#, .NET, Node.js 等）は語境界が定義しづらいため
-     * 従来どおり部分一致(ILIKE)にフォールバックする。日本語など非ASCII語も部分一致。
+     * トークン境界一致: $form が「語」全体として現れる時のみヒット（前後が語構成文字でない）。
+     * これにより "C"→"C++"、"java"→"javascript" のような別スキルへの部分一致を防ぐ。
+     * "Core Java" / "AWS Lambda" 等は空白区切りなので各語がヒットする。日本語は各文字が区切り
+     * 扱いになり実質部分一致（従来どおり）。同義語の橋渡しは SkillDictionary が担う。
      */
     private function addSkillForm($w, string $expr, string $form): void
     {
-        if ($form !== '' && preg_match('/^[A-Za-z0-9 ]+$/', $form)) {
-            $w->orWhereRaw("{$expr} ~* ?", ['\y' . $form . '\y']);
-        } else {
-            $w->orWhereRaw("{$expr} ILIKE ?", ['%' . $form . '%']);
-        }
+        if ($form === '') return;
+        $sep = '[^' . self::SKILL_WORD . ']';
+        $pattern = '(^|' . $sep . ')' . $this->escapeRegex($form) . '(' . $sep . '|$)';
+        $w->orWhereRaw("{$expr} ~* ?", [$pattern]);
     }
 
     /** json スキルカラム（配列）に対する「いずれかの語を含む」フィルタ（辞書で表記揺れ展開） */

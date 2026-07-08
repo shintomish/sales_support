@@ -90,16 +90,34 @@ class MailSearchSkillModeTest extends PgsqlTestCase
         $this->assertNotContains('JavaScript', $jsRow['matched_skills'] ?? []);
     }
 
-    public function test_記号入りスキルは部分一致にフォールバック(): void
+    public function test_C_は_Cpp_や_Csharp_を拾わない(): void
+    {
+        $this->actingAsUser();
+        $cLang = $this->makeEms(['C', 'Embedded']);
+        $cpp = $this->makeEms(['C++', 'STL']);
+        $csharp = $this->makeEms(['C#', '.NET']);
+
+        $res = $this->getJson('/api/v1/mail-search?kind=engineer&skill=' . urlencode('C'));
+        $res->assertOk();
+        $ids = collect($res->json('data'))->pluck('id')->all();
+
+        $this->assertContains($cLang, $ids, 'C 言語は拾う');
+        $this->assertNotContains($cpp, $ids, 'C++ は別スキルなので拾わない');
+        $this->assertNotContains($csharp, $ids, 'C# は別スキルなので拾わない');
+    }
+
+    public function test_記号入りスキルは完全な語として拾う(): void
     {
         $this->actingAsUser();
         $cpp = $this->makeEms(['C++', 'STL']);
+        $cLang = $this->makeEms(['C']);
 
-        // "C++" は語境界が定義しづらいので ILIKE フォールバックで拾える
+        // "C++" 検索は C++ を拾い、C 言語だけの行は拾わない
         $res = $this->getJson('/api/v1/mail-search?kind=engineer&skill=' . urlencode('C++'));
         $res->assertOk();
         $ids = collect($res->json('data'))->pluck('id')->all();
 
-        $this->assertContains($cpp, $ids);
+        $this->assertContains($cpp, $ids, 'C++ は C++ を拾う');
+        $this->assertNotContains($cLang, $ids, 'C++ 検索で C 言語だけの行は拾わない');
     }
 }
