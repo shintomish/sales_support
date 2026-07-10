@@ -152,10 +152,14 @@ class EngineerMailScoringExtractionTest extends TestCase
         // 非開発ロール（ROLE_SKILLS）を検索用 skills に格納する（2026-07-10）。
         $r = $this->extract(
             'ヘルプデスク・運用保守の要員紹介',
-            "ヘルプデスク／キッティング／社内SE(情シス)経験。監視業務も対応可。Java も少々。\n即日稼働可能",
+            "ヘルプデスク／キッティング／社内SE(情シス)経験。監視業務も対応可。\n"
+            . "コールセンター・電話対応・データ入力・一般事務・ITサポート・障害対応も可。Java も少々。\n即日稼働可能",
         );
         $skills = $r['skills'] ?? [];
-        foreach (['ヘルプデスク', '運用保守', 'キッティング', '社内SE', '情シス', '監視'] as $role) {
+        foreach ([
+            'ヘルプデスク', '運用保守', 'キッティング', '社内SE', '情シス', '監視',
+            'コールセンター', '電話対応', 'データ入力', '一般事務', 'ITサポート', '障害対応',
+        ] as $role) {
             $this->assertContains($role, $skills, "{$role} が skills に入る");
         }
         $this->assertContains('Java', $skills, '既存の技術スタック抽出は維持');
