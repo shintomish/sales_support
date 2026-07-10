@@ -550,11 +550,14 @@ PROMPT;
     {
         if (empty($terms)) return;
 
-        // 1語ぶんの条件: その語＋辞書同義語を、対象カラム横断で OR（表記揺れ吸収・語境界一致）
+        // 1語ぶんの条件: その語＋辞書同義語を、対象カラム横断で OR（表記揺れ吸収・語境界一致）。
+        // ★ skills 系は json 型で、Laravel の json_encode が非ASCIIを \uXXXX にエスケープして
+        //   保存する。素の ::text だと「ヘルプデスク」等の日本語スキルが \u 列と照合され一致しない。
+        //   ::jsonb::text で \u を実文字へ正規化してから照合する（ASCII もそのまま一致）。
         $applyOneTerm = function ($w, string $term) use ($columns) {
             foreach ($columns as $col) {
                 foreach ($this->expandTerms([$term]) as $f) {
-                    $this->addSkillForm($w, "{$col}::text", $f);
+                    $this->addSkillForm($w, "{$col}::jsonb::text", $f);
                 }
             }
         };
