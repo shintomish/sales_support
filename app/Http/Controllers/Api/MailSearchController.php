@@ -398,7 +398,8 @@ PROMPT;
     // ── 案件メール（PMS）────────────────────────────────
     private function searchProjectMails(array $terms, string $keyword, ?float $min, ?float $max, string $sort): array
     {
-        $q = ProjectMailSource::query()->with('email:id,received_at,arrived_at');
+        $q = ProjectMailSource::query()->with('email:id,received_at,arrived_at')
+            ->where('score', '>', 0); // スコア0点(除外/ジャンク)は非表示
         $this->applySkillJson($q, $terms, ['required_skills', 'preferred_skills']);
         if ($keyword !== '') {
             $like = '%' . $keyword . '%';
@@ -456,7 +457,8 @@ PROMPT;
     // ── 技術者メール（EMS）──────────────────────────────
     private function searchEngineerMails(array $terms, string $keyword, ?float $min, ?float $max, string $sort): array
     {
-        $q = EngineerMailSource::query()->with('email:id,received_at,arrived_at');
+        $q = EngineerMailSource::query()->with('email:id,received_at,arrived_at')
+            ->where('score', '>', 0); // スコア0点(除外/ジャンク)は非表示
         $this->applySkillJson($q, $terms, ['skills']);
         if ($keyword !== '') {
             $like = '%' . $keyword . '%';
