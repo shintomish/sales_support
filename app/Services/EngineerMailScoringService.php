@@ -84,6 +84,13 @@ class EngineerMailScoringService
         'BP', 'フリーランス', '自社社員', '下請け', '一社先', '個人事業主', '契約社員',
     ];
 
+    // 非開発ロール（検索用 skills にのみ格納。スコア[C]には使わない＝中立性維持）。
+    // TECH_STACK に載らない定番ロールを mail-search で拾えるようにする（2026-07-10 追加）。
+    public const ROLE_SKILLS = [
+        'ヘルプデスク', 'サポートデスク', '運用保守', 'サーバー運用', 'ネットワーク運用',
+        'インフラ運用', '監視', 'キッティング', '社内SE', '情シス', 'PMO', 'テスター',
+    ];
+
     private const SCORE_OK       = 60;
     private const SCORE_REVIEW   = 40;
     private const PRICE_MIN_FLOOR = 35; // 万円：これ未満は除外
@@ -491,8 +498,9 @@ class EngineerMailScoringService
 
     /**
      * @param bool $withAttachment 添付ファイルをClaudeで解析するか（rescoreAll時はfalse）
+     * PMS 側 extract() と対称に public（skills 再抽出コマンド等から利用）。
      */
-    private function extract(Email $email, bool $withAttachment = true): array
+    public function extract(Email $email, bool $withAttachment = true): array
     {
         $subject = $email->subject ?? '';
         // 本文選択は resolveBody() に一元化（空/定型文だけの薄い body_text は HTML 本文へ切替）。
@@ -1185,6 +1193,12 @@ class EngineerMailScoringService
         foreach (self::TECH_STACK as $tech) {
             if ($this->skillFound($text, $tech)) {
                 $found[] = $tech;
+            }
+        }
+        // 非開発ロール（検索用・スコア非対象）
+        foreach (self::ROLE_SKILLS as $role) {
+            if ($this->skillFound($text, $role)) {
+                $found[] = $role;
             }
         }
         return array_values(array_unique($found));
