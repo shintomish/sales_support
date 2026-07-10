@@ -106,6 +106,21 @@ class MailSearchSkillModeTest extends PgsqlTestCase
         $this->assertNotContains($csharp, $ids, 'C# は別スキルなので拾わない');
     }
 
+    public function test_日本語スキルが検索できる(): void
+    {
+        // skills は json 型で非ASCIIが \uXXXX 保存される。::jsonb::text 照合の回帰。
+        $this->actingAsUser();
+        $help = $this->makeEms(['ヘルプデスク', '運用保守']);
+        $other = $this->makeEms(['Java', 'AWS']);
+
+        $res = $this->getJson('/api/v1/mail-search?kind=engineer&skill=' . urlencode('ヘルプデスク'));
+        $res->assertOk();
+        $ids = collect($res->json('data'))->pluck('id')->all();
+
+        $this->assertContains($help, $ids, '日本語スキル「ヘルプデスク」で拾える');
+        $this->assertNotContains($other, $ids);
+    }
+
     public function test_記号入りスキルは完全な語として拾う(): void
     {
         $this->actingAsUser();
