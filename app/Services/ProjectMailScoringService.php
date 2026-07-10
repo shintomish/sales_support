@@ -1010,6 +1010,12 @@ class ProjectMailScoringService
                 $found[] = $role;
             }
         }
+        // 辞書駆動: skill_aliases に登録された語も抽出対象（DB管理で追加可・スコア非対象）
+        foreach (app(\App\Services\SkillDictionary::class)->surfaces() as $surface) {
+            if ($this->skillFound($textWithoutUrls, $surface)) {
+                $found[] = $surface;
+            }
+        }
         return array_values(array_unique($found));
     }
 
