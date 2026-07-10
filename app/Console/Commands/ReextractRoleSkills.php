@@ -32,8 +32,13 @@ class ReextractRoleSkills extends Command
         $limit   = (int) $this->option('limit');
         $this->info($execute ? 'モード: 更新' : 'モード: DRY-RUN（対象件数のみ・更新なし）');
 
-        // 両サービス同一リスト。POSIX 正規表現の alternation（ロール語に正規表現メタ文字なし）
-        $re = implode('|', ProjectMailScoringService::ROLE_SKILLS);
+        // 抽出対象語 = ROLE_SKILLS ∪ 辞書surfaces。新しい同義語だけを含む行も再抽出対象に含める。
+        // POSIX 正規表現の alternation 用にメタ文字をエスケープ。
+        $terms = array_values(array_unique(array_merge(
+            ProjectMailScoringService::ROLE_SKILLS,
+            app(\App\Services\SkillDictionary::class)->surfaces(),
+        )));
+        $re = implode('|', array_map(fn ($t) => preg_quote($t, '/'), $terms));
 
         if (in_array($type, ['both', 'project'], true)) {
             $this->reextractSet(

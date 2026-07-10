@@ -80,8 +80,31 @@ class SkillDictionary
     }
 
     /** 辞書更新後にキャッシュを破棄（将来の管理UI用）。 */
+    /**
+     * 抽出用の全サーフェス（canonical＋alias の生表記・重複排除）。
+     * extractSkills が「辞書に載っている語」を skills に格納するために使う（辞書駆動抽出）。
+     * 誤検出防止のため 2 文字未満は除外（短すぎる語は substring で暴発する）。
+     */
+    public function surfaces(): array
+    {
+        return Cache::remember(self::CACHE_KEY . ':surfaces', self::TTL, function () {
+            $rows = DB::table('skill_aliases')->get(['canonical', 'alias']);
+            $out = [];
+            foreach ($rows as $r) {
+                $out[] = (string) $r->canonical;
+                $out[] = (string) $r->alias;
+            }
+            return array_values(array_unique(array_filter(
+                array_map('trim', $out),
+                fn ($x) => mb_strlen($x) >= 2,
+            )));
+        });
+    }
+
+    /** 辞書更新後にキャッシュを破棄（将来の管理UI用）。 */
     public static function forgetCache(): void
     {
         Cache::forget(self::CACHE_KEY);
+        Cache::forget(self::CACHE_KEY . ':surfaces');
     }
 }

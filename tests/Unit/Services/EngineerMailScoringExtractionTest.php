@@ -165,6 +165,17 @@ class EngineerMailScoringExtractionTest extends TestCase
         $this->assertContains('Java', $skills, '既存の技術スタック抽出は維持');
     }
 
+    public function test_extracts_dictionary_registered_surface(): void
+    {
+        // 辞書駆動: skill_aliases に登録された語（ROLE_SKILLS 定数に無い同義語）も抽出される。
+        // 「サポートデスク」「カスタマーサポート」は seed migration で登録済み。
+        $r = $this->extract('要員紹介', 'サポートデスク・カスタマーサポート経験。保守運用も対応。');
+        $skills = $r['skills'] ?? [];
+        $this->assertContains('サポートデスク', $skills, '辞書登録の同義語が抽出される');
+        $this->assertContains('カスタマーサポート', $skills);
+        $this->assertContains('保守運用', $skills);
+    }
+
     public function test_role_skill_does_not_false_match_bare_word(): void
     {
         // 「運用」単体では「運用保守」「サーバー運用」を湧かせない（複合語のみ）。
