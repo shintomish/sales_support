@@ -83,6 +83,13 @@ class ProjectMailScoringService
         'MySQL', 'PostgreSQL', 'Oracle', 'SQLServer', 'MongoDB', 'Redis',
     ];
 
+    // 非開発ロール（検索用 required_skills にのみ格納。スコア[C]には使わない＝中立性維持）。
+    // TECH_* に載らない定番ロールを mail-search で拾えるようにする（2026-07-10 追加）。
+    public const ROLE_SKILLS = [
+        'ヘルプデスク', 'サポートデスク', '運用保守', 'サーバー運用', 'ネットワーク運用',
+        'インフラ運用', '監視', 'キッティング', '社内SE', '情シス', 'PMO', 'テスター',
+    ];
+
     // [F] 工程
     private const PROCESS_UPPER = ['要件定義', '基本設計', '詳細設計'];
     private const PROCESS_DEV   = ['開発', '実装', '製造'];
@@ -991,6 +998,12 @@ class ProjectMailScoringService
         foreach ($allSkills as $skill) {
             if ($this->skillFound($textWithoutUrls, $skill)) {
                 $found[] = $skill;
+            }
+        }
+        // 非開発ロール（検索用・スコア非対象）
+        foreach (self::ROLE_SKILLS as $role) {
+            if ($this->skillFound($textWithoutUrls, $role)) {
+                $found[] = $role;
             }
         }
         return array_values(array_unique($found));
