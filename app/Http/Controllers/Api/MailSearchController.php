@@ -547,7 +547,43 @@ PROMPT;
         $w->orWhereRaw("{$expr} ~* ?", [$pattern]);
     }
 
-    /** json スキルカラム（配列）に対する「いずれかの語を含む」フィルタ（辞書で表記揺れ展開） */
+    // pgroonga 全文索引 emails_pgroonga_fts_idx の連結式（EmailController と完全一致させること）。
+    private const FTS_EXPR = "(COALESCE(subject,'') || ' ' || COALESCE(from_address,'') || ' ' || COALESCE(from_name,'') || ' ' || COALESCE(body_text,''))";
+
+    /**
+     * その語（＋辞書同義語）でメール本文（emails: 件名/差出人/body_text）に一致する条件を OR で足す。
+     * pgroonga &@~ の OR 構文で全同義語を一括全文検索（index 使用）。無効環境は ILIKE フォールバック。
+     * 本文は prose なので skills 一致（語境界・精密）より広めのマッチだが、再抽出前の取りこぼし救済。
+     */
+    private function addBodyMatch($w, string $term): void
+    {
+        // 短い語（1〜2文字・C/Go/PM/SE 等）は本文 substring が暴発するので対象外。
+        // これらは TECH_STACK 由来で skills に精密抽出済みのため skills 一致で十分。
+        if (mb_strlen(trim($term)) < 3) return;
+
+        $forms = array_values(array_filter(
+            array_map('trim', $this->expandTerms([$term])),
+            fn ($f) => $f !== '',
+        ));
+        if (empty($forms)) return;
+
+        if (config('services.pgroonga.enabled', true)) {
+            // 各語をフレーズ引用して pgroonga クエリ特殊文字（+ - ( ) 等）を無害化し OR 連結。
+            $query = implode(' OR ', array_map(fn ($f) => '"' . str_replace('"', '', $f) . '"', $forms));
+            $w->orWhereHas('email', fn ($e) => $e->whereRaw(self::FTS_EXPR . ' &@~ ?', [$query]));
+        } else {
+            $w->orWhereHas('email', function ($e) use ($forms) {
+                $e->where(function ($ee) use ($forms) {
+                    foreach ($forms as $f) {
+                        $ee->orWhere('subject', 'ilike', '%' . $f . '%')
+                           ->orWhere('body_text', 'ilike', '%' . $f . '%');
+                    }
+                });
+            });
+        }
+    }
+
+    /** json スキルカラム（配列）に対する「skills 一致 ∪ 本文一致」フィルタ（辞書で表記揺れ展開） */
     private function applySkillJson($q, array $terms, array $columns): void
     {
         if (empty($terms)) return;
@@ -556,12 +592,15 @@ PROMPT;
         // ★ skills 系は json 型で、Laravel の json_encode が非ASCIIを \uXXXX にエスケープして
         //   保存する。素の ::text だと「ヘルプデスク」等の日本語スキルが \u 列と照合され一致しない。
         //   ::jsonb::text で \u を実文字へ正規化してから照合する（ASCII もそのまま一致）。
+        // 1語 = 「保存済み skills 一致」∪「メール本文一致」。後者により辞書に語を足した直後、
+        // 再抽出前でも既存メールの本文から拾える（営業が辞書登録→即検索できる）。
         $applyOneTerm = function ($w, string $term) use ($columns) {
             foreach ($columns as $col) {
                 foreach ($this->expandTerms([$term]) as $f) {
                     $this->addSkillForm($w, "{$col}::jsonb::text", $f);
                 }
             }
+            $this->addBodyMatch($w, $term);
         };
 
         if ($this->skillMode === 'and') {

@@ -106,6 +106,29 @@ class MailSearchSkillModeTest extends PgsqlTestCase
         $this->assertNotContains($csharp, $ids, 'C# は別スキルなので拾わない');
     }
 
+    public function test_本文一致で拾える_skillsに無くても(): void
+    {
+        // 辞書に語を足した直後（再抽出前）でも、メール本文に含まれていれば拾えること。
+        $this->actingAsUser();
+        $email = Email::factory()->create([
+            'tenant_id' => $this->authUser->tenant_id,
+            'subject'   => 'RPA開発の要員募集',
+            'body_text' => 'RPA（UiPath）の実務経験者を探しています。',
+        ]);
+        $bodyOnly = EngineerMailSource::factory()->create([
+            'tenant_id' => $this->authUser->tenant_id,
+            'email_id'  => $email->id,
+            'skills'    => ['Java'],   // skills には RPA 無し
+            'score'     => 50, 'status' => 'new',
+        ])->id;
+
+        $res = $this->getJson('/api/v1/mail-search?kind=engineer&skill=RPA');
+        $res->assertOk();
+        $ids = collect($res->json('data'))->pluck('id')->all();
+
+        $this->assertContains($bodyOnly, $ids, 'skills に無くても本文一致で拾う');
+    }
+
     public function test_スコア0点は表示しない(): void
     {
         $this->actingAsUser();
