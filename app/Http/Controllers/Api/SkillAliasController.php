@@ -12,7 +12,8 @@ use Illuminate\Support\Facades\Auth;
 /**
  * スキル同義語辞書（skill_aliases）の管理。
  *   - 一覧(index)は全ユーザー閲覧可
- *   - 追加/削除/改名は管理者(tenant_admin / super_admin)のみ（辞書は全テナント共通のグローバルデータ）
+ *   - 追加(store)は認証済みの全ユーザー可（辞書は全テナント共通のグローバルデータだが加点方向のみ）
+ *   - 削除/改名は管理者(tenant_admin / super_admin)のみ（既存エントリの破壊的変更のため）
  *   - 書き換え後は SkillDictionary のキャッシュを破棄して即時反映
  */
 class SkillAliasController extends Controller
@@ -34,7 +35,7 @@ class SkillAliasController extends Controller
     /** POST /skill-aliases — 表記揺れを1件追加（canonical 自身も alias として登録可）。 */
     public function store(Request $request): JsonResponse
     {
-        $this->authorizeAdmin();
+        // 追加は認証済みユーザーなら誰でも可（middleware で認証は担保済み）
         $v = $request->validate([
             'canonical' => ['required', 'string', 'max:80'],
             'alias'     => ['required', 'string', 'max:80'],

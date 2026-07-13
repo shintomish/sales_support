@@ -8,7 +8,7 @@ use Tests\TestCase;
 
 /**
  * スキル同義語辞書 管理API のテスト。
- *  - 閲覧は全員 / 追加・削除は管理者のみ(403)
+ *  - 閲覧・追加は全員 / 削除・改名は管理者のみ(403)
  *  - 重複 alias は 422
  *  - 書き換え後は SkillDictionary キャッシュが破棄され即時反映
  */
@@ -20,12 +20,20 @@ class SkillAliasControllerTest extends TestCase
         $this->getJson('/api/v1/skill-aliases')->assertOk()->assertJsonStructure(['data']);
     }
 
-    public function test_一般ユーザーは追加できない(): void
+    public function test_一般ユーザーも追加できる(): void
     {
         $this->actingAsUser(['role' => 'tenant_user']);
         $this->postJson('/api/v1/skill-aliases', ['canonical' => 'Go', 'alias' => 'Golang'])
-            ->assertStatus(403);
-        $this->assertDatabaseMissing('skill_aliases', ['alias' => 'Golang']);
+            ->assertStatus(201);
+        $this->assertDatabaseHas('skill_aliases', ['alias' => 'Golang']);
+    }
+
+    public function test_一般ユーザーは削除できない(): void
+    {
+        $this->actingAsUser(['role' => 'tenant_user']);
+        $row = SkillAlias::create(['canonical' => 'Rust', 'alias' => 'rustlang']);
+        $this->deleteJson("/api/v1/skill-aliases/{$row->id}")->assertStatus(403);
+        $this->assertDatabaseHas('skill_aliases', ['id' => $row->id]);
     }
 
     public function test_管理者は追加でき辞書に即時反映される(): void
