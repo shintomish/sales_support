@@ -851,6 +851,23 @@ class KagoyaMailService
         return $map[$mime] ?? '.bin';
     }
 
+    /**
+     * charset 名を Windows/ベンダー拡張対応の変種へ正規化する。
+     *
+     * NEC/IBM 拡張文字（例: 「瀨」U+7028）は素の ISO-2022-JP / Shift_JIS では
+     * マップできず「?」に化ける。CP932 系の変種へ寄せることで救済する。
+     */
+    private function normalizeCharset(string $charset): string
+    {
+        $cs = strtolower(trim($charset));
+        return match ($cs) {
+            'shift_jis', 'shift-jis', 'sjis', 'x-sjis', 'ms_kanji', 'windows-31j', 'cp932' => 'SJIS-win',
+            'iso-2022-jp', 'iso2022jp', 'csiso2022jp'                                      => 'ISO-2022-JP-MS',
+            'euc-jp', 'eucjp', 'x-euc-jp'                                                  => 'eucJP-win',
+            default                                                                        => $charset,
+        };
+    }
+
     private function decodeHeader(string $value): string
     {
         if (empty($value) || !str_contains($value, '=?')) return $value;
@@ -869,7 +886,7 @@ class KagoyaMailService
                 } else {
                     $decoded = implode('', array_map('base64_decode', $parts));
                 }
-                return @mb_convert_encoding($decoded, 'UTF-8', $charset) ?: $decoded;
+                return @mb_convert_encoding($decoded, 'UTF-8', $this->normalizeCharset($charset)) ?: $decoded;
             },
             $value
         );
@@ -916,7 +933,7 @@ class KagoyaMailService
                 $assembled .= $p['encoded'] ? urldecode($p['value']) : $p['value'];
             }
             if ($anyEncoded && $charset !== null) {
-                return @mb_convert_encoding($assembled, 'UTF-8', $charset) ?: $assembled;
+                return @mb_convert_encoding($assembled, 'UTF-8', $this->normalizeCharset($charset)) ?: $assembled;
             }
             return $assembled;
         }
@@ -929,7 +946,7 @@ class KagoyaMailService
         )) {
             $charset = $m[1] !== '' ? $m[1] : 'UTF-8';
             $value   = urldecode(trim($m[3], "\" \t"));
-            return @mb_convert_encoding($value, 'UTF-8', $charset) ?: $value;
+            return @mb_convert_encoding($value, 'UTF-8', $this->normalizeCharset($charset)) ?: $value;
         }
 
         // 3. シンプルな filename="..." or filename=...
@@ -1013,7 +1030,7 @@ class KagoyaMailService
                     if (preg_match('/charset="?([^";\s]+)"?/i', $partCt, $cm)) {
                         $charset = $cm[1];
                     }
-                    $decoded = @mb_convert_encoding($decoded, 'UTF-8', $charset) ?: $decoded;
+                    $decoded = @mb_convert_encoding($decoded, 'UTF-8', $this->normalizeCharset($charset)) ?: $decoded;
 
                     if (str_contains(strtolower($partCt), 'text/plain') && !$text) {
                         $text = $decoded;
@@ -1028,7 +1045,7 @@ class KagoyaMailService
             if (preg_match('/charset="?([^";\s]+)"?/i', $contentType, $cm)) {
                 $charset = $cm[1];
             }
-            $decoded = @mb_convert_encoding($decoded, 'UTF-8', $charset) ?: $decoded;
+            $decoded = @mb_convert_encoding($decoded, 'UTF-8', $this->normalizeCharset($charset)) ?: $decoded;
 
             if (str_contains($ct, 'text/html')) {
                 $html = $decoded;
