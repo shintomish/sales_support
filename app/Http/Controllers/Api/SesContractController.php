@@ -20,10 +20,8 @@ class SesContractController extends Controller
         $sc = $deal->sesContract;
         $cu = $deal->customer;
         $wr = $deal->latestWorkRecord;
-        $daysUntilExpiry = null;
-        if ($sc?->contract_period_end) {
-            $daysUntilExpiry = (int) now()->diffInDays($sc->contract_period_end, false);
-        }
+        // 残日数はモデルのアクセサに一本化（日付単位で計算。オフバイワン防止）
+        $daysUntilExpiry = $sc?->days_until_expiry;
         return [
             'id'                           => $deal->id,
             'project_number'               => $deal->project_number,
