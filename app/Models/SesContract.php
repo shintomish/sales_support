@@ -163,7 +163,8 @@ class SesContract extends Model
         if (!$this->contract_period_end) {
             return null;
         }
-        return (int) now()->diffInDays($this->contract_period_end, false);
+        // 日付単位で残日数を数える（現在時刻起点だと当日中は 24h 未満で切り捨てられ 1 日ズレるため startOfDay で揃える）
+        return (int) now()->startOfDay()->diffInDays($this->contract_period_end->copy()->startOfDay(), false);
     }
 
     /**
