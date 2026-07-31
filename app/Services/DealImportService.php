@@ -207,6 +207,14 @@ class DealImportService
             $sheet = $spreadsheet->getSheetByName(self::SHEET_NAME);
             $allRows = $sheet->toArray(null, true, true, false);
 
+            // 非表示行（Excel 上で行を非表示にしている＝取込対象外の運用）の Excel 行番号
+            $hiddenRowNumbers = [];
+            foreach ($sheet->getRowDimensions() as $rowDimension) {
+                if ($rowDimension->getVisible() === false) {
+                    $hiddenRowNumbers[$rowDimension->getRowIndex()] = true;
+                }
+            }
+
             // ヘッダー行（「項番」がある行）を検索
             $headerRowIndex = null;
             foreach ($allRows as $i => $row) {
@@ -221,10 +229,14 @@ class DealImportService
             }
 
             // ヘッダー行の次からデータ行を取得
-            // 削除フラグが 1 の行・項番が空の行は除外
+            // 削除フラグが 1 の行・項番が空の行・非表示行は除外
             $dataRows = [];
             for ($i = $headerRowIndex + 1; $i < count($allRows); $i++) {
                 $row = $allRows[$i];
+                // 非表示行 → 取込対象外（$allRows は 0 始まりなので Excel 行番号は +1）
+                if (isset($hiddenRowNumbers[$i + 1])) {
+                    continue;
+                }
                 // 項番が空 → 空行とみなしスキップ
                 if (empty($row[0])) {
                     continue;
