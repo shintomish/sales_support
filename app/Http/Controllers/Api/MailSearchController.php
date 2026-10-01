@@ -422,12 +422,15 @@ PROMPT;
      * 取得(cap)段階のSQL並び順。件数が多いソースで cap 内に「正しい行」を残すため。
      * price系は unit_price_max を採用（最安/最高を確実に拾う）。それ以外は新着(created_at)。
      */
-    private function applyOrder($q, string $sort, string $priceCol = 'unit_price_max'): void
+    private function applyOrder($q, string $sort, string $priceCol = 'unit_price_max', bool $hasScore = true): void
     {
         switch ($sort) {
             case 'price_asc':   $q->orderByRaw("{$priceCol} ASC NULLS LAST");  break;
             case 'price_desc':  $q->orderByRaw("{$priceCol} DESC NULLS LAST"); break;
-            case 'score_desc':  $q->orderByDesc('score')->orderByDesc('created_at'); break;
+            case 'score_desc':
+                if ($hasScore) $q->orderByDesc('score');
+                $q->orderByDesc('created_at');
+                break;
             default:            $q->orderByDesc('created_at');                 break; // recent / skill_match
         }
     }
@@ -474,7 +477,7 @@ PROMPT;
             $q->where(fn($w) => $w->where('title', 'ilike', $like)->orWhere('work_location', 'ilike', $like));
         }
         $this->applyPriceFilter($q, $min, $max, 'unit_price_max', $excludeNull);
-        $this->applyOrder($q, $sort);
+        $this->applyOrder($q, $sort, 'unit_price_max', false); // public_projects は score カラムなし
         $out = [];
         foreach ($q->limit(self::SOURCE_CAP)->get() as $p) {
             $price = $p->unit_price_max !== null ? (float) $p->unit_price_max : null;
