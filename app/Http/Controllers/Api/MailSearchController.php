@@ -426,7 +426,7 @@ PROMPT;
     // ── 案件メール（PMS）────────────────────────────────
     private function searchProjectMails(array $terms, string $keyword, ?float $min, ?float $max, string $sort): array
     {
-        $q = ProjectMailSource::query()->with('email:id,received_at,arrived_at')
+        $q = ProjectMailSource::query()->with('email:id,received_at,arrived_at,from_name,from_address')
             ->where('score', '>', 0); // スコア0点(除外/ジャンク)は非表示
         $this->applySkillJson($q, $terms, ['required_skills', 'preferred_skills']);
         if ($keyword !== '') {
@@ -447,6 +447,7 @@ PROMPT;
                 'unit_price_min' => $p->unit_price_min !== null ? (float) $p->unit_price_min : null,
                 'unit_price_max' => $price, 'location' => $p->work_location,
                 'score' => (int) $p->score,
+                'sender' => optional($p->email)->from_name ?: (optional($p->email)->from_address ?? null),
                 'date' => optional($p->email)->received_at?->toIso8601String() ?? $p->created_at?->toIso8601String(),
                 'detail_url' => "/project-mails?select={$p->id}",
             ];
@@ -486,7 +487,7 @@ PROMPT;
     // ── 技術者メール（EMS）──────────────────────────────
     private function searchEngineerMails(array $terms, string $keyword, ?float $min, ?float $max, string $sort): array
     {
-        $q = EngineerMailSource::query()->with('email:id,received_at,arrived_at')
+        $q = EngineerMailSource::query()->with('email:id,received_at,arrived_at,from_name,from_address')
             ->where('score', '>', 0); // スコア0点(除外/ジャンク)は非表示
         $this->applySkillJson($q, $terms, ['skills']);
         if ($keyword !== '') {
@@ -506,6 +507,7 @@ PROMPT;
             if ($dedupKey !== '|' && isset($seen[$dedupKey])) continue;
             $seen[$dedupKey] = true;
             $skills = (array) ($e->skills ?? []);
+            $senderName = optional($e->email)->from_name ?: $fromAddr;
             $out[] = [
                 'source' => 'engineer_mail', 'source_label' => '技術者メール', 'is_registered' => false,
                 'id' => $e->id, 'title' => $e->name ?: '(氏名なし)', 'sub' => $e->affiliation,
@@ -513,6 +515,7 @@ PROMPT;
                 'unit_price_min' => $e->unit_price_min !== null ? (float) $e->unit_price_min : null,
                 'unit_price_max' => $price, 'location' => $e->nearest_station,
                 'score' => (int) $e->score,
+                'sender' => $senderName,
                 'date' => optional($e->email)->received_at?->toIso8601String() ?? $e->created_at?->toIso8601String(),
                 'detail_url' => "/engineer-mails?select={$e->id}",
             ];
