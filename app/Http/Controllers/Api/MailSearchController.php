@@ -43,7 +43,7 @@ class MailSearchController extends Controller
             'keyword'    => ['nullable', 'string', 'max:200'],
             'price_min'  => ['nullable', 'numeric', 'min:0', 'max:9999'],
             'price_max'  => ['nullable', 'numeric', 'min:0', 'max:9999'],
-            'sort'       => ['nullable', 'in:price_asc,price_desc,recent,skill_match'],
+            'sort'       => ['nullable', 'in:price_asc,price_desc,recent,skill_match,score_desc'],
             'page'       => ['nullable', 'integer', 'min:1'],
         ]);
         $category = $v['category'] ?? 'all';
@@ -416,9 +416,10 @@ PROMPT;
     private function applyOrder($q, string $sort, string $priceCol = 'unit_price_max'): void
     {
         switch ($sort) {
-            case 'price_asc':  $q->orderByRaw("{$priceCol} ASC NULLS LAST");  break;
-            case 'price_desc': $q->orderByRaw("{$priceCol} DESC NULLS LAST"); break;
-            default:           $q->orderByDesc('created_at');                 break; // recent / skill_match
+            case 'price_asc':   $q->orderByRaw("{$priceCol} ASC NULLS LAST");  break;
+            case 'price_desc':  $q->orderByRaw("{$priceCol} DESC NULLS LAST"); break;
+            case 'score_desc':  $q->orderByDesc('score')->orderByDesc('created_at'); break;
+            default:            $q->orderByDesc('created_at');                 break; // recent / skill_match
         }
     }
 
@@ -445,6 +446,7 @@ PROMPT;
                 'skills' => array_values($skills), 'matched_skills' => $this->countMatched($terms, $skills),
                 'unit_price_min' => $p->unit_price_min !== null ? (float) $p->unit_price_min : null,
                 'unit_price_max' => $price, 'location' => $p->work_location,
+                'score' => (int) $p->score,
                 'date' => optional($p->email)->received_at?->toIso8601String() ?? $p->created_at?->toIso8601String(),
                 'detail_url' => "/project-mails?select={$p->id}",
             ];
@@ -494,9 +496,15 @@ PROMPT;
         $this->applyPriceFilter($q, $min, $max);
         $this->applyOrder($q, $sort);
         $out = [];
+        $seen = []; // from_address → 既出フラグ（同一送信元は最新1件のみ）
         foreach ($q->limit(self::SOURCE_CAP)->get() as $e) {
             $price = $e->unit_price_max !== null ? (float) $e->unit_price_max : null;
             if (!$this->priceOk($price, $min, $max)) continue;
+            // 同一送信元(from_address)＋同一氏名 → 重複除去（score_desc or recent でソート済みなので先頭が最新/最高）
+            $fromAddr = optional($e->email)->from_address ?? '';
+            $dedupKey = $fromAddr . '|' . ($e->name ?: '');
+            if ($dedupKey !== '|' && isset($seen[$dedupKey])) continue;
+            $seen[$dedupKey] = true;
             $skills = (array) ($e->skills ?? []);
             $out[] = [
                 'source' => 'engineer_mail', 'source_label' => '技術者メール', 'is_registered' => false,
@@ -504,6 +512,7 @@ PROMPT;
                 'skills' => array_values($skills), 'matched_skills' => $this->countMatched($terms, $skills),
                 'unit_price_min' => $e->unit_price_min !== null ? (float) $e->unit_price_min : null,
                 'unit_price_max' => $price, 'location' => $e->nearest_station,
+                'score' => (int) $e->score,
                 'date' => optional($e->email)->received_at?->toIso8601String() ?? $e->created_at?->toIso8601String(),
                 'detail_url' => "/engineer-mails?select={$e->id}",
             ];
@@ -688,6 +697,7 @@ PROMPT;
                 case 'skill_match':
                     $d = count($b['matched_skills']) <=> count($a['matched_skills']);
                     return $d !== 0 ? $d : $cmpPrice($a, $b, true);
+                case 'score_desc':  return ($b['score'] ?? 0) <=> ($a['score'] ?? 0);
                 case 'price_asc':
                 default:            return $cmpPrice($a, $b, true);
             }
