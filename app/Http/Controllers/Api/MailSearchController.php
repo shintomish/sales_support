@@ -102,7 +102,7 @@ class MailSearchController extends Controller
         $prompt = <<<PROMPT
 あなたはSES(技術者派遣)の検索アシスタントです。次の入力（検索文、または案件/技術者メールの本文をそのまま貼り付けたもの）から、マッチング検索に使う条件を抽出し、厳密なJSONのみを出力してください（前後に説明やコードフェンスは禁止）。
 形式:
-{"skills":["..."],"price_min":数値またはnull,"price_max":数値またはnull,"keyword":"..."またはnull}
+{"skills":["..."],"price_min":数値またはnull,"price_max":数値またはnull,"keyword":"..."またはnull,"detected_kind":"project"または"engineer"またはnull}
 ルール:
 - skills: 技術名/スキル(Java, TypeScript, AWS, PM, NW運用 等)。本文中の必須・尚可・保有スキルを拾う。複数可。無ければ []。
 - price_min/price_max: 単価(単位=万)。以下のように解釈する。
@@ -117,6 +117,7 @@ class MailSearchController extends Controller
     「60万以下/まで」→ price_min=null, price_max=60
   値が不明または言及なし → null
 - keyword: スキル・単価以外の絞り込み語(勤務地・最寄駅・即日・リモート・常駐 等を1〜2語)。無ければ null。
+- detected_kind: 入力が案件メール/案件情報なら"project"、技術者メール/技術者紹介なら"engineer"、判断できなければnull。
 - メール本文の場合は、挨拶/署名/会社名は無視し、技術者または案件の要件のみを対象にする。
 入力:
 {$text}
@@ -126,11 +127,17 @@ PROMPT;
         } catch (\Throwable $e) {
             return response()->json(['message' => 'AI解釈に失敗しました'], 502);
         }
+        // テキストから「案件メール」か「技術者メール」かを推定（target 自動切替用）
+        $detectedKind = null;
+        if (isset($json['detected_kind']) && in_array($json['detected_kind'], ['project', 'engineer'], true)) {
+            $detectedKind = $json['detected_kind'];
+        }
         return response()->json([
-            'skills'    => array_values(array_filter(array_map('strval', (array) ($json['skills'] ?? [])))),
-            'price_min' => is_numeric($json['price_min'] ?? null) ? (float) $json['price_min'] : null,
-            'price_max' => is_numeric($json['price_max'] ?? null) ? (float) $json['price_max'] : null,
-            'keyword'   => isset($json['keyword']) && is_string($json['keyword']) ? $json['keyword'] : null,
+            'skills'        => array_values(array_filter(array_map('strval', (array) ($json['skills'] ?? [])))),
+            'price_min'     => is_numeric($json['price_min'] ?? null) ? (float) $json['price_min'] : null,
+            'price_max'     => is_numeric($json['price_max'] ?? null) ? (float) $json['price_max'] : null,
+            'keyword'       => isset($json['keyword']) && is_string($json['keyword']) ? $json['keyword'] : null,
+            'detected_kind' => $detectedKind,
         ]);
     }
 
