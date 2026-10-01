@@ -300,7 +300,7 @@ PROMPT;
         $location = $it['location'] ?? '';
         return <<<PROMPT
 次の「探している条件」に対し、候補がどの程度合うかを判定し、厳密なJSONのみ出力してください（説明やコードフェンス禁止）。
-形式: {"verdict":"◯"または"△"または"×","reason":"40字以内の理由"}
+形式: {"verdict":"◯"または"△"または"×","reason":"100字以内の理由"}
 判定基準: ◯=よく合う / △=一部合う・情報不足 / ×=合わない。
 探している条件: {$query}
 候補: 種別={$label} / 名称={$title} / スキル={$skills} / 単価={$price} / 所属={$sub} / 勤務地={$location}
@@ -312,7 +312,7 @@ PROMPT;
     {
         $json = $this->parseJsonLoose($text);
         $verdict = in_array($json['verdict'] ?? '', ['◯', '△', '×'], true) ? $json['verdict'] : '△';
-        $reason  = isset($json['reason']) && is_string($json['reason']) ? mb_substr($json['reason'], 0, 60) : '';
+        $reason  = isset($json['reason']) && is_string($json['reason']) ? mb_substr($json['reason'], 0, 120) : '';
         return [$verdict, $reason];
     }
 
