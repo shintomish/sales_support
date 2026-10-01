@@ -128,9 +128,19 @@ PROMPT;
             return response()->json(['message' => 'AI解釈に失敗しました'], 502);
         }
         // テキストから「案件メール」か「技術者メール」かを推定（target 自動切替用）
+        // AI が返さない場合は本文の特徴語でフォールバック判定
         $detectedKind = null;
         if (isset($json['detected_kind']) && in_array($json['detected_kind'], ['project', 'engineer'], true)) {
             $detectedKind = $json['detected_kind'];
+        } else {
+            $projectMarkers  = ['案件名', '業務内容', '必須スキル', '【必須】', '募集人数', '単価、精算', '精算幅', 'ご紹介可能な候補者', 'ご紹介いただける'];
+            $engineerMarkers = ['希望単価', '稼働可能', '保有スキル', 'ご紹介させて', 'スキルシート', '在籍中', '経験年数'];
+            $projectScore  = 0;
+            $engineerScore = 0;
+            foreach ($projectMarkers  as $m) if (mb_strpos($text, $m) !== false) $projectScore++;
+            foreach ($engineerMarkers as $m) if (mb_strpos($text, $m) !== false) $engineerScore++;
+            if ($projectScore > $engineerScore && $projectScore >= 1) $detectedKind = 'project';
+            elseif ($engineerScore > $projectScore && $engineerScore >= 1) $detectedKind = 'engineer';
         }
         return response()->json([
             'skills'        => array_values(array_filter(array_map('strval', (array) ($json['skills'] ?? [])))),
