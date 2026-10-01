@@ -135,8 +135,10 @@ PROMPT;
         if (isset($json['detected_kind']) && in_array($json['detected_kind'], ['project', 'engineer'], true)) {
             $detectedKind = $json['detected_kind'];
         } else {
-            $projectMarkers  = ['案件名', '業務内容', '必須スキル', '【必須】', '募集人数', '単価、精算', '精算幅', 'ご紹介可能な候補者', 'ご紹介いただける'];
-            $engineerMarkers = ['希望単価', '稼働可能', '保有スキル', 'ご紹介させて', 'スキルシート', '在籍中', '経験年数'];
+            $projectMarkers  = ['案件名', '業務内容', '必須スキル', '【必須】', '募集人数', '単価、精算', '精算幅', 'ご紹介可能な候補者', 'ご紹介いただける', '商流制限', '精算幅'];
+            $engineerMarkers = ['希望単価', '稼働可能', '保有スキル', 'ご紹介させて', 'スキルシート', '在籍中', '経験年数',
+                '■氏', '■単　価', '■単価', '■スキル', '■開　始', '■開始', '■所　属', '■所属', '■最寄',
+                '要員情報', '個人事業主', '稼働開始', '稼働可能日', '希望単価'];
             $projectScore  = 0;
             $engineerScore = 0;
             foreach ($projectMarkers  as $m) if (mb_strpos($text, $m) !== false) $projectScore++;
