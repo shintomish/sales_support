@@ -41,13 +41,15 @@ class MailSearchController extends Controller
             'skill'      => ['nullable', 'string', 'max:200'],
             'skill_mode' => ['nullable', 'in:or,and'],           // スキル複数語の結合: OR(既定)/AND
             'keyword'    => ['nullable', 'string', 'max:200'],
-            'price_min'  => ['nullable', 'numeric', 'min:0', 'max:9999'],
-            'price_max'  => ['nullable', 'numeric', 'min:0', 'max:9999'],
-            'sort'       => ['nullable', 'in:price_asc,price_desc,recent,skill_match,score_desc'],
-            'page'       => ['nullable', 'integer', 'min:1'],
+            'price_min'             => ['nullable', 'numeric', 'min:0', 'max:9999'],
+            'price_max'             => ['nullable', 'numeric', 'min:0', 'max:9999'],
+            'exclude_unknown_price' => ['nullable', 'boolean'],
+            'sort'                  => ['nullable', 'in:price_asc,price_desc,recent,skill_match,score_desc'],
+            'page'                  => ['nullable', 'integer', 'min:1'],
         ]);
-        $category = $v['category'] ?? 'all';
-        $this->skillMode = $v['skill_mode'] ?? 'or';
+        $category            = $v['category'] ?? 'all';
+        $this->skillMode     = $v['skill_mode'] ?? 'or';
+        $excludeUnknownPrice = (bool) ($v['exclude_unknown_price'] ?? false);
 
         $terms    = $this->splitTerms($v['skill'] ?? '');
         $keyword  = trim((string) ($v['keyword'] ?? ''));
@@ -60,19 +62,19 @@ class MailSearchController extends Controller
         $rows = [];
         if ($v['kind'] === 'project') {
             if (in_array($category, ['all', 'mail'], true)) {
-                $rows = array_merge($rows, $this->searchProjectMails($terms, $keyword, $priceMin, $priceMax, $sort));
+                $rows = array_merge($rows, $this->searchProjectMails($terms, $keyword, $priceMin, $priceMax, $sort, $excludeUnknownPrice));
             }
             if (in_array($category, ['all', 'self'], true)) {
-                $rows = array_merge($rows, $this->searchPublicProjects($terms, $keyword, $priceMin, $priceMax, $sort));
+                $rows = array_merge($rows, $this->searchPublicProjects($terms, $keyword, $priceMin, $priceMax, $sort, $excludeUnknownPrice));
             }
             // bp は案件側に該当なし（空）
         } else {
             if (in_array($category, ['all', 'mail'], true)) {
-                $rows = array_merge($rows, $this->searchEngineerMails($terms, $keyword, $priceMin, $priceMax, $sort));
+                $rows = array_merge($rows, $this->searchEngineerMails($terms, $keyword, $priceMin, $priceMax, $sort, $excludeUnknownPrice));
             }
             if (in_array($category, ['all', 'self', 'bp'], true)) {
                 $affiliation = $category === 'self' ? 'self' : ($category === 'bp' ? 'bp' : 'all');
-                $rows = array_merge($rows, $this->searchEngineers($terms, $keyword, $priceMin, $priceMax, $sort, $affiliation));
+                $rows = array_merge($rows, $this->searchEngineers($terms, $keyword, $priceMin, $priceMax, $sort, $affiliation, $excludeUnknownPrice));
             }
         }
 
@@ -389,24 +391,29 @@ PROMPT;
         return (bool) preg_match($pattern, $cn);
     }
 
-    /** 単価フィルタ: 既知価格は範囲判定、不明(null)は除外しない（取りこぼし防止） */
-    private function priceOk(?float $val, ?float $min, ?float $max): bool
+    /** 単価フィルタ: 既知価格は範囲判定。$excludeNull=true の時は不明を除外 */
+    private function priceOk(?float $val, ?float $min, ?float $max, bool $excludeNull = false): bool
     {
-        if ($val === null) return true;
+        if ($val === null) return !$excludeNull;
         if ($min !== null && $val < $min) return false;
         if ($max !== null && $val > $max) return false;
         return true;
     }
 
     /**
-     * SQL 段階の単価フィルタ（cap+ORDER BY より前に効かせる）。
-     * これが無いと price_desc で cap が高額順の上位300件を取り、PHPの範囲外除外で0件になる不具合が出る。
-     * 不明(null)は除外しない（取りこぼし防止）。Engineer は希望単価が profile 別表のため PHP 側で処理。
+     * SQL 段階の単価フィルタ。
+     * $excludeNull=true の時は不明(null)を除外する（案件予算指定で技術者単価不明を除く場合等）。
      */
-    private function applyPriceFilter($q, ?float $min, ?float $max, string $col = 'unit_price_max'): void
+    private function applyPriceFilter($q, ?float $min, ?float $max, string $col = 'unit_price_max', bool $excludeNull = false): void
     {
-        if ($min !== null) $q->where(fn($w) => $w->where($col, '>=', $min)->orWhereNull($col));
-        if ($max !== null) $q->where(fn($w) => $w->where($col, '<=', $max)->orWhereNull($col));
+        if ($min !== null) {
+            if ($excludeNull) $q->where($col, '>=', $min);
+            else              $q->where(fn($w) => $w->where($col, '>=', $min)->orWhereNull($col));
+        }
+        if ($max !== null) {
+            if ($excludeNull) $q->where($col, '<=', $max);
+            else              $q->where(fn($w) => $w->where($col, '<=', $max)->orWhereNull($col));
+        }
     }
 
     /**
@@ -424,7 +431,7 @@ PROMPT;
     }
 
     // ── 案件メール（PMS）────────────────────────────────
-    private function searchProjectMails(array $terms, string $keyword, ?float $min, ?float $max, string $sort): array
+    private function searchProjectMails(array $terms, string $keyword, ?float $min, ?float $max, string $sort, bool $excludeNull = false): array
     {
         $q = ProjectMailSource::query()->with('email:id,received_at,arrived_at,from_name,from_address')
             ->where('score', '>', 0); // スコア0点(除外/ジャンク)は非表示
@@ -433,12 +440,12 @@ PROMPT;
             $like = '%' . $keyword . '%';
             $q->where(fn($w) => $w->where('title', 'ilike', $like)->orWhere('customer_name', 'ilike', $like)->orWhere('work_location', 'ilike', $like));
         }
-        $this->applyPriceFilter($q, $min, $max);
+        $this->applyPriceFilter($q, $min, $max, 'unit_price_max', $excludeNull);
         $this->applyOrder($q, $sort);
         $out = [];
         foreach ($q->limit(self::SOURCE_CAP)->get() as $p) {
             $price = $p->unit_price_max !== null ? (float) $p->unit_price_max : null;
-            if (!$this->priceOk($price, $min, $max)) continue;
+            if (!$this->priceOk($price, $min, $max, $excludeNull)) continue;
             $skills = array_merge((array) ($p->required_skills ?? []), (array) ($p->preferred_skills ?? []));
             $out[] = [
                 'source' => 'project_mail', 'source_label' => '案件メール', 'is_registered' => false,
@@ -456,7 +463,7 @@ PROMPT;
     }
 
     // ── 登録案件（PublicProject）─────────────────────────
-    private function searchPublicProjects(array $terms, string $keyword, ?float $min, ?float $max, string $sort): array
+    private function searchPublicProjects(array $terms, string $keyword, ?float $min, ?float $max, string $sort, bool $excludeNull = false): array
     {
         $q = PublicProject::query()->with('skills:id,name');
         $this->applySkillRelation($q, 'skills', $terms);
@@ -464,12 +471,12 @@ PROMPT;
             $like = '%' . $keyword . '%';
             $q->where(fn($w) => $w->where('title', 'ilike', $like)->orWhere('work_location', 'ilike', $like));
         }
-        $this->applyPriceFilter($q, $min, $max);
+        $this->applyPriceFilter($q, $min, $max, 'unit_price_max', $excludeNull);
         $this->applyOrder($q, $sort);
         $out = [];
         foreach ($q->limit(self::SOURCE_CAP)->get() as $p) {
             $price = $p->unit_price_max !== null ? (float) $p->unit_price_max : null;
-            if (!$this->priceOk($price, $min, $max)) continue;
+            if (!$this->priceOk($price, $min, $max, $excludeNull)) continue;
             $skills = $p->skills->pluck('name')->all();
             $out[] = [
                 'source' => 'public_project', 'source_label' => '登録案件', 'is_registered' => true,
@@ -485,7 +492,7 @@ PROMPT;
     }
 
     // ── 技術者メール（EMS）──────────────────────────────
-    private function searchEngineerMails(array $terms, string $keyword, ?float $min, ?float $max, string $sort): array
+    private function searchEngineerMails(array $terms, string $keyword, ?float $min, ?float $max, string $sort, bool $excludeNull = false): array
     {
         $q = EngineerMailSource::query()->with('email:id,received_at,arrived_at,from_name,from_address')
             ->where('score', '>', 0); // スコア0点(除外/ジャンク)は非表示
@@ -494,13 +501,13 @@ PROMPT;
             $like = '%' . $keyword . '%';
             $q->where(fn($w) => $w->where('name', 'ilike', $like)->orWhere('affiliation', 'ilike', $like)->orWhere('nearest_station', 'ilike', $like));
         }
-        $this->applyPriceFilter($q, $min, $max);
+        $this->applyPriceFilter($q, $min, $max, 'unit_price_max', $excludeNull);
         $this->applyOrder($q, $sort);
         $out = [];
         $seen = []; // from_address → 既出フラグ（同一送信元は最新1件のみ）
         foreach ($q->limit(self::SOURCE_CAP)->get() as $e) {
             $price = $e->unit_price_max !== null ? (float) $e->unit_price_max : null;
-            if (!$this->priceOk($price, $min, $max)) continue;
+            if (!$this->priceOk($price, $min, $max, $excludeNull)) continue;
             // 同一送信元(from_address)＋同一氏名 → 重複除去（score_desc or recent でソート済みなので先頭が最新/最高）
             $fromAddr = optional($e->email)->from_address ?? '';
             $dedupKey = $fromAddr . '|' . ($e->name ?: '');
@@ -524,7 +531,7 @@ PROMPT;
     }
 
     // ── 登録技術者（Engineer 自社・BP）──────────────────
-    private function searchEngineers(array $terms, string $keyword, ?float $min, ?float $max, string $sort, string $affiliation = 'all'): array
+    private function searchEngineers(array $terms, string $keyword, ?float $min, ?float $max, string $sort, string $affiliation = 'all', bool $excludeNull = false): array
     {
         // 登録技術者は件数が少なく、希望単価は profile(別テーブル)のため、cap段階は新着順で取得し
         // 最終的な単価並び替えは PHP 側(sortRows)で行う。
@@ -544,7 +551,7 @@ PROMPT;
         $out = [];
         foreach ($q->limit(self::SOURCE_CAP)->get() as $e) {
             $price = $e->profile?->desired_unit_price_max !== null ? (float) $e->profile->desired_unit_price_max : null;
-            if (!$this->priceOk($price, $min, $max)) continue;
+            if (!$this->priceOk($price, $min, $max, $excludeNull)) continue;
             $skills = $e->engineerSkills->map(fn($es) => $es->skill?->name)->filter()->values()->all();
             $isSelf = ($e->affiliation_type ?? '') === 'self';
             $out[] = [
