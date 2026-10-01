@@ -105,7 +105,17 @@ class MailSearchController extends Controller
 {"skills":["..."],"price_min":数値またはnull,"price_max":数値またはnull,"keyword":"..."またはnull}
 ルール:
 - skills: 技術名/スキル(Java, TypeScript, AWS, PM, NW運用 等)。本文中の必須・尚可・保有スキルを拾う。複数可。無ければ []。
-- price_min/price_max: 単価(単位=万)。「70万以上」→price_min=70。「60万以下/まで」→price_max=60。「35万」「70万くらい」→±0〜10万程度の妥当な範囲。無ければ null。
+- price_min/price_max: 単価(単位=万)。以下のように解釈する。
+  【案件メール・案件情報の場合（募集/スキル必須/案件名 等が含まれる）】
+    「単価80万」「月額80万円」等 → price_max=80, price_min=null（案件が支払える上限として解釈。技術者は上限以下の単価で探す）
+    「70〜90万」等の範囲 → price_min=70, price_max=90
+  【技術者メール・希望単価の場合（技術者の自己紹介・希望単価 等が含まれる）】
+    「希望単価70万」「〜75万」等 → price_min/price_max に範囲を設定
+  【文脈が不明・自然文の場合】
+    「70万くらい」→ price_min=65, price_max=75 のように±5万程度の範囲
+    「70万以上」→ price_min=70, price_max=null
+    「60万以下/まで」→ price_min=null, price_max=60
+  値が不明または言及なし → null
 - keyword: スキル・単価以外の絞り込み語(勤務地・最寄駅・即日・リモート・常駐 等を1〜2語)。無ければ null。
 - メール本文の場合は、挨拶/署名/会社名は無視し、技術者または案件の要件のみを対象にする。
 入力:
