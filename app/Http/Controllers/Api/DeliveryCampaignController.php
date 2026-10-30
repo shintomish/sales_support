@@ -141,28 +141,29 @@ class DeliveryCampaignController extends Controller
         $validated = $request->validate([
             'project_mail_id'         => ['nullable', TenantExistsRule::for('project_mail_sources')],
             'engineer_mail_source_id' => ['nullable', TenantExistsRule::for('engineer_mail_sources')],
-            'source_email'            => 'nullable|email|max:255',
+            // セミコロン区切りで複数アドレスを受け付けるため string バリデーションに緩和
+            'source_email'            => 'nullable|string|max:2000',
         ]);
 
         $tenantId = auth()->user()->tenant_id;
 
         // source を導出（紐づき>手動入力 の優先順）
-        $sourceEmail = null;
+        $sourceEmailRaw = null;
         if (!empty($validated['project_mail_id'])) {
             $pm = ProjectMailSource::where('tenant_id', $tenantId)
                 ->with('email:id,from_address')
                 ->find($validated['project_mail_id']);
-            $sourceEmail = $pm?->email?->from_address;
+            $sourceEmailRaw = $pm?->email?->from_address;
         } elseif (!empty($validated['engineer_mail_source_id'])) {
             $em = EngineerMailSource::where('tenant_id', $tenantId)
                 ->with('email:id,from_address')
                 ->find($validated['engineer_mail_source_id']);
-            $sourceEmail = $em?->email?->from_address;
+            $sourceEmailRaw = $em?->email?->from_address;
         } elseif (!empty($validated['source_email'])) {
-            $sourceEmail = $validated['source_email'];
+            $sourceEmailRaw = $validated['source_email'];
         }
 
-        if (!$sourceEmail) {
+        if (!$sourceEmailRaw) {
             return response()->json([
                 'source_email'  => null,
                 'source_domain' => null,
@@ -170,28 +171,37 @@ class DeliveryCampaignController extends Controller
             ]);
         }
 
-        $at = strrpos($sourceEmail, '@');
-        $sourceDomain = $at === false ? null : strtolower(trim(substr($sourceEmail, $at + 1)));
+        // セミコロン区切りで複数アドレスをパースし、全ドメインを収集
+        $sourceEmails = array_filter(array_map('trim', preg_split('/[;,\n]+/', $sourceEmailRaw)));
+        $sourceDomains = [];
+        foreach ($sourceEmails as $addr) {
+            $at = strrpos($addr, '@');
+            if ($at !== false) {
+                $domain = strtolower(trim(substr($addr, $at + 1)));
+                if ($domain) $sourceDomains[] = $domain;
+            }
+        }
+        $sourceDomains = array_unique($sourceDomains);
 
-        if (!$sourceDomain) {
+        if (empty($sourceDomains)) {
             return response()->json([
-                'source_email'  => $sourceEmail,
+                'source_email'  => $sourceEmailRaw,
                 'source_domain' => null,
                 'matches'       => [],
             ]);
         }
 
-        $matches = DeliveryAddress::where('tenant_id', $tenantId)
-            ->where('is_active', true)
-            ->whereRaw('LOWER(email) LIKE ?', ['%@' . $sourceDomain])
-            ->select('id', 'email', 'name')
-            ->orderBy('email')
-            ->limit(20)
-            ->get();
+        $query = DeliveryAddress::where('tenant_id', $tenantId)->where('is_active', true);
+        $query->where(function ($q) use ($sourceDomains) {
+            foreach ($sourceDomains as $domain) {
+                $q->orWhereRaw('LOWER(email) LIKE ?', ['%@' . $domain]);
+            }
+        });
+        $matches = $query->select('id', 'email', 'name')->orderBy('email')->limit(20)->get();
 
         return response()->json([
-            'source_email'  => $sourceEmail,
-            'source_domain' => $sourceDomain,
+            'source_email'  => $sourceEmailRaw,
+            'source_domain' => implode(', ', $sourceDomains),
             'matches'       => $matches,
         ]);
     }
@@ -203,7 +213,8 @@ class DeliveryCampaignController extends Controller
             'engineer_mail_source_id' => ['nullable', TenantExistsRule::for('engineer_mail_sources')],
             // 紐づき案件/技術者がない場合のみ使用する入手元メールアドレス。
             // 再送信時の元請けドメイン警告に使う（紐づきありなら受信メール from_address を優先）。
-            'source_email'            => 'nullable|email|max:255',
+            // セミコロン区切りで複数アドレスを受け付けるため string バリデーションに緩和。
+            'source_email'            => 'nullable|string|max:2000',
             'subject'                 => 'required|string|max:500',
             'body'                    => 'required|string',
             'attachments'             => 'nullable|array',
