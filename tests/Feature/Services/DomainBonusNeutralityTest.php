@@ -10,12 +10,13 @@ use Tests\TestCase;
 /**
  * ドメインボーナス/ペナルティが「自己強化ループにならない」ことを守る回帰ガード（docs/740 G5）。
  *
- * 背景: ドメイン単位の案件率でスコアを ±20 補正する。過去に「除外されるとさらに下がり
- * 永久除外される」自己強化ループの懸念が議論された (GFD 0%/1380 件)。
+ * 経緯: 以前はドメイン単位の案件率でスコアを ±20 補正していたが、rate が score 由来の
+ * status に依存し、score に bonus 自身が含まれる自己強化ループになっていた
+ * （特に -20 がドメインを恒久的に沈める）。中立性原則（content スコアのみ）に反するため
+ * 2026-06-23 に domainBonus() は廃止され、常に bonus=0 を返す。
  *
- * 現状の domainBonus() は status 分布(案件率)のみの関数で {-20, 0, +20} に限定され、
- * 過去の score 値を入力に含まない。本テストはその「中立な入力 + 有界出力(floor)」を
- * 固定し、将来うっかり「score を入力に混ぜる」「ペナルティを累積させる」変更を fail させる。
+ * 本テストは「どんな status 分布・score 値でも bonus は 0（集計もしない）」を固定し、
+ * 将来うっかりドメイン補正を復活させる変更を fail させる。
  */
 class DomainBonusNeutralityTest extends TestCase
 {
@@ -54,61 +55,54 @@ class DomainBonusNeutralityTest extends TestCase
         ]);
     }
 
-    public function test_penalty_floors_at_minus_20_and_does_not_diverge(): void
+    private function assertNoBonus(string $domain): void
     {
-        // 案件率 0%(全 excluded) のドメインを大量に積んでも、ペナルティは -20 が下限。
-        // 累積発散(-40/-60...)しないこと = 自己強化ループ防止の核心。
-        $this->seedDomain('low-quality-bp.example.co.jp', excluded: 50, included: 0);
+        $r = $this->service->domainBonus("sales@{$domain}", $this->authUser->tenant_id);
 
-        $r = $this->service->domainBonus('sales@low-quality-bp.example.co.jp', $this->authUser->tenant_id);
-
-        $this->assertSame(-20, $r['bonus'], 'ペナルティが -20 を超えて発散している（自己強化ループの疑い）');
-        $this->assertSame(50, $r['sample']);
-        $this->assertEquals(0, $r['rate']);
+        $this->assertSame(0, $r['bonus'], "{$domain}: domainBonus が 0 以外を返した（廃止済のドメイン補正が復活している）");
+        $this->assertSame(0, $r['sample'], "{$domain}: ドメイン集計が走っている（廃止済の集計が復活している）");
     }
 
-    public function test_bonus_is_bounded_to_known_set(): void
+    public function test_zero_project_rate_domain_gets_no_penalty(): void
     {
-        // rate に応じて出力は {-20, 0, +20} のいずれかに限定（有界）。
+        // 旧仕様で -20 になっていた「案件率 0%（全 excluded）」のドメインでも、ペナルティは付かない。
+        $this->seedDomain('low-quality-bp.example.co.jp', excluded: 50, included: 0);
+
+        $this->assertNoBonus('low-quality-bp.example.co.jp');
+    }
+
+    public function test_bonus_is_zero_for_any_project_rate(): void
+    {
+        // 旧仕様の境界（<=20% → -20 / >=80% → +20）を含め、どの案件率でも 0。
         $cases = [
-            // domain,                excluded, included, expected_bonus
-            ['rate-000.example.jp',   10, 0,  -20],  // 0%   → -20
-            ['rate-020.example.jp',    8, 2,  -20],  // 20%  → -20 (<=0.2 境界)
-            ['rate-050.example.jp',    5, 5,    0],  // 50%  → 0
-            ['rate-080.example.jp',    2, 8,   20],  // 80%  → +20 (>=0.8 境界)
-            ['rate-100.example.jp',    0, 10,  20],  // 100% → +20
+            // domain,              excluded, included
+            ['rate-000.example.jp', 10, 0],
+            ['rate-020.example.jp',  8, 2],
+            ['rate-050.example.jp',  5, 5],
+            ['rate-080.example.jp',  2, 8],
+            ['rate-100.example.jp',  0, 10],
         ];
 
-        foreach ($cases as [$domain, $excluded, $included, $expected]) {
+        foreach ($cases as [$domain, $excluded, $included]) {
             $this->seedDomain($domain, $excluded, $included);
-            $r = $this->service->domainBonus("sales@{$domain}", $this->authUser->tenant_id);
-            $this->assertContains($r['bonus'], [-20, 0, 20], "{$domain}: bonus が想定集合外");
-            $this->assertSame($expected, $r['bonus'], "{$domain}: rate に対する bonus が不正");
+            $this->assertNoBonus($domain);
         }
     }
 
-    public function test_bonus_depends_on_status_distribution_not_score_values(): void
+    public function test_bonus_does_not_depend_on_score_values(): void
     {
-        // status 分布が同一(共に案件率0%=全 excluded)なら、score 値が大きく違っても bonus は同じ。
-        // = ペナルティ入力に score を混ぜていないことの保証。
+        // score 値が大きく違っても結果は同じ（= score がドメイン補正に混入しない）。
         $this->seedDomain('score-low.example.jp',  excluded: 10, included: 0, score: 5);
         $this->seedDomain('score-high.example.jp', excluded: 10, included: 0, score: 95);
 
-        $low  = $this->service->domainBonus('sales@score-low.example.jp', $this->authUser->tenant_id);
-        $high = $this->service->domainBonus('sales@score-high.example.jp', $this->authUser->tenant_id);
-
-        $this->assertSame($low['bonus'], $high['bonus'], 'score 値の違いで bonus が変わる（中立性違反・score がペナルティに混入）');
-        $this->assertSame(-20, $low['bonus']);
+        $this->assertNoBonus('score-low.example.jp');
+        $this->assertNoBonus('score-high.example.jp');
     }
 
-    public function test_below_min_sample_yields_no_bonus(): void
+    public function test_small_sample_domain_gets_no_bonus(): void
     {
-        // 最低サンプル(5件)未満なら、案件率に関わらず bonus 0（過小データで決めつけない）。
         $this->seedDomain('tiny-sample.example.jp', excluded: 4, included: 0);
 
-        $r = $this->service->domainBonus('sales@tiny-sample.example.jp', $this->authUser->tenant_id);
-
-        $this->assertSame(0, $r['bonus']);
-        $this->assertSame(4, $r['sample']);
+        $this->assertNoBonus('tiny-sample.example.jp');
     }
 }

@@ -34,65 +34,42 @@ class GmailOAuthControllerTest extends TestCase
     }
 
     // ─── callback ───
+    //
+    // 2026-05-14 以降、Gmail 新規 OAuth 接続は廃止済（Kagoya IMAP に一本化）。
+    // 旧 callback は state=user_id を信用しており IDOR が成立していたため
+    // (docs/730_quality_review_2026_05_30.md §High #1)、callback は何も受け付けず
+    // oauth_disabled へ redirect する。以下はその「攻撃面が閉じていること」の回帰ガード。
 
-    public function test_callback_redirects_with_error_when_code_missing(): void
+    public function test_callback_always_redirects_with_oauth_disabled(): void
     {
         $res = $this->get('/api/v1/gmail/callback');
 
         $res->assertRedirect();
-        $this->assertStringContainsString('error=no_code', $res->headers->get('Location'));
+        $this->assertStringContainsString('error=oauth_disabled', $res->headers->get('Location'));
     }
 
-    public function test_callback_persists_token_and_redirects_on_success(): void
+    public function test_callback_ignores_code_and_state_and_persists_nothing(): void
     {
-        // GmailService::exchangeCode をモック
+        // code / state を渡されても、トークン交換も外部呼び出しもしない
         $this->mock(GmailService::class, function (MockInterface $mock) {
-            $mock->shouldReceive('exchangeCode')
-                ->once()
-                ->with('auth-code-stub')
-                ->andReturn([
-                    'access_token'  => 'access-stub',
-                    'refresh_token' => 'refresh-stub',
-                    'expires_in'    => 3600,
-                ]);
+            $mock->shouldNotReceive('exchangeCode');
         });
+        Http::fake();
 
-        // userinfo の HTTP 呼び出しをフェイク
-        Http::fake([
-            'https://www.googleapis.com/oauth2/v2/userinfo' => Http::response([
-                'email' => 'user@example.com',
-            ]),
-        ]);
-
-        // state はユーザーID。actingAs はリダイレクトを伴う非API呼び出しでは挙動が異なるので
-        // 認証は使わず、既存ユーザーの ID を直接 state に渡す。
+        // 旧 IDOR の再現形: 被害者の user_id を state に詰める
         $tenant = \App\Models\Tenant::factory()->create();
-        $user   = \App\Models\User::factory()->tenantUser($tenant)->create();
+        $victim = \App\Models\User::factory()->tenantUser($tenant)->create();
 
-        $res = $this->get("/api/v1/gmail/callback?code=auth-code-stub&state={$user->id}");
-
-        $res->assertRedirect();
-        $this->assertStringContainsString('connected=1', $res->headers->get('Location'));
-
-        $this->assertDatabaseHas('gmail_tokens', [
-            'tenant_id'     => $tenant->id,
-            'user_id'       => $user->id,
-            'gmail_address' => 'user@example.com',
-        ]);
-    }
-
-    public function test_callback_redirects_with_error_when_exchange_fails(): void
-    {
-        $this->mock(GmailService::class, function (MockInterface $mock) {
-            $mock->shouldReceive('exchangeCode')
-                ->once()
-                ->andThrow(new \Exception('Gmail token exchange failed'));
-        });
-
-        $res = $this->get('/api/v1/gmail/callback?code=bad&state=1');
+        $res = $this->get("/api/v1/gmail/callback?code=attacker-code&state={$victim->id}");
 
         $res->assertRedirect();
-        $this->assertStringContainsString('error=oauth_failed', $res->headers->get('Location'));
+        $location = $res->headers->get('Location');
+        $this->assertStringContainsString('error=oauth_disabled', $location);
+        $this->assertStringNotContainsString('connected=1', $location);
+
+        Http::assertNothingSent();
+        $this->assertDatabaseMissing('gmail_tokens', ['user_id' => $victim->id]);
+        $this->assertDatabaseCount('gmail_tokens', 0);
     }
 
     // ─── status ───
